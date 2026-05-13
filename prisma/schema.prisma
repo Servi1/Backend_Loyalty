@@ -1,0 +1,255 @@
+// ─── Servio — Prisma Schema ──────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  BRAND_MANAGER
+  BRANCH_MANAGER
+  CASHIER
+  CUSTOMER
+}
+
+enum OrderStatus {
+  PENDING
+  ACCEPTED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum OrderType {
+  DINE_IN
+  TAKEAWAY
+  DELIVERY
+  DELIVER_TO_CAR
+  SCHEDULED
+}
+
+enum SubscriptionTier {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+// ─── Users ───────────────────────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  phone     String?  @unique
+  email     String?  @unique
+  password  String?  // hashed — null for OTP-only customers
+  name      String?
+  role      Role     @default(CUSTOMER)
+  avatarUrl String?
+
+  // Relations
+  tenantId  String?
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
+  branchId  String?
+  branch    Branch?  @relation(fields: [branchId], references: [id])
+
+  orders    Order[]
+  wallet    Wallet?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([phone])
+  @@index([email])
+}
+
+// ─── OTP (for phone-based auth) ─────────────────────
+
+model Otp {
+  id        String   @id @default(uuid())
+  phone     String
+  code      String
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([phone, code])
+}
+
+// ─── Tenants (Brands / Restaurant Groups) ────────────
+
+model Tenant {
+  id               String           @id @default(uuid())
+  name             String
+  slug             String           @unique
+  logoUrl          String?
+  primaryColor     String?          @default("#6366f1")
+  accentColor      String?          @default("#f59e0b")
+  fontFamily       String?          @default("Inter")
+  layoutStyle      String?          @default("modern")
+  subscriptionTier SubscriptionTier @default(FREE)
+
+  // Relations
+  branches  Branch[]
+  menuItems MenuItem[]
+  users     User[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Branches (Individual Locations) ─────────────────
+
+model Branch {
+  id        String  @id @default(uuid())
+  name      String
+  address   String?
+  city      String?
+  phone     String?
+  lat       Float?
+  lng       Float?
+  isOpen    Boolean @default(true)
+
+  // Relations
+  tenantId  String
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  tables    Table[]
+  orders    Order[]
+  staff     User[]
+  inventory InventoryItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Tables ──────────────────────────────────────────
+
+model Table {
+  id       String  @id @default(uuid())
+  label    String  // e.g. "Table 4"
+  seats    Int     @default(4)
+  qrCode   String? @unique
+  isActive Boolean @default(true)
+
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  orders   Order[]
+
+  createdAt DateTime @default(now())
+}
+
+// ─── Menu ────────────────────────────────────────────
+
+model MenuCategory {
+  id    String @id @default(uuid())
+  name  String
+  order Int    @default(0)
+
+  items MenuItem[]
+}
+
+model MenuItem {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  price       Float
+  imageUrl    String?
+  isAvailable Boolean @default(true)
+
+  categoryId String
+  category   MenuCategory @relation(fields: [categoryId], references: [id])
+
+  tenantId   String
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  orderItems OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Orders ──────────────────────────────────────────
+
+model Order {
+  id          String      @id @default(uuid())
+  orderNumber String      @unique
+  status      OrderStatus @default(PENDING)
+  type        OrderType   @default(DINE_IN)
+  total       Float       @default(0)
+  notes       String?
+
+  // Relations
+  userId   String
+  user     User   @relation(fields: [userId], references: [id])
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id])
+  tableId  String?
+  table    Table? @relation(fields: [tableId], references: [id])
+
+  items    OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model OrderItem {
+  id       String @id @default(uuid())
+  quantity Int    @default(1)
+  price    Float
+  notes    String?
+
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+}
+
+// ─── Loyalty / Wallet ────────────────────────────────
+
+model Wallet {
+  id           String @id @default(uuid())
+  points       Int    @default(0)
+  lifetimeEarn Int    @default(0)
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
+  transactions WalletTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WalletTransaction {
+  id          String @id @default(uuid())
+  points      Int    // positive = earn, negative = redeem
+  description String?
+
+  walletId String
+  wallet   Wallet @relation(fields: [walletId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+// ─── Inventory (Branch-level) ────────────────────────
+
+model InventoryItem {
+  id       String @id @default(uuid())
+  name     String
+  quantity Int    @default(0)
+  unit     String @default("pcs")
+
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  updatedAt DateTime @updatedAt
+}

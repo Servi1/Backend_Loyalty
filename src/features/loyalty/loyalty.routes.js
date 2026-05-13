@@ -1,0 +1,18 @@
+const { Router } = require("express");
+const ctrl = require("./loyalty.controller");
+const { authenticate, authorize } = require("../../middlewares/authMiddleware");
+
+const router = Router();
+
+router.use(authenticate);
+
+// Customer views their wallet
+router.get("/wallet", ctrl.getWallet);
+
+// Customer redeems points
+router.post("/redeem", ctrl.redeem);
+
+// Staff awards points (after order completion)
+router.post("/earn", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"), ctrl.earn);
+
+module.exports = router;
