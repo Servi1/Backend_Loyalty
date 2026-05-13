@@ -5,3 +5,4 @@ dist/
 prisma/*.db
 prisma/migrations/
 .DS_Store
+
