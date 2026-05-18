@@ -2,7 +2,7 @@ const catchAsync = require("../../utils/catchAsync");
 const ordersService = require("./orders.service");
 
 const create = catchAsync(async (req, res) => {
-  const order = await ordersService.create({ userId: req.user.id, ...req.body });
+  const order = await ordersService.create(req.tenantDb, { userId: req.user.id, ...req.body });
   // Emit to Socket.io so cashier POS receives instantly
   const io = req.app.get("io");
   if (io) {
@@ -12,17 +12,17 @@ const create = catchAsync(async (req, res) => {
 });
 
 const getByBranch = catchAsync(async (req, res) => {
-  const orders = await ordersService.getByBranch(req.params.branchId, req.query.status);
+  const orders = await ordersService.getByBranch(req.tenantDb, req.params.branchId, req.query.status);
   res.json({ success: true, data: orders });
 });
 
 const getMyOrders = catchAsync(async (req, res) => {
-  const orders = await ordersService.getByUser(req.user.id);
+  const orders = await ordersService.getByUser(req.tenantDb, req.user.id);
   res.json({ success: true, data: orders });
 });
 
 const updateStatus = catchAsync(async (req, res) => {
-  const order = await ordersService.updateStatus(req.params.id, req.body.status);
+  const order = await ordersService.updateStatus(req.tenantDb, req.params.id, req.body.status);
   // Notify via socket
   const io = req.app.get("io");
   if (io) {

@@ -35,13 +35,22 @@ app.get("/api/health", (_req, res) => {
 });
 
 // ─── API Routes ──────────────────────────────────────
-app.use("/api/auth", authRoutes);
-app.use("/api/tenants", tenantsRoutes);
-app.use("/api/branches", branchesRoutes);
-app.use("/api/menus", menusRoutes);
-app.use("/api/orders", ordersRoutes);
-app.use("/api/loyalty", loyaltyRoutes);
-app.use("/api/uploads", uploadsRoutes);
+const { extractTenant } = require("./middlewares/tenantMiddleware");
+
+// 1. Super Admin API
+app.use("/api/admin/tenants", tenantsRoutes);
+app.use("/api/auth", authRoutes); // auth handles both super admin and tenant logins
+
+// 2. Tenant API (requires tenantId)
+const tenantRouter = express.Router({ mergeParams: true });
+tenantRouter.use(extractTenant);
+tenantRouter.use("/branches", branchesRoutes);
+tenantRouter.use("/menus", menusRoutes);
+tenantRouter.use("/orders", ordersRoutes);
+tenantRouter.use("/loyalty", loyaltyRoutes);
+tenantRouter.use("/uploads", uploadsRoutes);
+
+app.use("/api/tenant/:tenantId", tenantRouter);
 
 // ─── 404 Fallback ────────────────────────────────────
 app.use((_req, res) => {

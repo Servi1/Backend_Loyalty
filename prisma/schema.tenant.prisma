@@ -1,18 +1,19 @@
-// ─── Servio — Prisma Schema ──────────────────────────
+// ─── Servio Tenant Database — Prisma Schema ──────────────
 
 generator client {
   provider = "prisma-client-js"
+  output   = "../node_modules/@prisma/client-tenant"
 }
 
+// In the tenant schema, the url is provided programmatically
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url      = env("TENANT_DATABASE_URL")
 }
 
 // ─── Enums ───────────────────────────────────────────
 
 enum Role {
-  ADMIN
   BRAND_MANAGER
   BRANCH_MANAGER
   CASHIER
@@ -36,13 +37,6 @@ enum OrderType {
   SCHEDULED
 }
 
-enum SubscriptionTier {
-  FREE
-  STARTER
-  PROFESSIONAL
-  ENTERPRISE
-}
-
 // ─── Users ───────────────────────────────────────────
 
 model User {
@@ -55,8 +49,6 @@ model User {
   avatarUrl String?
 
   // Relations
-  tenantId  String?
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
   branchId  String?
   branch    Branch?  @relation(fields: [branchId], references: [id])
 
@@ -83,28 +75,6 @@ model Otp {
   @@index([phone, code])
 }
 
-// ─── Tenants (Brands / Restaurant Groups) ────────────
-
-model Tenant {
-  id               String           @id @default(uuid())
-  name             String
-  slug             String           @unique
-  logoUrl          String?
-  primaryColor     String?          @default("#6366f1")
-  accentColor      String?          @default("#f59e0b")
-  fontFamily       String?          @default("Inter")
-  layoutStyle      String?          @default("modern")
-  subscriptionTier SubscriptionTier @default(FREE)
-
-  // Relations
-  branches  Branch[]
-  menuItems MenuItem[]
-  users     User[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
 // ─── Branches (Individual Locations) ─────────────────
 
 model Branch {
@@ -116,10 +86,6 @@ model Branch {
   lat       Float?
   lng       Float?
   isOpen    Boolean @default(true)
-
-  // Relations
-  tenantId  String
-  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   tables    Table[]
   orders    Order[]
@@ -167,9 +133,6 @@ model MenuItem {
 
   categoryId String
   category   MenuCategory @relation(fields: [categoryId], references: [id])
-
-  tenantId   String
-  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   orderItems OrderItem[]
 

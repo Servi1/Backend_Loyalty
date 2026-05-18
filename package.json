@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio",
+    "prisma:generate": "npx prisma generate --schema=prisma/schema.main.prisma && npx prisma generate --schema=prisma/schema.tenant.prisma",
+    "prisma:migrate:main": "npx prisma migrate dev --schema=prisma/schema.main.prisma",
+    "prisma:migrate:tenant": "npx prisma migrate dev --schema=prisma/schema.tenant.prisma",
+    "prisma:studio:main": "npx prisma studio --schema=prisma/schema.main.prisma",
+    "prisma:studio:tenant": "npx prisma studio --schema=prisma/schema.tenant.prisma",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -35,6 +37,7 @@
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.1",
     "multer": "^2.1.1",
+    "pg": "^8.20.0",
     "socket.io": "^4.8.3",
     "twilio": "^6.0.2"
   },

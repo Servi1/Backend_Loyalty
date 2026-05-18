@@ -1,19 +1,36 @@
 const ApiError = require("../utils/ApiError");
+const mainPrisma = require("../config/prisma");
+const { getTenantClient } = require("../config/tenantManager");
 
 /**
- * Extract tenantId from request (header, params, or query) and attach to req.
- * This ensures brand data isolation in multi-tenant queries.
+ * Extract tenantId from request (header, params, or query), look up the tenant 
+ * in the main database, and attach their specific PrismaClient to req.tenantDb.
  */
-const extractTenant = (req, _res, next) => {
-  const tenantId =
-    req.headers["x-tenant-id"] || req.params.tenantId || req.query.tenantId;
+const extractTenant = async (req, _res, next) => {
+  try {
+    const tenantId =
+      req.headers["x-tenant-id"] || req.params.tenantId || req.query.tenantId;
 
-  if (!tenantId) {
-    return next(new ApiError(400, "Tenant ID is required"));
+    if (!tenantId) {
+      return next(new ApiError(400, "Tenant ID is required"));
+    }
+
+    // Lookup the tenant in the main registry
+    const tenant = await mainPrisma.tenant.findUnique({
+      where: { id: tenantId },
+    });
+
+    if (!tenant || !tenant.isActive) {
+      return next(new ApiError(404, "Tenant not found or inactive"));
+    }
+
+    // Attach the tenant ID and the specific database client to the request
+    req.tenantId = tenantId;
+    req.tenantDb = getTenantClient(tenant.dbUrl);
+    next();
+  } catch (error) {
+    next(new ApiError(500, "Error connecting to tenant database"));
   }
-
-  req.tenantId = tenantId;
-  next();
 };
 
 module.exports = { extractTenant };

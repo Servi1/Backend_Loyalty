@@ -1,10 +1,10 @@
 const jwt = require("jsonwebtoken");
 const config = require("../config");
 const ApiError = require("../utils/ApiError");
-const prisma = require("../config/prisma");
+const mainPrisma = require("../config/prisma");
 
 /**
- * Verify the JWT token from the Authorization header and attach `req.user`.
+ * Verify the JWT token from the Authorization header and attach `req.user` or `req.admin`.
  */
 const authenticate = async (req, _res, next) => {
   try {
@@ -16,12 +16,20 @@ const authenticate = async (req, _res, next) => {
     const token = authHeader.split(" ")[1];
     const decoded = jwt.verify(token, config.jwt.secret);
 
-    const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
-    if (!user) {
-      throw new ApiError(401, "User no longer exists");
+    if (decoded.type === "super_admin") {
+      const admin = await mainPrisma.superAdmin.findUnique({ where: { id: decoded.sub } });
+      if (!admin) throw new ApiError(401, "Admin no longer exists");
+      req.admin = admin;
+      req.user = { id: admin.id, role: "SUPER_ADMIN" }; // standardize for authorize middleware
+    } else {
+      if (!req.tenantDb) {
+        throw new ApiError(400, "Tenant context required for this user token");
+      }
+      const user = await req.tenantDb.user.findUnique({ where: { id: decoded.sub } });
+      if (!user) throw new ApiError(401, "User no longer exists");
+      req.user = user;
     }
 
-    req.user = user;
     next();
   } catch (err) {
     if (err instanceof ApiError) return next(err);

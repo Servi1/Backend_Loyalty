@@ -1,4 +1,4 @@
-const prisma = require("../../config/prisma");
+const mainPrisma = require("../../config/prisma");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const config = require("../../config");
@@ -18,17 +18,17 @@ try {
 /**
  * Create a JWT for a user.
  */
-const signToken = (userId) =>
-  jwt.sign({ sub: userId }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
+const signToken = (userId, type = "user") =>
+  jwt.sign({ sub: userId, type }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
 
 /**
  * Send OTP to a phone number (Consumer App flow).
  */
-const sendOtp = async (phone) => {
+const sendOtp = async (db, phone) => {
   const code = generateOtp();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 min
 
-  await prisma.otp.create({ data: { phone, code, expiresAt } });
+  await db.otp.create({ data: { phone, code, expiresAt } });
 
   // Send via Twilio (skip in development if not configured)
   if (twilioClient && config.twilio.phoneNumber) {
@@ -47,43 +47,57 @@ const sendOtp = async (phone) => {
 /**
  * Verify OTP and return a token + user (creates user if first login).
  */
-const verifyOtp = async (phone, code) => {
-  const otp = await prisma.otp.findFirst({
+const verifyOtp = async (db, phone, code) => {
+  const otp = await db.otp.findFirst({
     where: { phone, code, verified: false, expiresAt: { gte: new Date() } },
     orderBy: { createdAt: "desc" },
   });
 
   if (!otp) throw new ApiError(400, "Invalid or expired OTP");
 
-  await prisma.otp.update({ where: { id: otp.id }, data: { verified: true } });
+  await db.otp.update({ where: { id: otp.id }, data: { verified: true } });
 
-  let user = await prisma.user.findUnique({ where: { phone } });
+  let user = await db.user.findUnique({ where: { phone } });
   const isNewUser = !user;
 
   if (!user) {
-    user = await prisma.user.create({
+    user = await db.user.create({
       data: { phone, role: "CUSTOMER" },
     });
     // Create wallet for new customer
-    await prisma.wallet.create({ data: { userId: user.id } });
+    await db.wallet.create({ data: { userId: user.id } });
   }
 
-  const token = signToken(user.id);
+  const token = signToken(user.id, "user");
   return { token, user, isNewUser };
 };
 
 /**
  * B2B portal login (email + password).
  */
-const loginWithEmail = async (email, password) => {
-  const user = await prisma.user.findUnique({ where: { email } });
+const loginWithEmail = async (db, email, password) => {
+  const user = await db.user.findUnique({ where: { email } });
   if (!user || !user.password) throw new ApiError(401, "Invalid credentials");
 
   const valid = await bcrypt.compare(password, user.password);
   if (!valid) throw new ApiError(401, "Invalid credentials");
 
-  const token = signToken(user.id);
+  const token = signToken(user.id, "user");
   return { token, user };
 };
 
-module.exports = { sendOtp, verifyOtp, loginWithEmail };
+/**
+ * Super Admin login (main DB).
+ */
+const superAdminLogin = async (email, password) => {
+  const admin = await mainPrisma.superAdmin.findUnique({ where: { email } });
+  if (!admin) throw new ApiError(401, "Invalid credentials");
+
+  const valid = await bcrypt.compare(password, admin.password);
+  if (!valid) throw new ApiError(401, "Invalid credentials");
+
+  const token = signToken(admin.id, "super_admin");
+  return { token, admin };
+};
+
+module.exports = { sendOtp, verifyOtp, loginWithEmail, superAdminLogin };

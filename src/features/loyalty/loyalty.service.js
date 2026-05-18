@@ -1,8 +1,7 @@
-const prisma = require("../../config/prisma");
 const ApiError = require("../../utils/ApiError");
 
-const getWallet = async (userId) => {
-  const wallet = await prisma.wallet.findUnique({
+const getWallet = async (db, userId) => {
+  const wallet = await db.wallet.findUnique({
     where: { userId },
     include: { transactions: { orderBy: { createdAt: "desc" }, take: 20 } },
   });
@@ -13,16 +12,16 @@ const getWallet = async (userId) => {
 /**
  * Award points to a user (e.g. after order completion).
  */
-const earnPoints = async (userId, points, description) => {
-  const wallet = await prisma.wallet.findUnique({ where: { userId } });
+const earnPoints = async (db, userId, points, description) => {
+  const wallet = await db.wallet.findUnique({ where: { userId } });
   if (!wallet) throw new ApiError(404, "Wallet not found");
 
-  const [updatedWallet] = await prisma.$transaction([
-    prisma.wallet.update({
+  const [updatedWallet] = await db.$transaction([
+    db.wallet.update({
       where: { userId },
       data: { points: { increment: points }, lifetimeEarn: { increment: points } },
     }),
-    prisma.walletTransaction.create({
+    db.walletTransaction.create({
       data: { walletId: wallet.id, points, description: description || "Points earned" },
     }),
   ]);
@@ -33,17 +32,17 @@ const earnPoints = async (userId, points, description) => {
 /**
  * Redeem points from a user's wallet.
  */
-const redeemPoints = async (userId, points, description) => {
-  const wallet = await prisma.wallet.findUnique({ where: { userId } });
+const redeemPoints = async (db, userId, points, description) => {
+  const wallet = await db.wallet.findUnique({ where: { userId } });
   if (!wallet) throw new ApiError(404, "Wallet not found");
   if (wallet.points < points) throw new ApiError(400, "Insufficient points");
 
-  const [updatedWallet] = await prisma.$transaction([
-    prisma.wallet.update({
+  const [updatedWallet] = await db.$transaction([
+    db.wallet.update({
       where: { userId },
       data: { points: { decrement: points } },
     }),
-    prisma.walletTransaction.create({
+    db.walletTransaction.create({
       data: { walletId: wallet.id, points: -points, description: description || "Points redeemed" },
     }),
   ]);

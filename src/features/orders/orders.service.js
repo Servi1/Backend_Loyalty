@@ -1,4 +1,3 @@
-const prisma = require("../../config/prisma");
 const ApiError = require("../../utils/ApiError");
 const crypto = require("crypto");
 
@@ -10,10 +9,10 @@ const generateOrderNumber = () => {
   return `SRV-${hex}`;
 };
 
-const create = async ({ userId, branchId, tableId, type, items, notes }) => {
+const create = async (db, { userId, branchId, tableId, type, items, notes }) => {
   // Calculate total from items
   const menuItemIds = items.map((i) => i.menuItemId);
-  const menuItems = await prisma.menuItem.findMany({ where: { id: { in: menuItemIds } } });
+  const menuItems = await db.menuItem.findMany({ where: { id: { in: menuItemIds } } });
 
   let total = 0;
   const orderItems = items.map((item) => {
@@ -24,7 +23,7 @@ const create = async ({ userId, branchId, tableId, type, items, notes }) => {
     return { menuItemId: item.menuItemId, quantity: item.quantity || 1, price: menuItem.price, notes: item.notes };
   });
 
-  const order = await prisma.order.create({
+  const order = await db.order.create({
     data: {
       orderNumber: generateOrderNumber(),
       userId,
@@ -41,27 +40,27 @@ const create = async ({ userId, branchId, tableId, type, items, notes }) => {
   return order;
 };
 
-const getByBranch = async (branchId, status) => {
+const getByBranch = async (db, branchId, status) => {
   const where = { branchId };
   if (status) where.status = status;
-  return prisma.order.findMany({
+  return db.order.findMany({
     where,
     include: { items: { include: { menuItem: true } }, user: true, table: true },
     orderBy: { createdAt: "desc" },
   });
 };
 
-const getByUser = async (userId) =>
-  prisma.order.findMany({
+const getByUser = async (db, userId) =>
+  db.order.findMany({
     where: { userId },
     include: { items: { include: { menuItem: true } }, branch: true },
     orderBy: { createdAt: "desc" },
   });
 
-const updateStatus = async (id, status) => {
-  const order = await prisma.order.findUnique({ where: { id } });
+const updateStatus = async (db, id, status) => {
+  const order = await db.order.findUnique({ where: { id } });
   if (!order) throw new ApiError(404, "Order not found");
-  return prisma.order.update({ where: { id }, data: { status } });
+  return db.order.update({ where: { id }, data: { status } });
 };
 
 module.exports = { create, getByBranch, getByUser, updateStatus };
