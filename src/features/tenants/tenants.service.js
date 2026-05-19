@@ -5,6 +5,8 @@ const { exec } = require("child_process");
 const util = require("util");
 const execPromise = util.promisify(exec);
 const config = require("../../config");
+const bcrypt = require("bcryptjs");
+const { getTenantClient } = require("../../config/tenantManager");
 
 const getAll = async () => mainPrisma.tenant.findMany();
 
@@ -15,6 +17,12 @@ const getById = async (id) => {
 };
 
 const create = async (data) => {
+  // 0. Pre-check: Ensure slug is unique before doing heavy database creation
+  const existingTenant = await mainPrisma.tenant.findUnique({ where: { slug: data.slug } });
+  if (existingTenant) {
+    throw new ApiError(400, "A brand with this slug already exists. Please choose a different Company No.");
+  }
+
   // 1. Generate DB name based on slug
   const dbName = `tenant_${data.slug.replace(/[^a-zA-Z0-9]/g, "_")}_db`;
   
@@ -51,10 +59,29 @@ const create = async (data) => {
     throw new ApiError(500, `Failed to push schema to tenant DB: ${err.message}`);
   }
 
+  // 3.5. Create initial BRAND_MANAGER
+  if (data.adminEmail && data.adminPassword) {
+    try {
+      const tenantPrisma = getTenantClient(tenantDbUrl);
+      const hashedPassword = await bcrypt.hash(data.adminPassword, 10);
+      await tenantPrisma.user.create({
+        data: {
+          email: data.adminEmail,
+          password: hashedPassword,
+          name: "Brand Admin",
+          role: "BRAND_MANAGER",
+        }
+      });
+    } catch (err) {
+      console.error("Failed to create initial admin user:", err);
+    }
+  }
+
   // 4. Save tenant to main registry
+  const { adminEmail, adminPassword, ...tenantData } = data;
   const tenant = await mainPrisma.tenant.create({
     data: {
-      ...data,
+      ...tenantData,
       dbUrl: tenantDbUrl,
     },
   });

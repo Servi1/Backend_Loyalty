@@ -26,4 +26,13 @@ const remove = catchAsync(async (req, res) => {
   res.status(204).send();
 });
 
-module.exports = { getAll, getById, create, update, remove };
+const getProfile = catchAsync(async (req, res) => {
+  res.json({ success: true, data: req.tenant });
+});
+
+const updateProfile = catchAsync(async (req, res) => {
+  const updated = await tenantsService.update(req.tenant.id, req.body);
+  res.json({ success: true, data: updated });
+});
+
+module.exports = { getAll, getById, create, update, remove, getProfile, updateProfile };

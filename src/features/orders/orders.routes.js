@@ -15,6 +15,9 @@ router.get("/mine", ctrl.getMyOrders);
 // Branch staff views branch orders
 router.get("/branch/:branchId", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"), ctrl.getByBranch);
 
+// Brand managers/admins view all orders
+router.get("/", authorize("ADMIN", "BRAND_MANAGER"), ctrl.getAll);
+
 // Update order status (cashier accepts / completes)
 router.patch("/:id/status", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"), ctrl.updateStatus);
 

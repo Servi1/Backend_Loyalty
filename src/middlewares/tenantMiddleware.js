@@ -15,9 +15,14 @@ const extractTenant = async (req, _res, next) => {
       return next(new ApiError(400, "Tenant ID is required"));
     }
 
-    // Lookup the tenant in the main registry
-    const tenant = await mainPrisma.tenant.findUnique({
-      where: { id: tenantId },
+    // Lookup the tenant in the main registry by either ID or Slug
+    const tenant = await mainPrisma.tenant.findFirst({
+      where: {
+        OR: [
+          { id: tenantId },
+          { slug: tenantId }
+        ]
+      },
     });
 
     if (!tenant || !tenant.isActive) {

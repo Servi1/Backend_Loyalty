@@ -17,6 +17,8 @@ enum Role {
   BRAND_MANAGER
   BRANCH_MANAGER
   CASHIER
+  WAITER
+  KITCHEN
   CUSTOMER
 }
 
@@ -47,6 +49,7 @@ model User {
   name      String?
   role      Role     @default(CUSTOMER)
   avatarUrl String?
+  pinCode   String?
 
   // Relations
   branchId  String?
@@ -104,6 +107,7 @@ model Table {
   seats    Int     @default(4)
   qrCode   String? @unique
   isActive Boolean @default(true)
+  zone     String? @default("Main")
 
   branchId String
   branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)

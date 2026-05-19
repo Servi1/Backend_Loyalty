@@ -32,4 +32,9 @@ const updateStatus = catchAsync(async (req, res) => {
   res.json({ success: true, data: order });
 });
 
-module.exports = { create, getByBranch, getMyOrders, updateStatus };
+const getAll = catchAsync(async (req, res) => {
+  const orders = await ordersService.getAll(req.tenantDb, req.query.status);
+  res.json({ success: true, data: orders });
+});
+
+module.exports = { create, getByBranch, getMyOrders, updateStatus, getAll };

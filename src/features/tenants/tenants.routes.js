@@ -1,11 +1,16 @@
 const { Router } = require("express");
 const ctrl = require("./tenants.controller");
 const { authenticate, authorize } = require("../../middlewares/authMiddleware");
+const { extractTenant } = require("../../middlewares/tenantMiddleware");
 
 const router = Router();
 
-router.use(authenticate);
+// Profile endpoints for active tenant owner/staff
+router.get("/profile/me", authenticate, extractTenant, ctrl.getProfile);
+router.put("/profile/me", authenticate, extractTenant, ctrl.updateProfile);
 
+// Admin-only endpoints
+router.use(authenticate);
 router.get("/", authorize("SUPER_ADMIN"), ctrl.getAll);
 router.get("/:id", authorize("SUPER_ADMIN"), ctrl.getById);
 router.post("/", authorize("SUPER_ADMIN"), ctrl.create);

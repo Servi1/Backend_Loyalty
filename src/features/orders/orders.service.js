@@ -63,4 +63,14 @@ const updateStatus = async (db, id, status) => {
   return db.order.update({ where: { id }, data: { status } });
 };
 
-module.exports = { create, getByBranch, getByUser, updateStatus };
+const getAll = async (db, status) => {
+  const where = {};
+  if (status) where.status = status;
+  return db.order.findMany({
+    where,
+    include: { items: { include: { menuItem: true } }, user: true, table: true, branch: true },
+    orderBy: { createdAt: "desc" },
+  });
+};
+
+module.exports = { create, getByBranch, getByUser, updateStatus, getAll };

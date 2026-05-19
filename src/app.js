@@ -15,12 +15,14 @@ const menusRoutes = require("./features/menus/menus.routes");
 const ordersRoutes = require("./features/orders/orders.routes");
 const loyaltyRoutes = require("./features/loyalty/loyalty.routes");
 const uploadsRoutes = require("./features/uploads/uploads.routes");
+const usersRoutes = require("./features/users/users.routes");
+const tablesRoutes = require("./features/tables/tables.routes");
 
 const app = express();
 
 // ─── Global Middlewares ──────────────────────────────
 app.use(helmet());
-app.use(cors({ origin: config.cors.origin, credentials: true }));
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -45,6 +47,8 @@ app.use("/api/auth", authRoutes); // auth handles both super admin and tenant lo
 const tenantRouter = express.Router({ mergeParams: true });
 tenantRouter.use(extractTenant);
 tenantRouter.use("/branches", branchesRoutes);
+tenantRouter.use("/users", usersRoutes);
+tenantRouter.use("/tables", tablesRoutes);
 tenantRouter.use("/menus", menusRoutes);
 tenantRouter.use("/orders", ordersRoutes);
 tenantRouter.use("/loyalty", loyaltyRoutes);

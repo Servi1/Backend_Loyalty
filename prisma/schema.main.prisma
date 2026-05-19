@@ -37,12 +37,36 @@ model Tenant {
   name             String
   slug             String           @unique
   dbUrl            String           // The database connection string for this tenant
+  // ─── Visual Settings
   logoUrl          String?
   primaryColor     String?          @default("#6366f1")
   accentColor      String?          @default("#f59e0b")
   fontFamily       String?          @default("Inter")
   layoutStyle      String?          @default("modern")
+
+  // ─── Contact Info
+  contactEmail     String?
+  phone            String?
+  website          String?
+  address          String?
+  city             String?
+  country          String?
+
+  // ─── Billing & Operations
+  timezone         String?
+  currency         String?
+  billingCycle     String?
+  taxId            String?
+  notes            String?
   subscriptionTier SubscriptionTier @default(FREE)
+  plan             String?          @default("starter")
+
+  // ─── Feature Flags
+  notificationsEnabled Boolean @default(true)
+  autoPayouts          Boolean @default(true)
+  ordersEnabled        Boolean @default(true)
+  loyaltyEnabled       Boolean @default(false)
+  
   isActive         Boolean          @default(true)
 
   createdAt DateTime @default(now())
