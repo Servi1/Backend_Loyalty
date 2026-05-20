@@ -100,4 +100,71 @@ const remove = async (id) => {
   return mainPrisma.tenant.delete({ where: { id } });
 };
 
-module.exports = { getAll, getById, create, update, remove };
+const getOverview = async () => {
+  const tenants = await mainPrisma.tenant.findMany();
+  
+  let totalOrders = 0;
+  let totalRevenue = 0;
+  let totalUsers = 0;
+  let totalLocations = 0;
+  
+  const tenantsOverview = [];
+  
+  for (const tenant of tenants) {
+    let ordersCount = 0;
+    let revenueSum = 0;
+    let locationsCount = 0;
+    let usersCount = 0;
+    
+    try {
+      const tenantPrisma = getTenantClient(tenant.dbUrl);
+      
+      const [oCount, oSum, lCount, uCount] = await Promise.all([
+        tenantPrisma.order.count(),
+        tenantPrisma.order.aggregate({
+          where: { status: "COMPLETED" },
+          _sum: { total: true }
+        }),
+        tenantPrisma.branch.count(),
+        tenantPrisma.user.count()
+      ]);
+      
+      ordersCount = oCount;
+      revenueSum = oSum._sum.total || 0;
+      locationsCount = lCount;
+      usersCount = uCount;
+    } catch (err) {
+      console.error(`Failed to fetch stats for tenant ${tenant.slug}:`, err.message);
+    }
+    
+    totalOrders += ordersCount;
+    totalRevenue += revenueSum;
+    totalLocations += locationsCount;
+    totalUsers += usersCount;
+    
+    tenantsOverview.push({
+      id: tenant.id,
+      name: tenant.name,
+      slug: tenant.slug,
+      plan: tenant.plan || "free",
+      logo: tenant.name.charAt(0),
+      ordersThisMonth: ordersCount,
+      revenueThisMonth: revenueSum,
+      locationsCount: locationsCount,
+      status: tenant.isActive ? "active" : "inactive"
+    });
+  }
+
+  return {
+    platformStats: {
+      totalOrders,
+      totalRevenue,
+      activeTenants: tenants.filter(t => t.isActive).length,
+      totalUsers
+    },
+    tenants: tenantsOverview,
+    totalLocations
+  };
+};
+
+module.exports = { getAll, getById, create, update, remove, getOverview };
