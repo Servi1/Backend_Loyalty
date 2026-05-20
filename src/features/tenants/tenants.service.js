@@ -64,14 +64,24 @@ const create = async (data) => {
     try {
       const tenantPrisma = getTenantClient(tenantDbUrl);
       const hashedPassword = await bcrypt.hash(data.adminPassword, 10);
-      await tenantPrisma.user.create({
-        data: {
-          email: data.adminEmail,
-          password: hashedPassword,
-          name: "Brand Admin",
-          role: "BRAND_MANAGER",
-        }
+      const existingUser = await tenantPrisma.user.findUnique({
+        where: { email: data.adminEmail }
       });
+      if (!existingUser) {
+        await tenantPrisma.user.create({
+          data: {
+            email: data.adminEmail,
+            password: hashedPassword,
+            name: "Brand Admin",
+            role: "BRAND_MANAGER",
+          }
+        });
+      } else {
+        await tenantPrisma.user.update({
+          where: { email: data.adminEmail },
+          data: { password: hashedPassword }
+        });
+      }
     } catch (err) {
       console.error("Failed to create initial admin user:", err);
     }
