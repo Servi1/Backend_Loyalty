@@ -76,7 +76,7 @@ const verifyOtp = async (db, phone, code) => {
  * B2B portal login (email + password).
  */
 const loginWithEmail = async (db, email, password) => {
-  const user = await db.user.findUnique({ where: { email } });
+  const user = await db.user.findUnique({ where: { email }, include: { branch: true } });
   if (!user || !user.password) throw new ApiError(401, "Invalid credentials");
 
   const valid = await bcrypt.compare(password, user.password);

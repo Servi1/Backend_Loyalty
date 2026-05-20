@@ -17,6 +17,7 @@ const loyaltyRoutes = require("./features/loyalty/loyalty.routes");
 const uploadsRoutes = require("./features/uploads/uploads.routes");
 const usersRoutes = require("./features/users/users.routes");
 const tablesRoutes = require("./features/tables/tables.routes");
+const inventoryRoutes = require("./features/inventory/inventory.routes");
 
 const app = express();
 
@@ -49,6 +50,7 @@ tenantRouter.use(extractTenant);
 tenantRouter.use("/branches", branchesRoutes);
 tenantRouter.use("/users", usersRoutes);
 tenantRouter.use("/tables", tablesRoutes);
+tenantRouter.use("/inventory", inventoryRoutes);
 tenantRouter.use("/menus", menusRoutes);
 tenantRouter.use("/orders", ordersRoutes);
 tenantRouter.use("/loyalty", loyaltyRoutes);

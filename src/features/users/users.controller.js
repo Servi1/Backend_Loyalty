@@ -2,7 +2,7 @@ const catchAsync = require("../../utils/catchAsync");
 const usersService = require("./users.service");
 
 const getAll = catchAsync(async (req, res) => {
-  const staff = await usersService.getAllStaff(req.tenantDb);
+  const staff = await usersService.getAllStaff(req.tenantDb, req.query.branchId);
   res.json({ success: true, data: staff });
 });
 

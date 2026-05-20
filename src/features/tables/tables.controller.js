@@ -2,7 +2,7 @@ const catchAsync = require("../../utils/catchAsync");
 const tablesService = require("./tables.service");
 
 const getAll = catchAsync(async (req, res) => {
-  const tables = await tablesService.getAll(req.tenantDb);
+  const tables = await tablesService.getAll(req.tenantDb, req.query.branchId);
   res.json({ success: true, data: tables });
 });
 

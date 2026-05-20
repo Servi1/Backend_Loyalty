@@ -1,7 +1,12 @@
 const ApiError = require("../../utils/ApiError");
 
-const getAll = async (db) => {
+const getAll = async (db, branchId) => {
+  const where = {};
+  if (branchId) {
+    where.branchId = branchId;
+  }
   return db.table.findMany({
+    where,
     include: {
       branch: true
     },

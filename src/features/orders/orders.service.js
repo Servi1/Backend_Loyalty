@@ -60,7 +60,11 @@ const getByUser = async (db, userId) =>
 const updateStatus = async (db, id, status) => {
   const order = await db.order.findUnique({ where: { id } });
   if (!order) throw new ApiError(404, "Order not found");
-  return db.order.update({ where: { id }, data: { status } });
+  return db.order.update({
+    where: { id },
+    data: { status },
+    include: { items: { include: { menuItem: true } }, user: true, table: true, branch: true }
+  });
 };
 
 const getAll = async (db, status) => {
