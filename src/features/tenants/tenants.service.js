@@ -315,4 +315,79 @@ const getLoyaltyOverview = async () => {
   };
 };
 
-module.exports = { getAll, getById, create, update, remove, getOverview, getSubscriptions, getLoyaltyOverview };
+const getInvoices = async () => {
+  const tenants = await mainPrisma.tenant.findMany({
+    orderBy: { createdAt: "desc" }
+  });
+
+  const invoices = [];
+
+  for (const tenant of tenants) {
+    const planName = (tenant.plan || "starter").toLowerCase();
+    let amount = 0;
+    if (planName === "starter") amount = 99;
+    else if (planName === "growth" || planName === "professional") amount = 199;
+    else if (planName === "enterprise") amount = 499;
+
+    const startedAt = tenant.createdAt;
+    const isYearly = tenant.billingCycle === "yearly";
+    const intervalMs = isYearly ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
+
+    const now = Date.now();
+    let cycleStart = startedAt.getTime();
+    let periodIndex = 1;
+
+    // Generate invoices for all cycles from signup until now
+    while (cycleStart < now) {
+      const cycleEnd = cycleStart + intervalMs;
+      const startStr = new Date(cycleStart).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const endStr = new Date(cycleEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+      let status = "paid";
+      // If it is the current active cycle
+      if (now >= cycleStart && now < cycleEnd) {
+        if (!tenant.isActive) {
+          status = "overdue";
+        } else {
+          status = "paid";
+        }
+      }
+
+      invoices.push({
+        id: `INV-${tenant.slug.toUpperCase()}-${1000 + periodIndex}`,
+        tenantName: tenant.name,
+        plan: tenant.plan || "Starter",
+        period: `${startStr} - ${endStr}`,
+        amount: amount,
+        status: status,
+        createdAt: new Date(cycleStart)
+      });
+
+      cycleStart = cycleEnd;
+      periodIndex++;
+    }
+
+    // If no invoices were generated (registered in future/edge cases)
+    if (invoices.length === 0) {
+      const cycleEnd = cycleStart + intervalMs;
+      const startStr = new Date(cycleStart).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const endStr = new Date(cycleEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      invoices.push({
+        id: `INV-${tenant.slug.toUpperCase()}-1001`,
+        tenantName: tenant.name,
+        plan: tenant.plan || "Starter",
+        period: `${startStr} - ${endStr}`,
+        amount: amount,
+        status: tenant.isActive ? "paid" : "overdue",
+        createdAt: startedAt
+      });
+    }
+  }
+
+  // Sort invoices by date descending
+  invoices.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  return invoices;
+};
+
+module.exports = { getAll, getById, create, update, remove, getOverview, getSubscriptions, getLoyaltyOverview, getInvoices };

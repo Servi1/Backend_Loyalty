@@ -14,6 +14,7 @@ router.use(authenticate);
 router.get("/overview", authorize("SUPER_ADMIN"), ctrl.getOverview);
 router.get("/subscriptions", authorize("SUPER_ADMIN"), ctrl.getSubscriptions);
 router.get("/loyalty", authorize("SUPER_ADMIN"), ctrl.getLoyaltyOverview);
+router.get("/invoices", authorize("SUPER_ADMIN"), ctrl.getInvoices);
 router.get("/", authorize("SUPER_ADMIN"), ctrl.getAll);
 router.get("/:id", authorize("SUPER_ADMIN"), ctrl.getById);
 router.post("/", authorize("SUPER_ADMIN"), ctrl.create);
