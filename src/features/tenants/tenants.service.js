@@ -257,4 +257,62 @@ const getSubscriptions = async () => {
   };
 };
 
-module.exports = { getAll, getById, create, update, remove, getOverview, getSubscriptions };
+const getLoyaltyOverview = async () => {
+  const tenants = await mainPrisma.tenant.findMany({
+    orderBy: { createdAt: "desc" }
+  });
+
+  const programs = [];
+  let totalMembers = 0;
+  let totalRedemptions = 0;
+
+  for (const tenant of tenants) {
+    let membersCount = 0;
+    let redemptionsCount = 0;
+
+    try {
+      const tenantPrisma = getTenantClient(tenant.dbUrl);
+
+      // Count members: user table where role === 'CUSTOMER'
+      membersCount = await tenantPrisma.user.count({
+        where: {
+          role: "CUSTOMER"
+        }
+      });
+
+      // Count redemptions: WalletTransaction table where points is negative
+      redemptionsCount = await tenantPrisma.walletTransaction.count({
+        where: {
+          points: {
+            lt: 0
+          }
+        }
+      });
+    } catch (err) {
+      console.error(`Failed to fetch loyalty stats for tenant ${tenant.slug}:`, err.message);
+    }
+
+    totalMembers += membersCount;
+    totalRedemptions += redemptionsCount;
+
+    programs.push({
+      id: tenant.id,
+      tenantName: tenant.name,
+      slug: tenant.slug,
+      enabled: tenant.loyaltyEnabled,
+      earnRate: tenant.loyaltyEarnRate,
+      redeemRate: tenant.loyaltyRedeemRate,
+      membersCount,
+      redemptions: redemptionsCount,
+      type: "points"
+    });
+  }
+
+  return {
+    totalMembers,
+    totalRedemptions,
+    programs
+  };
+};
+
+module.exports = { getAll, getById, create, update, remove, getOverview, getSubscriptions, getLoyaltyOverview };

@@ -40,9 +40,14 @@ const getSubscriptions = catchAsync(async (_req, res) => {
   res.json({ success: true, data: subscriptions });
 });
 
+const getLoyaltyOverview = catchAsync(async (_req, res) => {
+  const loyalty = await tenantsService.getLoyaltyOverview();
+  res.json({ success: true, data: loyalty });
+});
+
 const updateProfile = catchAsync(async (req, res) => {
   const updated = await tenantsService.update(req.tenant.id, req.body);
   res.json({ success: true, data: updated });
 });
 
-module.exports = { getAll, getById, create, update, remove, getProfile, updateProfile, getOverview, getSubscriptions };
+module.exports = { getAll, getById, create, update, remove, getProfile, updateProfile, getOverview, getSubscriptions, getLoyaltyOverview };
