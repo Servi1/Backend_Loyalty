@@ -77,7 +77,16 @@ const verifyOtp = async (db, phone, code) => {
  */
 const loginWithEmail = async (db, email, password) => {
   const user = await db.user.findUnique({ where: { email }, include: { branch: true } });
-  if (!user || !user.password) throw new ApiError(401, "Invalid credentials");
+  if (!user) throw new ApiError(401, "Invalid credentials");
+
+  // Check if PIN code is provided as password for cashier/waiter
+  if (user.pinCode && password === user.pinCode) {
+    const token = signToken(user.id, "user");
+    return { token, user };
+  }
+
+  // Fallback to standard bcrypt password check
+  if (!user.password) throw new ApiError(401, "Invalid credentials");
 
   const valid = await bcrypt.compare(password, user.password);
   if (!valid) throw new ApiError(401, "Invalid credentials");
