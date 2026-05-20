@@ -177,4 +177,84 @@ const getOverview = async () => {
   };
 };
 
-module.exports = { getAll, getById, create, update, remove, getOverview };
+const getSubscriptions = async () => {
+  const tenants = await mainPrisma.tenant.findMany({
+    orderBy: { createdAt: "desc" }
+  });
+
+  const subsList = [];
+  let totalMRR = 0;
+  let expiringSoonCount = 0;
+
+  for (const tenant of tenants) {
+    const planName = (tenant.plan || "starter").toLowerCase();
+    let amount = 0;
+    if (planName === "starter") amount = 99;
+    else if (planName === "growth" || planName === "professional") amount = 199;
+    else if (planName === "enterprise") amount = 499;
+
+    const startedAt = tenant.createdAt;
+    const isYearly = tenant.billingCycle === "yearly";
+    const cycleDays = isYearly ? 365 : 30;
+    const endsAt = new Date(startedAt.getTime() + cycleDays * 24 * 60 * 60 * 1000);
+
+    // Compute monthly equivalent for MRR
+    const monthlyEquivalent = isYearly ? Math.round(amount / 12) : amount;
+    if (tenant.isActive) {
+      totalMRR += monthlyEquivalent;
+    }
+
+    // Check if expiring in 30 days
+    const remainingDays = Math.ceil((endsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    if (tenant.isActive && remainingDays > 0 && remainingDays <= 30) {
+      expiringSoonCount++;
+    }
+
+    let branchesList = [];
+    try {
+      const tenantPrisma = getTenantClient(tenant.dbUrl);
+      const dbBranches = await tenantPrisma.branch.findMany({
+        select: {
+          id: true,
+          name: true,
+          city: true,
+          isOpen: true,
+          createdAt: true
+        }
+      });
+      branchesList = dbBranches.map(b => ({
+        id: b.id,
+        name: b.name,
+        city: b.city || "Unknown",
+        startedAt: b.createdAt,
+        endsAt: endsAt,
+        status: b.isOpen ? "open" : "closed"
+      }));
+    } catch (err) {
+      console.error(`Failed to fetch branches for tenant ${tenant.slug} sub:`, err.message);
+    }
+
+    subsList.push({
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+      logo: tenant.name.charAt(0),
+      plan: planName,
+      status: tenant.isActive ? "active" : "canceled",
+      billingCycle: tenant.billingCycle || "monthly",
+      amount: amount,
+      startedAt: startedAt,
+      endsAt: endsAt,
+      branches: branchesList
+    });
+  }
+
+  return {
+    total: tenants.length,
+    active: tenants.filter(t => t.isActive).length,
+    expiringSoon: expiringSoonCount,
+    mrr: totalMRR,
+    subscriptions: subsList
+  };
+};
+
+module.exports = { getAll, getById, create, update, remove, getOverview, getSubscriptions };

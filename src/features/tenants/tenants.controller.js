@@ -35,9 +35,14 @@ const getOverview = catchAsync(async (_req, res) => {
   res.json({ success: true, data: overview });
 });
 
+const getSubscriptions = catchAsync(async (_req, res) => {
+  const subscriptions = await tenantsService.getSubscriptions();
+  res.json({ success: true, data: subscriptions });
+});
+
 const updateProfile = catchAsync(async (req, res) => {
   const updated = await tenantsService.update(req.tenant.id, req.body);
   res.json({ success: true, data: updated });
 });
 
-module.exports = { getAll, getById, create, update, remove, getProfile, updateProfile, getOverview };
+module.exports = { getAll, getById, create, update, remove, getProfile, updateProfile, getOverview, getSubscriptions };
