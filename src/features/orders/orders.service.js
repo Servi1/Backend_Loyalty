@@ -1,6 +1,7 @@
 const ApiError = require("../../utils/ApiError");
 const crypto = require("crypto");
 const mainPrisma = require("../../config/prisma");
+const { syncToAggregatedCustomer } = require("../customers/customers.service");
 
 const syncToAggregatedOrder = async (db, tenantId, order) => {
   if (!tenantId) return;
@@ -114,6 +115,54 @@ const updateStatus = async (db, id, status, tenantId) => {
     data: { status },
     include: { items: { include: { menuItem: true } }, user: true, table: true, branch: true }
   });
+
+  if (status === "COMPLETED" && updated.user && updated.user.role === "CUSTOMER") {
+    // Do not award points if paid using loyalty points
+    if (updated.notes && updated.notes.includes("Paid by Loyalty Points")) {
+      // Sync to super admin aggregated orders asynchronously and return
+      syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
+      return updated;
+    }
+
+    try {
+      const wallet = await db.wallet.findUnique({ where: { userId: updated.userId } });
+      if (wallet) {
+        const description = `Earned on Order #${updated.orderNumber}`;
+        const alreadyEarned = await db.walletTransaction.findFirst({
+          where: {
+            walletId: wallet.id,
+            description,
+          }
+        });
+
+        if (!alreadyEarned) {
+          const pointsToEarn = Math.floor(updated.total);
+          if (pointsToEarn > 0) {
+            await db.wallet.update({
+              where: { userId: updated.userId },
+              data: {
+                points: { increment: pointsToEarn },
+                lifetimeEarn: { increment: pointsToEarn },
+              }
+            });
+            await db.walletTransaction.create({
+              data: {
+                walletId: wallet.id,
+                points: pointsToEarn,
+                description,
+              }
+            });
+
+            if (tenantId) {
+              await syncToAggregatedCustomer(db, tenantId, updated.userId);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to auto-award points on order completion:", err.message);
+    }
+  }
 
   // Sync to super admin aggregated orders asynchronously
   syncToAggregatedOrder(db, tenantId, updated).catch(console.error);

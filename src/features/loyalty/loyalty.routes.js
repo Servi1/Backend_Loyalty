@@ -15,4 +15,7 @@ router.post("/redeem", ctrl.redeem);
 // Staff awards points (after order completion)
 router.post("/earn", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"), ctrl.earn);
 
+// Staff searches customers
+router.get("/customers", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"), ctrl.searchCustomers);
+
 module.exports = router;

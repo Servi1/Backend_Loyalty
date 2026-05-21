@@ -21,7 +21,9 @@ server.listen(config.port, () => {
   console.log(`📡 Socket.io ready`);
   console.log(`🌱 Environment: ${config.nodeEnv}\n`);
 
-  // Trigger initial synchronization of tenant orders to the main database
+  // Trigger initial synchronization of tenant orders and customers to the main database
   const tenantsService = require("./features/tenants/tenants.service");
+  const customersService = require("./features/customers/customers.service");
   tenantsService.syncAllTenantOrders().catch(err => console.error("Initial order sync failed:", err));
+  customersService.syncAllTenantCustomers().catch(err => console.error("Initial customer sync failed:", err));
 });

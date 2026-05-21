@@ -11,7 +11,7 @@ const sendOtp = catchAsync(async (req, res) => {
 /** POST /api/auth/otp/verify */
 const verifyOtp = catchAsync(async (req, res) => {
   const { phone, code } = req.body;
-  const result = await authService.verifyOtp(req.tenantDb, phone, code);
+  const result = await authService.verifyOtp(req.tenantDb, phone, code, req.tenantId);
   res.status(200).json({ success: true, ...result });
 });
 

@@ -8,13 +8,21 @@ const getWallet = catchAsync(async (req, res) => {
 
 const earn = catchAsync(async (req, res) => {
   const { userId, points, description } = req.body;
-  const wallet = await loyaltyService.earnPoints(req.tenantDb, userId, points, description);
+  const wallet = await loyaltyService.earnPoints(req.tenantDb, userId, points, description, req.tenantId);
   res.json({ success: true, data: wallet });
 });
 
 const redeem = catchAsync(async (req, res) => {
-  const wallet = await loyaltyService.redeemPoints(req.tenantDb, req.user.id, req.body.points, req.body.description);
+  const targetUserId = (req.body.userId && ["ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"].includes(req.user.role))
+    ? req.body.userId
+    : req.user.id;
+  const wallet = await loyaltyService.redeemPoints(req.tenantDb, targetUserId, req.body.points, req.body.description, req.tenantId);
   res.json({ success: true, data: wallet });
 });
 
-module.exports = { getWallet, earn, redeem };
+const searchCustomers = catchAsync(async (req, res) => {
+  const customers = await loyaltyService.searchCustomers(req.tenantDb, req.query.search);
+  res.json({ success: true, data: customers });
+});
+
+module.exports = { getWallet, earn, redeem, searchCustomers };

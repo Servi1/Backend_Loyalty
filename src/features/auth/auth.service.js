@@ -44,10 +44,12 @@ const sendOtp = async (db, phone) => {
   return { message: "OTP sent" };
 };
 
+const { syncToAggregatedCustomer } = require("../customers/customers.service");
+
 /**
  * Verify OTP and return a token + user (creates user if first login).
  */
-const verifyOtp = async (db, phone, code) => {
+const verifyOtp = async (db, phone, code, tenantId) => {
   const otp = await db.otp.findFirst({
     where: { phone, code, verified: false, expiresAt: { gte: new Date() } },
     orderBy: { createdAt: "desc" },
@@ -66,6 +68,10 @@ const verifyOtp = async (db, phone, code) => {
     });
     // Create wallet for new customer
     await db.wallet.create({ data: { userId: user.id } });
+
+    if (tenantId) {
+      syncToAggregatedCustomer(db, tenantId, user.id).catch(console.error);
+    }
   }
 
   const token = signToken(user.id, "user");

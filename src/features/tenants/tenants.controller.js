@@ -64,6 +64,32 @@ const getSuperAdminOrders = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+const getSuperAdminCustomers = catchAsync(async (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const search = req.query.search || "";
+
+  const result = await tenantsService.getSuperAdminCustomers({ search, page, limit });
+  res.json({ success: true, data: result });
+});
+
+const getSuperAdminCustomerDetails = catchAsync(async (req, res) => {
+  const { tenantId, customerId } = req.params;
+  const result = await tenantsService.getSuperAdminCustomerDetails(tenantId, customerId);
+  res.json({ success: true, data: result });
+});
+
+const addSuperAdminCustomer = catchAsync(async (req, res) => {
+  const customer = await tenantsService.addSuperAdminCustomer(req.body);
+  res.status(201).json({ success: true, data: customer });
+});
+
+const deleteSuperAdminCustomer = catchAsync(async (req, res) => {
+  const { tenantId, customerId } = req.params;
+  await tenantsService.deleteSuperAdminCustomer(tenantId, customerId);
+  res.status(204).send();
+});
+
 module.exports = {
   getAll,
   getById,
@@ -76,5 +102,9 @@ module.exports = {
   getSubscriptions,
   getLoyaltyOverview,
   getInvoices,
-  getSuperAdminOrders
+  getSuperAdminOrders,
+  getSuperAdminCustomers,
+  getSuperAdminCustomerDetails,
+  addSuperAdminCustomer,
+  deleteSuperAdminCustomer
 };

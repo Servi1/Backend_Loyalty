@@ -72,7 +72,8 @@ model Tenant {
   isActive         Boolean          @default(true)
 
   // Relations
-  aggregatedOrders AggregatedOrder[]
+  aggregatedOrders    AggregatedOrder[]
+  aggregatedCustomers AggregatedCustomer[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -96,5 +97,25 @@ model AggregatedOrder {
 
   @@index([tenantId])
   @@index([createdAt])
+}
+
+model AggregatedCustomer {
+  id          String   @id // format: tenantId_customerId
+  tenantId    String
+  customerId  String
+  name        String?
+  phone       String?
+  email       String?
+  points      Int      @default(0)
+  tier        String   @default("bronze")
+  joinedAt    DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, customerId])
+  @@index([tenantId])
+  @@index([phone])
 }
 
