@@ -20,6 +20,7 @@ router.post("/loyalty/customers", authorize("SUPER_ADMIN"), ctrl.addSuperAdminCu
 router.get("/loyalty/customers/:tenantId/:customerId", authorize("SUPER_ADMIN"), ctrl.getSuperAdminCustomerDetails);
 router.delete("/loyalty/customers/:tenantId/:customerId", authorize("SUPER_ADMIN"), ctrl.deleteSuperAdminCustomer);
 router.get("/invoices", authorize("SUPER_ADMIN"), ctrl.getInvoices);
+router.get("/:id/users", authorize("SUPER_ADMIN"), ctrl.getTenantUsers);
 router.get("/", authorize("SUPER_ADMIN"), ctrl.getAll);
 router.get("/:id", authorize("SUPER_ADMIN"), ctrl.getById);
 router.post("/", authorize("SUPER_ADMIN"), ctrl.create);

@@ -686,6 +686,16 @@ const deleteSuperAdminCustomer = async (tenantId, customerId) => {
   });
 };
 
+const getTenantUsers = async (tenantId) => {
+  const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) throw new ApiError(404, "Tenant not found");
+
+  const tenantPrisma = getTenantClient(tenant.dbUrl);
+  return tenantPrisma.user.findMany({
+    orderBy: { createdAt: "desc" }
+  });
+};
+
 module.exports = {
   getAll,
   getById,
@@ -702,5 +712,6 @@ module.exports = {
   getSuperAdminCustomerDetails,
   addSuperAdminCustomer,
   deleteSuperAdminCustomer,
+  getTenantUsers,
 };
 

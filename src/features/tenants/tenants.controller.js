@@ -90,6 +90,11 @@ const deleteSuperAdminCustomer = catchAsync(async (req, res) => {
   res.status(204).send();
 });
 
+const getTenantUsers = catchAsync(async (req, res) => {
+  const users = await tenantsService.getTenantUsers(req.params.id);
+  res.json({ success: true, data: users });
+});
+
 module.exports = {
   getAll,
   getById,
@@ -106,5 +111,6 @@ module.exports = {
   getSuperAdminCustomers,
   getSuperAdminCustomerDetails,
   addSuperAdminCustomer,
-  deleteSuperAdminCustomer
+  deleteSuperAdminCustomer,
+  getTenantUsers
 };
