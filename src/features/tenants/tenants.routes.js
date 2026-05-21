@@ -12,6 +12,7 @@ router.put("/profile/me", authenticate, extractTenant, ctrl.updateProfile);
 // Admin-only endpoints
 router.use(authenticate);
 router.get("/overview", authorize("SUPER_ADMIN"), ctrl.getOverview);
+router.get("/orders", authorize("SUPER_ADMIN"), ctrl.getSuperAdminOrders);
 router.get("/subscriptions", authorize("SUPER_ADMIN"), ctrl.getSubscriptions);
 router.get("/loyalty", authorize("SUPER_ADMIN"), ctrl.getLoyaltyOverview);
 router.get("/invoices", authorize("SUPER_ADMIN"), ctrl.getInvoices);

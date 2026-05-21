@@ -20,4 +20,8 @@ server.listen(config.port, () => {
   console.log(`\n🚀 Servio Backend running on http://localhost:${config.port}`);
   console.log(`📡 Socket.io ready`);
   console.log(`🌱 Environment: ${config.nodeEnv}\n`);
+
+  // Trigger initial synchronization of tenant orders to the main database
+  const tenantsService = require("./features/tenants/tenants.service");
+  tenantsService.syncAllTenantOrders().catch(err => console.error("Initial order sync failed:", err));
 });

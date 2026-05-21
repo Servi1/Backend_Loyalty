@@ -2,7 +2,7 @@ const catchAsync = require("../../utils/catchAsync");
 const ordersService = require("./orders.service");
 
 const create = catchAsync(async (req, res) => {
-  const order = await ordersService.create(req.tenantDb, { userId: req.user.id, ...req.body });
+  const order = await ordersService.create(req.tenantDb, { userId: req.user.id, ...req.body }, req.tenantId);
   // Emit to Socket.io so cashier POS receives instantly
   const io = req.app.get("io");
   if (io) {
@@ -22,7 +22,7 @@ const getMyOrders = catchAsync(async (req, res) => {
 });
 
 const updateStatus = catchAsync(async (req, res) => {
-  const order = await ordersService.updateStatus(req.tenantDb, req.params.id, req.body.status);
+  const order = await ordersService.updateStatus(req.tenantDb, req.params.id, req.body.status, req.tenantId);
   // Notify via socket
   const io = req.app.get("io");
   if (io) {

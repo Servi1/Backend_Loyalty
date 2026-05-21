@@ -55,4 +55,26 @@ const updateProfile = catchAsync(async (req, res) => {
   res.json({ success: true, data: updated });
 });
 
-module.exports = { getAll, getById, create, update, remove, getProfile, updateProfile, getOverview, getSubscriptions, getLoyaltyOverview, getInvoices };
+const getSuperAdminOrders = catchAsync(async (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 20;
+  const status = req.query.status;
+
+  const result = await tenantsService.getSuperAdminOrders({ status, page, limit });
+  res.json({ success: true, data: result });
+});
+
+module.exports = {
+  getAll,
+  getById,
+  create,
+  update,
+  remove,
+  getProfile,
+  updateProfile,
+  getOverview,
+  getSubscriptions,
+  getLoyaltyOverview,
+  getInvoices,
+  getSuperAdminOrders
+};

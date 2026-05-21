@@ -30,7 +30,7 @@ const extractTenant = async (req, _res, next) => {
     }
 
     // Attach the tenant ID and the specific database client to the request
-    req.tenantId = tenantId;
+    req.tenantId = tenant.id;
     req.tenantDb = getTenantClient(tenant.dbUrl);
     next();
   } catch (error) {

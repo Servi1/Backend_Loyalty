@@ -390,4 +390,92 @@ const getInvoices = async () => {
   return invoices;
 };
 
-module.exports = { getAll, getById, create, update, remove, getOverview, getSubscriptions, getLoyaltyOverview, getInvoices };
+const getSuperAdminOrders = async ({ status, page = 1, limit = 20 }) => {
+  const where = {};
+  if (status) where.status = status;
+
+  const skip = (page - 1) * limit;
+  const [total, orders] = await Promise.all([
+    mainPrisma.aggregatedOrder.count({ where }),
+    mainPrisma.aggregatedOrder.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: limit,
+      include: { tenant: true }
+    })
+  ]);
+
+  return {
+    total,
+    orders,
+    page,
+    limit
+  };
+};
+
+const syncAllTenantOrders = async () => {
+  console.log("🔄 Starting aggregated orders synchronization...");
+  try {
+    const tenants = await mainPrisma.tenant.findMany({ where: { isActive: true } });
+    let totalSynced = 0;
+
+    for (const tenant of tenants) {
+      try {
+        const tenantDb = getTenantClient(tenant.dbUrl);
+        const orders = await tenantDb.order.findMany({
+          include: { user: true, branch: true }
+        });
+
+        for (const order of orders) {
+          await mainPrisma.aggregatedOrder.upsert({
+            where: { id: `${tenant.id}_${order.id}` },
+            create: {
+              id: `${tenant.id}_${order.id}`,
+              tenantId: tenant.id,
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+              status: order.status,
+              type: order.type,
+              total: order.total,
+              notes: order.notes,
+              customerName: order.user?.name || order.user?.phone || "Customer Walk-in",
+              branchName: order.branch?.name || "Register Terminal",
+              createdAt: order.createdAt,
+              updatedAt: order.updatedAt,
+            },
+            update: {
+              status: order.status,
+              total: order.total,
+              notes: order.notes,
+              customerName: order.user?.name || order.user?.phone || "Customer Walk-in",
+              branchName: order.branch?.name || "Register Terminal",
+              updatedAt: order.updatedAt,
+            }
+          });
+          totalSynced++;
+        }
+      } catch (err) {
+        console.error(`Failed to sync orders for tenant ${tenant.name}:`, err.message);
+      }
+    }
+    console.log(`✅ Synchronized ${totalSynced} orders across all tenants.`);
+  } catch (error) {
+    console.error("Failed to run order sync:", error.message);
+  }
+};
+
+module.exports = {
+  getAll,
+  getById,
+  create,
+  update,
+  remove,
+  getOverview,
+  getSubscriptions,
+  getLoyaltyOverview,
+  getInvoices,
+  getSuperAdminOrders,
+  syncAllTenantOrders
+};
+
