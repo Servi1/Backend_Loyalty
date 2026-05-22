@@ -1,5 +1,6 @@
 const catchAsync = require("../../utils/catchAsync");
 const loyaltyService = require("./loyalty.service");
+const mainPrisma = require("../../config/prisma");
 
 const getWallet = catchAsync(async (req, res) => {
   const wallet = await loyaltyService.getWallet(req.tenantDb, req.user.id);
@@ -22,7 +23,16 @@ const redeem = catchAsync(async (req, res) => {
 
 const searchCustomers = catchAsync(async (req, res) => {
   const customers = await loyaltyService.searchCustomers(req.tenantDb, req.query.search);
-  res.json({ success: true, data: customers });
+  const tenant = await mainPrisma.tenant.findUnique({ where: { id: req.tenantId } });
+  res.json({
+    success: true,
+    data: customers,
+    config: {
+      loyaltyEnabled: tenant?.loyaltyEnabled ?? false,
+      loyaltyEarnRate: tenant?.loyaltyEarnRate ?? 1.0,
+      loyaltyRedeemRate: tenant?.loyaltyRedeemRate ?? 100.0,
+    }
+  });
 });
 
 module.exports = { getWallet, earn, redeem, searchCustomers };

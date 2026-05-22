@@ -136,7 +136,9 @@ const updateStatus = async (db, id, status, tenantId) => {
         });
 
         if (!alreadyEarned) {
-          const pointsToEarn = Math.floor(updated.total);
+          const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+          const earnRate = tenant ? tenant.loyaltyEarnRate : 1.0;
+          const pointsToEarn = Math.floor(updated.total * earnRate);
           if (pointsToEarn > 0) {
             await db.wallet.update({
               where: { userId: updated.userId },
