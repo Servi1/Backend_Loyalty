@@ -35,4 +35,14 @@ const searchCustomers = catchAsync(async (req, res) => {
   });
 });
 
-module.exports = { getWallet, earn, redeem, searchCustomers };
+const getAllCustomers = catchAsync(async (req, res) => {
+  const customers = await loyaltyService.getAllCustomersForReport(req.tenantDb);
+  res.json({ success: true, data: customers });
+});
+
+const getAllTransactions = catchAsync(async (req, res) => {
+  const transactions = await loyaltyService.getAllTransactionsForReport(req.tenantDb);
+  res.json({ success: true, data: transactions });
+});
+
+module.exports = { getWallet, earn, redeem, searchCustomers, getAllCustomers, getAllTransactions };

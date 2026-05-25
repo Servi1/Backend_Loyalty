@@ -696,6 +696,51 @@ const getTenantUsers = async (tenantId) => {
   });
 };
 
+const getAllSystemUsers = async () => {
+  const superAdmins = await mainPrisma.superAdmin.findMany({
+    orderBy: { createdAt: "desc" }
+  });
+
+  const mergedUsers = superAdmins.map((admin) => ({
+    id: admin.id,
+    name: admin.name || "Super Admin",
+    email: admin.email,
+    role: "super_admin",
+    tenantName: "Servio Platform",
+    status: "active",
+    lastActive: admin.createdAt,
+    createdAt: admin.createdAt,
+  }));
+
+  const tenants = await mainPrisma.tenant.findMany({ where: { isActive: true } });
+
+  for (const tenant of tenants) {
+    try {
+      const tenantPrisma = getTenantClient(tenant.dbUrl);
+      const staffUsers = await tenantPrisma.user.findMany({
+        orderBy: { createdAt: "desc" }
+      });
+
+      const tenantMapped = staffUsers.map((su) => ({
+        id: su.id,
+        name: su.name || "Staff Member",
+        email: su.email || "",
+        role: su.role.toLowerCase(),
+        tenantName: tenant.name,
+        status: "active",
+        lastActive: su.createdAt,
+        createdAt: su.createdAt,
+      }));
+
+      mergedUsers.push(...tenantMapped);
+    } catch (err) {
+      console.error(`Failed to fetch staff users for tenant ${tenant.name}:`, err.message);
+    }
+  }
+
+  return mergedUsers;
+};
+
 module.exports = {
   getAll,
   getById,
@@ -713,5 +758,6 @@ module.exports = {
   addSuperAdminCustomer,
   deleteSuperAdminCustomer,
   getTenantUsers,
+  getAllSystemUsers,
 };
 

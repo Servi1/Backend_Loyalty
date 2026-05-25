@@ -18,4 +18,8 @@ router.post("/earn", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASH
 // Staff searches customers
 router.get("/customers", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"), ctrl.searchCustomers);
 
+// Report lists for Brand Owner / Manager
+router.get("/members", authorize("ADMIN", "BRAND_MANAGER"), ctrl.getAllCustomers);
+router.get("/transactions", authorize("ADMIN", "BRAND_MANAGER"), ctrl.getAllTransactions);
+
 module.exports = router;

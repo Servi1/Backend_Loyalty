@@ -85,4 +85,49 @@ const searchCustomers = async (db, search) => {
   }));
 };
 
-module.exports = { getWallet, earnPoints, redeemPoints, searchCustomers };
+const getAllCustomersForReport = async (db) => {
+  const customers = await db.user.findMany({
+    where: { role: "CUSTOMER" },
+    include: { wallet: true },
+    orderBy: { createdAt: "desc" },
+  });
+  return customers.map((u) => ({
+    id: u.id,
+    name: u.name || "Unnamed",
+    phone: u.phone,
+    email: u.email,
+    points: u.wallet?.points || 0,
+    lifetimeEarn: u.wallet?.lifetimeEarn || 0,
+    joinedAt: u.createdAt,
+  }));
+};
+
+const getAllTransactionsForReport = async (db) => {
+  const transactions = await db.walletTransaction.findMany({
+    include: {
+      wallet: {
+        include: {
+          user: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  return transactions.map((t) => ({
+    id: t.id,
+    customerName: t.wallet?.user?.name || "Unnamed",
+    customerPhone: t.wallet?.user?.phone || "",
+    points: t.points,
+    description: t.description,
+    createdAt: t.createdAt,
+  }));
+};
+
+module.exports = { 
+  getWallet, 
+  earnPoints, 
+  redeemPoints, 
+  searchCustomers, 
+  getAllCustomersForReport, 
+  getAllTransactionsForReport 
+};

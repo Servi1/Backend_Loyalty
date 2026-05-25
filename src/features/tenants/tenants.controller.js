@@ -95,6 +95,11 @@ const getTenantUsers = catchAsync(async (req, res) => {
   res.json({ success: true, data: users });
 });
 
+const getAllSystemUsers = catchAsync(async (req, res) => {
+  const users = await tenantsService.getAllSystemUsers();
+  res.json({ success: true, data: users });
+});
+
 module.exports = {
   getAll,
   getById,
@@ -112,5 +117,6 @@ module.exports = {
   getSuperAdminCustomerDetails,
   addSuperAdminCustomer,
   deleteSuperAdminCustomer,
-  getTenantUsers
+  getTenantUsers,
+  getAllSystemUsers,
 };
