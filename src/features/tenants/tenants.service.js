@@ -9,7 +9,30 @@ const bcrypt = require("bcryptjs");
 const { getTenantClient } = require("../../config/tenantManager");
 const { syncToAggregatedCustomer } = require("../customers/customers.service");
 
-const getAll = async () => mainPrisma.tenant.findMany();
+const getAll = async () => {
+  const tenants = await mainPrisma.tenant.findMany({
+    orderBy: { createdAt: "desc" }
+  });
+
+  const enrichedTenants = [];
+  for (const tenant of tenants) {
+    let branchesCount = 0;
+    try {
+      const tenantPrisma = getTenantClient(tenant.dbUrl);
+      branchesCount = await tenantPrisma.branch.count();
+    } catch (err) {
+      console.error(`Failed to get branches count for tenant ${tenant.name}:`, err.message);
+    }
+    enrichedTenants.push({
+      ...tenant,
+      _count: {
+        branches: branchesCount
+      }
+    });
+  }
+
+  return enrichedTenants;
+};
 
 const getById = async (id) => {
   const tenant = await mainPrisma.tenant.findUnique({ where: { id } });
