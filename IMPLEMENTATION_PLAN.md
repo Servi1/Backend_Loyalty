@@ -10,9 +10,6 @@ This document outlines the full implementation roadmap for the Servio backend, f
 > *   **Main Database:** Handles Super Admin authentication, global settings, and Tenant registry (stores the database connection string for each tenant).
 > *   **Tenant Databases:** Each brand gets its own separate PostgreSQL database for full data isolation.
 
-## Open Questions
-
-1. **PostgreSQL Installation**: I checked your system and PostgreSQL is not currently installed or added to the system PATH. You will need to install PostgreSQL locally for Windows before we can execute database commands. Do you have a preferred version (e.g., PostgreSQL 16)?
 
 ---
 
