@@ -61,7 +61,10 @@ const getWallet = async (db, userId) => {
 
 const searchCustomers = async (db, search) => {
   const query = search ? search.trim() : "";
-  const customers = await db.user.findMany({
+  if (!query) return [];
+
+  // 1. Search locally
+  const localCustomers = await db.user.findMany({
     where: {
       role: "CUSTOMER",
       OR: [
@@ -76,7 +79,77 @@ const searchCustomers = async (db, search) => {
     take: 10,
   });
 
-  return customers.map((u) => ({
+  // 2. Search globally in aggregated customer registry
+  const mainPrisma = require("../../config/prisma");
+  const globalMatches = await mainPrisma.aggregatedCustomer.findMany({
+    where: {
+      OR: [
+        { phone: { contains: query, mode: "insensitive" } },
+        { email: { contains: query, mode: "insensitive" } },
+      ],
+    },
+    take: 10,
+  });
+
+  // 3. Auto-import/sync global customers that aren't present locally or need updating
+  for (const match of globalMatches) {
+    if (!match.phone && !match.email) continue;
+
+    // Check if customer is already returned in local search results
+    const alreadyLocal = localCustomers.some(
+      (lc) => (match.phone && lc.phone === match.phone) || (match.email && lc.email === match.email)
+    );
+    if (alreadyLocal) continue;
+
+    // Double check database if they exist but were missed by containing query match
+    const existingLocalUser = await db.user.findFirst({
+      where: {
+        OR: [
+          match.phone ? { phone: match.phone } : null,
+          match.email ? { email: match.email } : null,
+        ].filter(Boolean),
+      },
+      include: { wallet: true },
+    });
+
+    if (existingLocalUser) {
+      if (existingLocalUser.wallet && existingLocalUser.wallet.points !== match.points) {
+        await db.wallet.update({
+          where: { id: existingLocalUser.wallet.id },
+          data: { points: match.points }
+        });
+        existingLocalUser.wallet.points = match.points;
+      }
+      localCustomers.push(existingLocalUser);
+    } else {
+      // Auto-import global customer to the local tenant DB
+      try {
+        const newUser = await db.user.create({
+          data: {
+            name: match.name || "Walk-in Customer",
+            phone: match.phone,
+            email: match.email,
+            role: "CUSTOMER",
+          },
+        });
+        const newWallet = await db.wallet.create({
+          data: {
+            userId: newUser.id,
+            points: match.points,
+            lifetimeEarn: match.points,
+          },
+        });
+        localCustomers.push({
+          ...newUser,
+          wallet: newWallet,
+        });
+      } catch (err) {
+        console.error("Failed to auto-import global customer on lookup:", err.message);
+      }
+    }
+  }
+
+  return localCustomers.map((u) => ({
     id: u.id,
     name: u.name || "Unnamed",
     phone: u.phone,

@@ -52,6 +52,40 @@ const syncToAggregatedCustomer = async (db, tenantId, userId) => {
         updatedAt: new Date(),
       },
     });
+
+    // Global sync across all brands if customer has identifier
+    if (user.phone || user.email) {
+      const siblingMatches = await mainPrisma.aggregatedCustomer.findMany({
+        where: {
+          OR: [
+            user.phone ? { phone: user.phone } : null,
+            user.email ? { email: user.email } : null,
+          ].filter(Boolean),
+          NOT: {
+            tenantId,
+            customerId: userId,
+          },
+        },
+        include: { tenant: true }
+      });
+
+      for (const sibling of siblingMatches) {
+        try {
+          await mainPrisma.aggregatedCustomer.update({
+            where: { id: sibling.id },
+            data: { points, tier, updatedAt: new Date() }
+          });
+
+          const siblingDb = getTenantClient(sibling.tenant.dbUrl);
+          await siblingDb.wallet.updateMany({
+            where: { userId: sibling.customerId },
+            data: { points }
+          });
+        } catch (siblingErr) {
+          console.error(`Failed to propagate loyalty points to sibling tenant ${sibling.tenantId}:`, siblingErr.message);
+        }
+      }
+    }
   } catch (err) {
     console.error(`Failed to sync customer ${userId} to super admin aggregated registry:`, err.message);
   }

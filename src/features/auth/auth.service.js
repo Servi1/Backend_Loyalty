@@ -59,15 +59,48 @@ const verifyOtp = async (db, phone, code, tenantId) => {
 
   await db.otp.update({ where: { id: otp.id }, data: { verified: true } });
 
-  let user = await db.user.findUnique({ where: { phone } });
+  let user = await db.user.findUnique({ where: { phone }, include: { wallet: true } });
   const isNewUser = !user;
 
-  if (!user) {
-    user = await db.user.create({
-      data: { phone, role: "CUSTOMER" },
+  if (user) {
+    // Sync points to global balance if out of sync
+    const globalCustomer = await mainPrisma.aggregatedCustomer.findFirst({
+      where: { phone },
+      orderBy: { updatedAt: "desc" },
     });
-    // Create wallet for new customer
-    await db.wallet.create({ data: { userId: user.id } });
+    if (globalCustomer && user.wallet && user.wallet.points !== globalCustomer.points) {
+      await db.wallet.update({
+        where: { id: user.wallet.id },
+        data: { points: globalCustomer.points }
+      });
+      user.wallet.points = globalCustomer.points;
+    }
+  } else {
+    // Check if customer exists in another tenant's database via the aggregated table
+    const globalCustomer = await mainPrisma.aggregatedCustomer.findFirst({
+      where: { phone },
+      orderBy: { updatedAt: "desc" },
+    });
+
+    const initialPoints = globalCustomer ? globalCustomer.points : 0;
+
+    user = await db.user.create({
+      data: {
+        phone,
+        name: globalCustomer?.name || null,
+        email: globalCustomer?.email || null,
+        role: "CUSTOMER",
+      },
+    });
+
+    // Create wallet with matched global points balance
+    await db.wallet.create({
+      data: {
+        userId: user.id,
+        points: initialPoints,
+        lifetimeEarn: initialPoints,
+      },
+    });
 
     if (tenantId) {
       syncToAggregatedCustomer(db, tenantId, user.id).catch(console.error);
