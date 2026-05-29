@@ -45,4 +45,17 @@ const getAllTransactions = catchAsync(async (req, res) => {
   res.json({ success: true, data: transactions });
 });
 
-module.exports = { getWallet, earn, redeem, searchCustomers, getAllCustomers, getAllTransactions };
+const createCustomer = catchAsync(async (req, res) => {
+  const customer = await loyaltyService.createCustomer(req.tenantDb, req.body, req.tenantId);
+  res.status(201).json({ success: true, data: customer });
+});
+
+module.exports = { 
+  getWallet, 
+  earn, 
+  redeem, 
+  searchCustomers, 
+  getAllCustomers, 
+  getAllTransactions,
+  createCustomer
+};

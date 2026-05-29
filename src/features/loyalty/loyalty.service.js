@@ -196,11 +196,69 @@ const getAllTransactionsForReport = async (db) => {
   }));
 };
 
+const createCustomer = async (db, { name, phone, email, points = 0 }, tenantId) => {
+  // Check if customer already exists in this tenant DB
+  let user = await db.user.findFirst({
+    where: {
+      OR: [
+        phone ? { phone } : null,
+        email ? { email } : null,
+      ].filter(Boolean),
+    },
+  });
+
+  if (user) {
+    throw new ApiError(400, "Customer with this phone or email already registered");
+  }
+
+  // Create user locally
+  user = await db.user.create({
+    data: {
+      name,
+      phone,
+      email,
+      role: "CUSTOMER",
+    },
+  });
+
+  // Create wallet locally
+  const wallet = await db.wallet.create({
+    data: {
+      userId: user.id,
+      points,
+      lifetimeEarn: points,
+    },
+  });
+
+  if (points > 0) {
+    await db.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        points,
+        description: "Starting balance (Staff enrolled)",
+      },
+    });
+  }
+
+  // Sync to global AggregatedCustomer registry
+  await syncToAggregatedCustomer(db, tenantId, user.id);
+
+  return {
+    id: user.id,
+    name: user.name,
+    phone: user.phone,
+    email: user.email,
+    points,
+    joinedAt: user.createdAt,
+  };
+};
+
 module.exports = { 
   getWallet, 
   earnPoints, 
   redeemPoints, 
   searchCustomers, 
   getAllCustomersForReport, 
-  getAllTransactionsForReport 
+  getAllTransactionsForReport,
+  createCustomer
 };
