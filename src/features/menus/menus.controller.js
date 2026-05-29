@@ -7,7 +7,8 @@ const getCategories = catchAsync(async (req, res) => {
 });
 
 const getItems = catchAsync(async (req, res) => {
-  const items = await menusService.getItems(req.tenantDb);
+  const { startDate, endDate } = req.query;
+  const items = await menusService.getItems(req.tenantDb, startDate, endDate);
   res.json({ success: true, data: items });
 });
 

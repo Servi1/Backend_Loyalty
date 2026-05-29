@@ -12,7 +12,8 @@ const create = catchAsync(async (req, res) => {
 });
 
 const getByBranch = catchAsync(async (req, res) => {
-  const orders = await ordersService.getByBranch(req.tenantDb, req.params.branchId, req.query.status);
+  const { status, startDate, endDate } = req.query;
+  const orders = await ordersService.getByBranch(req.tenantDb, req.params.branchId, status, startDate, endDate);
   res.json({ success: true, data: orders });
 });
 

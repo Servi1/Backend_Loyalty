@@ -3,8 +3,15 @@ const ApiError = require("../../utils/ApiError");
 const getCategories = async (db) =>
   db.menuCategory.findMany({ orderBy: { order: "asc" }, include: { items: true } });
 
-const getItems = async (db) =>
-  db.menuItem.findMany({ include: { category: true } });
+const getItems = async (db, startDate, endDate) => {
+  const where = {};
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) where.createdAt.gte = new Date(startDate);
+    if (endDate) where.createdAt.lte = new Date(endDate);
+  }
+  return db.menuItem.findMany({ where, include: { category: true } });
+};
 
 const createCategory = async (db, data) => db.menuCategory.create({ data });
 

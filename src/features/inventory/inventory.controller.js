@@ -2,7 +2,8 @@ const catchAsync = require("../../utils/catchAsync");
 const inventoryService = require("./inventory.service");
 
 const getAll = catchAsync(async (req, res) => {
-  const items = await inventoryService.getAll(req.tenantDb, req.query.branchId);
+  const { branchId, startDate, endDate } = req.query;
+  const items = await inventoryService.getAll(req.tenantDb, branchId, startDate, endDate);
   res.json({ success: true, data: items });
 });
 

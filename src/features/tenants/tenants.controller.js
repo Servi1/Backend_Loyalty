@@ -1,8 +1,9 @@
 const catchAsync = require("../../utils/catchAsync");
 const tenantsService = require("./tenants.service");
 
-const getAll = catchAsync(async (_req, res) => {
-  const tenants = await tenantsService.getAll();
+const getAll = catchAsync(async (req, res) => {
+  const { startDate, endDate } = req.query;
+  const tenants = await tenantsService.getAll({ startDate, endDate });
   res.json({ success: true, data: tenants });
 });
 
@@ -40,13 +41,15 @@ const getSubscriptions = catchAsync(async (_req, res) => {
   res.json({ success: true, data: subscriptions });
 });
 
-const getLoyaltyOverview = catchAsync(async (_req, res) => {
-  const loyalty = await tenantsService.getLoyaltyOverview();
+const getLoyaltyOverview = catchAsync(async (req, res) => {
+  const { startDate, endDate } = req.query;
+  const loyalty = await tenantsService.getLoyaltyOverview({ startDate, endDate });
   res.json({ success: true, data: loyalty });
 });
 
-const getInvoices = catchAsync(async (_req, res) => {
-  const invoices = await tenantsService.getInvoices();
+const getInvoices = catchAsync(async (req, res) => {
+  const { startDate, endDate } = req.query;
+  const invoices = await tenantsService.getInvoices({ startDate, endDate });
   res.json({ success: true, data: invoices });
 });
 
@@ -68,8 +71,9 @@ const getSuperAdminCustomers = catchAsync(async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const search = req.query.search || "";
+  const { startDate, endDate } = req.query;
 
-  const result = await tenantsService.getSuperAdminCustomers({ search, page, limit });
+  const result = await tenantsService.getSuperAdminCustomers({ search, page, limit, startDate, endDate });
   res.json({ success: true, data: result });
 });
 
@@ -96,7 +100,8 @@ const getTenantUsers = catchAsync(async (req, res) => {
 });
 
 const getAllSystemUsers = catchAsync(async (req, res) => {
-  const users = await tenantsService.getAllSystemUsers();
+  const { startDate, endDate } = req.query;
+  const users = await tenantsService.getAllSystemUsers({ startDate, endDate });
   res.json({ success: true, data: users });
 });
 

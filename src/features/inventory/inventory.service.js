@@ -1,9 +1,14 @@
 const ApiError = require("../../utils/ApiError");
 
-const getAll = async (db, branchId) => {
+const getAll = async (db, branchId, startDate, endDate) => {
   const where = {};
   if (branchId) {
     where.branchId = branchId;
+  }
+  if (startDate || endDate) {
+    where.updatedAt = {};
+    if (startDate) where.updatedAt.gte = new Date(startDate);
+    if (endDate) where.updatedAt.lte = new Date(endDate);
   }
   return db.inventoryItem.findMany({
     where,

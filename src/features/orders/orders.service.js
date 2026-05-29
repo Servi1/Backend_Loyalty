@@ -90,9 +90,14 @@ const create = async (db, { userId, branchId, tableId, type, items, notes, total
   return order;
 };
 
-const getByBranch = async (db, branchId, status) => {
+const getByBranch = async (db, branchId, status, startDate, endDate) => {
   const where = { branchId };
   if (status) where.status = status;
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) where.createdAt.gte = new Date(startDate);
+    if (endDate) where.createdAt.lte = new Date(endDate);
+  }
   return db.order.findMany({
     where,
     include: { items: { include: { menuItem: true } }, user: true, table: true },

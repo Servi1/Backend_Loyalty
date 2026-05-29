@@ -9,8 +9,16 @@ const bcrypt = require("bcryptjs");
 const { getTenantClient } = require("../../config/tenantManager");
 const { syncToAggregatedCustomer } = require("../customers/customers.service");
 
-const getAll = async () => {
+const getAll = async (filters = {}) => {
+  const where = {};
+  if (filters.startDate || filters.endDate) {
+    where.createdAt = {};
+    if (filters.startDate) where.createdAt.gte = new Date(filters.startDate);
+    if (filters.endDate) where.createdAt.lte = new Date(filters.endDate);
+  }
+
   const tenants = await mainPrisma.tenant.findMany({
+    where,
     orderBy: { createdAt: "desc" }
   });
 
@@ -281,8 +289,16 @@ const getSubscriptions = async () => {
   };
 };
 
-const getLoyaltyOverview = async () => {
+const getLoyaltyOverview = async (filters = {}) => {
+  const where = {};
+  if (filters.startDate || filters.endDate) {
+    where.createdAt = {};
+    if (filters.startDate) where.createdAt.gte = new Date(filters.startDate);
+    if (filters.endDate) where.createdAt.lte = new Date(filters.endDate);
+  }
+
   const tenants = await mainPrisma.tenant.findMany({
+    where,
     orderBy: { createdAt: "desc" }
   });
 
@@ -297,20 +313,28 @@ const getLoyaltyOverview = async () => {
     try {
       const tenantPrisma = getTenantClient(tenant.dbUrl);
 
+      const customerWhere = { role: "CUSTOMER" };
+      if (filters.startDate || filters.endDate) {
+        customerWhere.createdAt = {};
+        if (filters.startDate) customerWhere.createdAt.gte = new Date(filters.startDate);
+        if (filters.endDate) customerWhere.createdAt.lte = new Date(filters.endDate);
+      }
+
       // Count members: user table where role === 'CUSTOMER'
       membersCount = await tenantPrisma.user.count({
-        where: {
-          role: "CUSTOMER"
-        }
+        where: customerWhere
       });
+
+      const txWhere = { points: { lt: 0 } };
+      if (filters.startDate || filters.endDate) {
+        txWhere.createdAt = {};
+        if (filters.startDate) txWhere.createdAt.gte = new Date(filters.startDate);
+        if (filters.endDate) txWhere.createdAt.lte = new Date(filters.endDate);
+      }
 
       // Count redemptions: WalletTransaction table where points is negative
       redemptionsCount = await tenantPrisma.walletTransaction.count({
-        where: {
-          points: {
-            lt: 0
-          }
-        }
+        where: txWhere
       });
     } catch (err) {
       console.error(`Failed to fetch loyalty stats for tenant ${tenant.slug}:`, err.message);
@@ -339,8 +363,16 @@ const getLoyaltyOverview = async () => {
   };
 };
 
-const getInvoices = async () => {
+const getInvoices = async (filters = {}) => {
+  const where = {};
+  if (filters.startDate || filters.endDate) {
+    where.createdAt = {};
+    if (filters.startDate) where.createdAt.gte = new Date(filters.startDate);
+    if (filters.endDate) where.createdAt.lte = new Date(filters.endDate);
+  }
+
   const tenants = await mainPrisma.tenant.findMany({
+    where,
     orderBy: { createdAt: "desc" }
   });
 
@@ -377,15 +409,22 @@ const getInvoices = async () => {
         }
       }
 
-      invoices.push({
-        id: `INV-${tenant.slug.toUpperCase()}-${1000 + periodIndex}`,
-        tenantName: tenant.name,
-        plan: tenant.plan || "Starter",
-        period: `${startStr} - ${endStr}`,
-        amount: amount,
-        status: status,
-        createdAt: new Date(cycleStart)
-      });
+      const invoiceDate = new Date(cycleStart);
+      let match = true;
+      if (filters.startDate && invoiceDate < new Date(filters.startDate)) match = false;
+      if (filters.endDate && invoiceDate > new Date(filters.endDate)) match = false;
+
+      if (match) {
+        invoices.push({
+          id: `INV-${tenant.slug.toUpperCase()}-${1000 + periodIndex}`,
+          tenantName: tenant.name,
+          plan: tenant.plan || "Starter",
+          period: `${startStr} - ${endStr}`,
+          amount: amount,
+          status: status,
+          createdAt: new Date(cycleStart)
+        });
+      }
 
       cycleStart = cycleEnd;
       periodIndex++;
@@ -396,15 +435,23 @@ const getInvoices = async () => {
       const cycleEnd = cycleStart + intervalMs;
       const startStr = new Date(cycleStart).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
       const endStr = new Date(cycleEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-      invoices.push({
-        id: `INV-${tenant.slug.toUpperCase()}-1001`,
-        tenantName: tenant.name,
-        plan: tenant.plan || "Starter",
-        period: `${startStr} - ${endStr}`,
-        amount: amount,
-        status: tenant.isActive ? "paid" : "overdue",
-        createdAt: startedAt
-      });
+      
+      const invoiceDate = startedAt;
+      let match = true;
+      if (filters.startDate && invoiceDate < new Date(filters.startDate)) match = false;
+      if (filters.endDate && invoiceDate > new Date(filters.endDate)) match = false;
+
+      if (match) {
+        invoices.push({
+          id: `INV-${tenant.slug.toUpperCase()}-1001`,
+          tenantName: tenant.name,
+          plan: tenant.plan || "Starter",
+          period: `${startStr} - ${endStr}`,
+          amount: amount,
+          status: tenant.isActive ? "paid" : "overdue",
+          createdAt: startedAt
+        });
+      }
     }
   }
 
@@ -495,7 +542,7 @@ const getTier = (points) => {
   return "bronze";
 };
 
-const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10 }) => {
+const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, startDate, endDate }) => {
   const skip = (page - 1) * limit;
   const where = {};
 
@@ -507,6 +554,12 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10 }) => 
       { email: { contains: cleanSearch, mode: "insensitive" } },
       { tenant: { name: { contains: cleanSearch, mode: "insensitive" } } },
     ];
+  }
+
+  if (startDate || endDate) {
+    where.joinedAt = {};
+    if (startDate) where.joinedAt.gte = new Date(startDate);
+    if (endDate) where.joinedAt.lte = new Date(endDate);
   }
 
   const [customers, total] = await Promise.all([
@@ -719,8 +772,16 @@ const getTenantUsers = async (tenantId) => {
   });
 };
 
-const getAllSystemUsers = async () => {
+const getAllSystemUsers = async (filters = {}) => {
+  const where = {};
+  if (filters.startDate || filters.endDate) {
+    where.createdAt = {};
+    if (filters.startDate) where.createdAt.gte = new Date(filters.startDate);
+    if (filters.endDate) where.createdAt.lte = new Date(filters.endDate);
+  }
+
   const superAdmins = await mainPrisma.superAdmin.findMany({
+    where,
     orderBy: { createdAt: "desc" }
   });
 
@@ -741,6 +802,7 @@ const getAllSystemUsers = async () => {
     try {
       const tenantPrisma = getTenantClient(tenant.dbUrl);
       const staffUsers = await tenantPrisma.user.findMany({
+        where,
         orderBy: { createdAt: "desc" }
       });
 

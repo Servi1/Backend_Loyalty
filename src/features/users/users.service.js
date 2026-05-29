@@ -1,7 +1,7 @@
 const ApiError = require("../../utils/ApiError");
 const bcrypt = require("bcryptjs");
 
-const getAllStaff = async (db, branchId) => {
+const getAllStaff = async (db, branchId, startDate, endDate) => {
   const where = {
     role: {
       in: ["BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN"]
@@ -9,6 +9,11 @@ const getAllStaff = async (db, branchId) => {
   };
   if (branchId) {
     where.branchId = branchId;
+  }
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) where.createdAt.gte = new Date(startDate);
+    if (endDate) where.createdAt.lte = new Date(endDate);
   }
   return db.user.findMany({
     where,
