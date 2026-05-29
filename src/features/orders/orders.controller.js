@@ -22,7 +22,13 @@ const getMyOrders = catchAsync(async (req, res) => {
 });
 
 const updateStatus = catchAsync(async (req, res) => {
-  const order = await ordersService.updateStatus(req.tenantDb, req.params.id, req.body.status, req.tenantId);
+  const order = await ordersService.updateStatus(
+    req.tenantDb,
+    req.params.id,
+    req.body.status,
+    req.tenantId,
+    req.body.notes
+  );
   // Notify via socket
   const io = req.app.get("io");
   if (io) {

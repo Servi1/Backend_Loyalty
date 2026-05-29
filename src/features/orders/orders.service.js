@@ -107,12 +107,18 @@ const getByUser = async (db, userId) =>
     orderBy: { createdAt: "desc" },
   });
 
-const updateStatus = async (db, id, status, tenantId) => {
+const updateStatus = async (db, id, status, tenantId, notes) => {
   const order = await db.order.findUnique({ where: { id } });
   if (!order) throw new ApiError(404, "Order not found");
+
+  const updateData = { status };
+  if (notes !== undefined) {
+    updateData.notes = notes;
+  }
+
   const updated = await db.order.update({
     where: { id },
-    data: { status },
+    data: updateData,
     include: { items: { include: { menuItem: true } }, user: true, table: true, branch: true }
   });
 
