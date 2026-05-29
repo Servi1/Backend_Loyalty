@@ -13,6 +13,7 @@ router.use(authenticate);
 router.post("/categories", authorize("ADMIN", "BRAND_MANAGER"), ctrl.createCategory);
 router.post("/items", authorize("ADMIN", "BRAND_MANAGER"), ctrl.createItem);
 router.put("/items/:id", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.updateItem);
+router.patch("/items/:id", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.updateItem);
 router.patch("/items/:id/toggle", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.toggleAvailability);
 router.delete("/items/:id", authorize("ADMIN", "BRAND_MANAGER"), ctrl.removeItem);
 
