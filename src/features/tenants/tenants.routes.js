@@ -6,8 +6,8 @@ const { extractTenant } = require("../../middlewares/tenantMiddleware");
 const router = Router();
 
 // Profile endpoints for active tenant owner/staff
-router.get("/profile/me", authenticate, extractTenant, ctrl.getProfile);
-router.put("/profile/me", authenticate, extractTenant, ctrl.updateProfile);
+router.get("/profile/me", extractTenant, authenticate, ctrl.getProfile);
+router.put("/profile/me", extractTenant, authenticate, ctrl.updateProfile);
 
 // Admin-only endpoints
 router.use(authenticate);

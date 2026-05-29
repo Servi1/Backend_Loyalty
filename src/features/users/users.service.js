@@ -4,7 +4,7 @@ const bcrypt = require("bcryptjs");
 const getAllStaff = async (db, branchId, startDate, endDate) => {
   const where = {
     role: {
-      in: ["BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN"]
+      in: ["BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN"]
     }
   };
   if (branchId) {
