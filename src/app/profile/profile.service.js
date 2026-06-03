@@ -11,16 +11,16 @@ const { syncToAggregatedCustomer } = require("../../shared/customers/customers.s
 // ─── Update profile ───────────────────────────────────────────────────────────
 
 const updateProfile = async (db, userId, { name, email, avatarUrl }, tenantId) => {
-  const user = await db.user.findUnique({ where: { id: userId } });
+  const user = await db.appUser.findUnique({ where: { id: userId } });
   if (!user) throw new ApiError(404, "User not found");
 
   // Email uniqueness check (if changing)
   if (email && email !== user.email) {
-    const exists = await db.user.findUnique({ where: { email } });
+    const exists = await db.appUser.findUnique({ where: { email } });
     if (exists) throw new ApiError(409, "That email is already in use");
   }
 
-  const updated = await db.user.update({
+  const updated = await db.appUser.update({
     where: { id: userId },
     data: {
       ...(name !== undefined && { name }),
@@ -41,11 +41,11 @@ const updateProfile = async (db, userId, { name, email, avatarUrl }, tenantId) =
 // ─── Delete / anonymise account ───────────────────────────────────────────────
 
 const deleteAccount = async (db, userId) => {
-  const user = await db.user.findUnique({ where: { id: userId } });
+  const user = await db.appUser.findUnique({ where: { id: userId } });
   if (!user) throw new ApiError(404, "User not found");
 
   // Anonymise instead of hard-delete — preserves order history integrity
-  await db.user.update({
+  await db.appUser.update({
     where: { id: userId },
     data: {
       name: "Deleted User",
@@ -66,7 +66,7 @@ const _formatProfile = (user) => ({
   phone: user.phone,
   email: user.email,
   avatarUrl: user.avatarUrl,
-  role: user.role,
+  role: "CUSTOMER",
   wallet: user.wallet
     ? { points: user.wallet.points, lifetimeEarn: user.wallet.lifetimeEarn }
     : null,

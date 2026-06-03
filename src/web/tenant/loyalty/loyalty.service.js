@@ -64,9 +64,8 @@ const searchCustomers = async (db, search) => {
   if (!query) return [];
 
   // 1. Search locally
-  const localCustomers = await db.user.findMany({
+  const localCustomers = await db.appUser.findMany({
     where: {
-      role: "CUSTOMER",
       OR: [
         { name: { contains: query, mode: "insensitive" } },
         { phone: { contains: query, mode: "insensitive" } },
@@ -102,7 +101,7 @@ const searchCustomers = async (db, search) => {
     if (alreadyLocal) continue;
 
     // Double check database if they exist but were missed by containing query match
-    const existingLocalUser = await db.user.findFirst({
+    const existingLocalUser = await db.appUser.findFirst({
       where: {
         OR: [
           match.phone ? { phone: match.phone } : null,
@@ -124,12 +123,11 @@ const searchCustomers = async (db, search) => {
     } else {
       // Auto-import global customer to the local tenant DB
       try {
-        const newUser = await db.user.create({
+        const newUser = await db.appUser.create({
           data: {
             name: match.name || "Walk-in Customer",
             phone: match.phone,
             email: match.email,
-            role: "CUSTOMER",
           },
         });
         const newWallet = await db.wallet.create({
@@ -159,8 +157,7 @@ const searchCustomers = async (db, search) => {
 };
 
 const getAllCustomersForReport = async (db) => {
-  const customers = await db.user.findMany({
-    where: { role: "CUSTOMER" },
+  const customers = await db.appUser.findMany({
     include: { wallet: true },
     orderBy: { createdAt: "desc" },
   });
@@ -198,7 +195,7 @@ const getAllTransactionsForReport = async (db) => {
 
 const createCustomer = async (db, { name, phone, email, points = 0 }, tenantId) => {
   // Check if customer already exists in this tenant DB
-  let user = await db.user.findFirst({
+  let user = await db.appUser.findFirst({
     where: {
       OR: [
         phone ? { phone } : null,
@@ -212,12 +209,11 @@ const createCustomer = async (db, { name, phone, email, points = 0 }, tenantId) 
   }
 
   // Create user locally
-  user = await db.user.create({
+  user = await db.appUser.create({
     data: {
       name,
       phone,
       email,
-      role: "CUSTOMER",
     },
   });
 

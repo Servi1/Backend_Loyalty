@@ -63,8 +63,9 @@ app.use("/api/tenant/:tenantId", tenantRouter);
 
 // 3. Mobile App API (/api/app/:tenantId/...)
 // Separate router so app endpoints never collide with dashboard routes.
+const { extractAppTenant } = require("./src/app/middlewares/appTenant.middleware");
 const appTenantRouter = express.Router({ mergeParams: true });
-appTenantRouter.use(extractTenant);
+appTenantRouter.use(extractAppTenant);
 appTenantRouter.use("/", appRouter);
 
 app.use("/api/app/:tenantId", appTenantRouter);

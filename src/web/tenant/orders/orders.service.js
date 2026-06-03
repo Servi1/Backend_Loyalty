@@ -8,7 +8,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
   try {
     let user = order.user;
     if (!user && order.userId) {
-      user = await db.user.findUnique({ where: { id: order.userId } });
+      user = await db.appUser.findUnique({ where: { id: order.userId } });
     }
     let branch = order.branch;
     if (!branch && order.branchId) {
@@ -127,7 +127,7 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
     include: { items: { include: { menuItem: true } }, user: true, table: true, branch: true }
   });
 
-  if (status === "COMPLETED" && updated.user && updated.user.role === "CUSTOMER") {
+  if (status === "COMPLETED" && updated.user) {
     // Do not award points if paid using loyalty points
     if (updated.notes && updated.notes.includes("Paid by Loyalty Points")) {
       // Sync to super admin aggregated orders asynchronously and return

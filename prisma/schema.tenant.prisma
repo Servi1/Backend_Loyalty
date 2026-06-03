@@ -19,7 +19,6 @@ enum Role {
   CASHIER
   WAITER
   KITCHEN
-  CUSTOMER
 }
 
 enum OrderStatus {
@@ -39,15 +38,15 @@ enum OrderType {
   SCHEDULED
 }
 
-// ─── Users ───────────────────────────────────────────
+// ─── Users (Staff) ───────────────────────────────────
 
 model User {
   id        String   @id @default(uuid())
   phone     String?  @unique
   email     String?  @unique
-  password  String?  // hashed — null for OTP-only customers
+  password  String?  // hashed
   name      String?
-  role      Role     @default(CUSTOMER)
+  role      Role     @default(CASHIER)
   avatarUrl String?
   pinCode   String?
 
@@ -55,6 +54,23 @@ model User {
   branchId  String?
   branch    Branch?  @relation(fields: [branchId], references: [id])
 
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([phone])
+  @@index([email])
+}
+
+// ─── App Users (Customers) ───────────────────────────
+
+model AppUser {
+  id        String   @id @default(uuid())
+  phone     String   @unique
+  email     String?  @unique
+  name      String?
+  avatarUrl String?
+
+  // Relations
   orders    Order[]
   wallet    Wallet?
 
@@ -156,7 +172,7 @@ model Order {
 
   // Relations
   userId   String
-  user     User   @relation(fields: [userId], references: [id])
+  user     AppUser @relation(fields: [userId], references: [id])
   branchId String
   branch   Branch @relation(fields: [branchId], references: [id])
   tableId  String?
@@ -188,7 +204,7 @@ model Wallet {
   lifetimeEarn Int    @default(0)
 
   userId String @unique
-  user   User   @relation(fields: [userId], references: [id])
+  user   AppUser @relation(fields: [userId], references: [id])
 
   transactions WalletTransaction[]
 

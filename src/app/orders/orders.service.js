@@ -23,7 +23,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
   try {
     let user = order.user;
     if (!user && order.userId) {
-      user = await db.user.findUnique({ where: { id: order.userId } });
+      user = await db.appUser.findUnique({ where: { id: order.userId } });
     }
     let branch = order.branch;
     if (!branch && order.branchId) {

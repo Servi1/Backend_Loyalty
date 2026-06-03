@@ -79,11 +79,11 @@ const verifyOtp = async (db, rawPhone, code, tenantId) => {
   await db.otp.update({ where: { id: otp.id }, data: { verified: true } });
 
   // ── Find or create user ──────────────────────────────────────────
-  let user = await db.user.findUnique({
+  let user = await db.appUser.findUnique({
     where: { phone },
     include: { wallet: true },
   });
-  const isNewUser = !user;
+  const isNewUser = !user || !user.name;
 
   if (!user) {
     // Check global registry — customer may already exist under another brand
@@ -94,12 +94,11 @@ const verifyOtp = async (db, rawPhone, code, tenantId) => {
 
     const initialPoints = globalCustomer?.points ?? 0;
 
-    user = await db.user.create({
+    user = await db.appUser.create({
       data: {
         phone,
         name: globalCustomer?.name ?? null,
         email: globalCustomer?.email ?? null,
-        role: "CUSTOMER",
       },
     });
 
@@ -149,7 +148,7 @@ const verifyOtp = async (db, rawPhone, code, tenantId) => {
 // ─── getMe ───────────────────────────────────────────────────────────────────
 
 const getMe = async (db, userId) => {
-  const user = await db.user.findUnique({
+  const user = await db.appUser.findUnique({
     where: { id: userId },
     include: {
       wallet: {
@@ -181,7 +180,7 @@ const _formatUser = (user) => ({
   name: user.name,
   phone: user.phone,
   email: user.email,
-  role: user.role,
+  role: "CUSTOMER",
   avatarUrl: user.avatarUrl,
   wallet: user.wallet
     ? {

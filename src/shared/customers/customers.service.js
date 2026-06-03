@@ -15,12 +15,12 @@ const getTier = (points) => {
  */
 const syncToAggregatedCustomer = async (db, tenantId, userId) => {
   try {
-    const user = await db.user.findUnique({
+    const user = await db.appUser.findUnique({
       where: { id: userId },
       include: { wallet: true },
     });
 
-    if (!user || user.role !== "CUSTOMER") return;
+    if (!user) return;
 
     const points = user.wallet?.points || 0;
     const tier = getTier(points);
@@ -103,8 +103,7 @@ const syncAllTenantCustomers = async () => {
     for (const tenant of tenants) {
       try {
         const tenantPrisma = getTenantClient(tenant.dbUrl);
-        const customers = await tenantPrisma.user.findMany({
-          where: { role: "CUSTOMER" },
+        const customers = await tenantPrisma.appUser.findMany({
           include: { wallet: true },
         });
 
