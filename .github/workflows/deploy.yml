@@ -1,0 +1,26 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            cd ~/servi/Backend_Loyalty
+            git pull origin main
+            npm install --omit=dev
+            npm run prisma:generate
+            npx prisma db push --schema=prisma/schema.main.prisma
+            npx prisma db push --schema=prisma/schema.tenant.prisma
+            pm2 restart server || pm2 start server.js
