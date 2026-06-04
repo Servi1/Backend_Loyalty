@@ -64,11 +64,15 @@ model User {
 // ─── App Users (Customers) ───────────────────────────
 
 model AppUser {
-  id        String   @id @default(uuid())
-  phone     String   @unique
-  email     String?  @unique
-  name      String?
-  avatarUrl String?
+  id             String   @id @default(uuid())
+  phone          String   @unique
+  email          String?  @unique
+  name           String?
+  avatarUrl      String?
+  cars           Json?    @default("[]")
+  addresses      Json?    @default("[]")
+  paymentMethods Json?    @default("[]")
+  favoriteBrands Json?    @default("[]")
 
   // Relations
   orders    Order[]

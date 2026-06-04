@@ -137,11 +137,15 @@ const verifyOtp = async (db, rawPhone, code, tenantId) => {
   }
 
   const token = signToken(user.id);
+  const stats = await _getUserStats(db, user.id);
 
   return {
     token,
     isNewUser,
-    user: _formatUser(user),
+    user: {
+      ...(await _formatUser(user)),
+      ...stats,
+    },
   };
 };
 
@@ -162,10 +166,67 @@ const getMe = async (db, userId) => {
     },
   });
   if (!user) throw new ApiError(404, "User not found");
-  return _formatUser(user);
+
+  const stats = await _getUserStats(db, userId);
+
+  return {
+    ...(await _formatUser(user)),
+    ...stats,
+  };
 };
 
 // ─── Private helpers ─────────────────────────────────────────────────────────
+
+const getFavoriteBrandsDetails = async (brandIds) => {
+  if (!brandIds || !Array.isArray(brandIds) || brandIds.length === 0) {
+    return [];
+  }
+  const tenants = await mainPrisma.tenant.findMany({
+    where: {
+      OR: [
+        { id: { in: brandIds } },
+        { slug: { in: brandIds } }
+      ]
+    },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      logoUrl: true,
+      primaryColor: true,
+      accentColor: true,
+    }
+  });
+
+  return tenants.map(t => ({
+    id: t.id,
+    name: t.name,
+    logo: t.logoUrl || 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=100&h=100&fit=crop',
+    hero: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&h=400&fit=crop',
+    slug: t.slug,
+    isFavorite: true,
+    cuisine: 'Restaurant',
+  }));
+};
+
+const _getUserStats = async (db, userId) => {
+  const ordersCount = await db.order.count({
+    where: { userId },
+  });
+
+  const totalSpentResult = await db.order.aggregate({
+    where: {
+      userId,
+      status: "COMPLETED",
+    },
+    _sum: {
+      total: true,
+    },
+  });
+  const totalSpent = totalSpentResult._sum.total || 0.0;
+
+  return { ordersCount, totalSpent };
+};
 
 const _generateSecureOtp = (length = 6) => {
   let code = "";
@@ -175,22 +236,30 @@ const _generateSecureOtp = (length = 6) => {
   return code;
 };
 
-const _formatUser = (user) => ({
-  id: user.id,
-  name: user.name,
-  phone: user.phone,
-  email: user.email,
-  role: "CUSTOMER",
-  avatarUrl: user.avatarUrl,
-  wallet: user.wallet
-    ? {
-        id: user.wallet.id,
-        points: user.wallet.points,
-        lifetimeEarn: user.wallet.lifetimeEarn,
-        transactions: user.wallet.transactions ?? [],
-      }
-    : null,
-  createdAt: user.createdAt,
-});
+const _formatUser = async (user) => {
+  const favoriteBrandsDetails = await getFavoriteBrandsDetails(user.favoriteBrands || []);
+  return {
+    id: user.id,
+    name: user.name,
+    phone: user.phone,
+    email: user.email,
+    role: "CUSTOMER",
+    avatarUrl: user.avatarUrl,
+    cars: user.cars || [],
+    addresses: user.addresses || [],
+    paymentMethods: user.paymentMethods || [],
+    favoriteBrands: user.favoriteBrands || [],
+    favoriteBrandsDetails,
+    wallet: user.wallet
+      ? {
+          id: user.wallet.id,
+          points: user.wallet.points,
+          lifetimeEarn: user.wallet.lifetimeEarn,
+          transactions: user.wallet.transactions ?? [],
+        }
+      : null,
+    createdAt: user.createdAt,
+  };
+};
 
 module.exports = { sendOtp, verifyOtp, getMe, normalisePhone };
