@@ -219,11 +219,15 @@ const getSubscriptions = async () => {
   let expiringSoonCount = 0;
 
   for (const tenant of tenants) {
-    const planName = (tenant.plan || "starter").toLowerCase();
     let amount = 0;
-    if (planName === "starter") amount = 99;
-    else if (planName === "growth" || planName === "professional") amount = 199;
-    else if (planName === "enterprise") amount = 499;
+    const activeFeatures = [];
+    if (tenant.subAppServi) { amount += 29; activeFeatures.push("APP servi"); }
+    if (tenant.subAppBrand) { amount += 99; activeFeatures.push("APP brand"); }
+    if (tenant.subPos) { amount += 49; activeFeatures.push("POS"); }
+    if (tenant.subQrTable) { amount += 19; activeFeatures.push("QR Table"); }
+    if (tenant.subQrCashier) { amount += 9; activeFeatures.push("QR Cashier"); }
+
+    const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
 
     const startedAt = tenant.createdAt;
     const isYearly = tenant.billingCycle === "yearly";
@@ -276,7 +280,12 @@ const getSubscriptions = async () => {
       amount: amount,
       startedAt: startedAt,
       endsAt: endsAt,
-      branches: branchesList
+      branches: branchesList,
+      subAppServi: tenant.subAppServi,
+      subAppBrand: tenant.subAppBrand,
+      subPos: tenant.subPos,
+      subQrTable: tenant.subQrTable,
+      subQrCashier: tenant.subQrCashier,
     });
   }
 
@@ -379,11 +388,15 @@ const getInvoices = async (filters = {}) => {
   const invoices = [];
 
   for (const tenant of tenants) {
-    const planName = (tenant.plan || "starter").toLowerCase();
     let amount = 0;
-    if (planName === "starter") amount = 99;
-    else if (planName === "growth" || planName === "professional") amount = 199;
-    else if (planName === "enterprise") amount = 499;
+    const activeFeatures = [];
+    if (tenant.subAppServi) { amount += 29; activeFeatures.push("APP servi"); }
+    if (tenant.subAppBrand) { amount += 99; activeFeatures.push("APP brand"); }
+    if (tenant.subPos) { amount += 49; activeFeatures.push("POS"); }
+    if (tenant.subQrTable) { amount += 19; activeFeatures.push("QR Table"); }
+    if (tenant.subQrCashier) { amount += 9; activeFeatures.push("QR Cashier"); }
+
+    const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
 
     const startedAt = tenant.createdAt;
     const isYearly = tenant.billingCycle === "yearly";
@@ -418,7 +431,7 @@ const getInvoices = async (filters = {}) => {
         invoices.push({
           id: `INV-${tenant.slug.toUpperCase()}-${1000 + periodIndex}`,
           tenantName: tenant.name,
-          plan: tenant.plan || "Starter",
+          plan: planName,
           period: `${startStr} - ${endStr}`,
           amount: amount,
           status: status,
@@ -445,7 +458,7 @@ const getInvoices = async (filters = {}) => {
         invoices.push({
           id: `INV-${tenant.slug.toUpperCase()}-1001`,
           tenantName: tenant.name,
-          plan: tenant.plan || "Starter",
+          plan: planName,
           period: `${startStr} - ${endStr}`,
           amount: amount,
           status: tenant.isActive ? "paid" : "overdue",

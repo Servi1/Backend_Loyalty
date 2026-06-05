@@ -60,6 +60,11 @@ model Tenant {
   notes            String?
   subscriptionTier SubscriptionTier @default(FREE)
   plan             String?          @default("starter")
+  subAppServi      Boolean          @default(false)
+  subAppBrand      Boolean          @default(false)
+  subPos           Boolean          @default(false)
+  subQrTable       Boolean          @default(false)
+  subQrCashier     Boolean          @default(false)
 
   // ─── Feature Flags
   notificationsEnabled Boolean @default(true)
