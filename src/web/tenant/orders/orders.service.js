@@ -7,7 +7,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
   try {
     let customerName = "Customer Walk-in";
     if (order.customerId) {
-      const customer = await mainPrisma.customer.findUnique({ where: { id: order.customerId } });
+      const customer = await mainPrisma.appUser.findUnique({ where: { id: order.customerId } });
       if (customer) {
         customerName = customer.name || customer.phone || "Customer Walk-in";
       }
@@ -151,7 +151,7 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
     }
 
     try {
-      const customer = await mainPrisma.customer.findUnique({
+      const customer = await mainPrisma.appUser.findUnique({
         where: { id: updated.customerId },
         include: { wallet: true }
       });

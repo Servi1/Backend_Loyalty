@@ -103,17 +103,36 @@ model AggregatedOrder {
   @@index([createdAt])
 }
 
-// ─── Global Loyalty Customers ────────────────────────
-
-model Customer {
-  id        String   @id @default(uuid())
-  phone     String   @unique
-  email     String?  @unique
-  name      String?
+// ─── Global App Users ────────────────────────────────
+ 
+model AppUser {
+  id             String   @id @default(uuid())
+  phone          String   @unique
+  email          String?  @unique
+  name           String?
+  avatarUrl      String?
+  cars           Json?    @default("[]")
+  addresses      Json?    @default("[]")
+  paymentMethods Json?    @default("[]")
+  favoriteBrands Json?    @default("[]")
+ 
+  // Relations
+  orders    Order[]
+  wallet    Wallet?
+ 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+ 
+  @@index([phone])
+  @@index([email])
+}
 
-  wallet              Wallet?
+model Order {
+  id        String   @id @default(uuid())
+  appUserId String
+  appUser   AppUser  @relation(fields: [appUserId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ─── Global Loyalty Wallets ──────────────────────────
@@ -122,11 +141,12 @@ model Wallet {
   id           String              @id @default(uuid())
   points       Int                 @default(0)
   lifetimeEarn Int                 @default(0)
+  tier         String?             @default("bronze")
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 
-  customerId   String              @unique
-  customer     Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  appUserId    String              @unique
+  appUser      AppUser             @relation(fields: [appUserId], references: [id], onDelete: Cascade)
 
   transactions WalletTransaction[]
 }

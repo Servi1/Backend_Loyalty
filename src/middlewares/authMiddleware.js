@@ -22,7 +22,7 @@ const authenticate = async (req, _res, next) => {
       req.admin = admin;
       req.user = { id: admin.id, role: "SUPER_ADMIN" }; // standardize for authorize middleware
     } else if (decoded.type === "customer") {
-      const customer = await mainPrisma.customer.findUnique({ where: { id: decoded.sub } });
+      const customer = await mainPrisma.appUser.findUnique({ where: { id: decoded.sub } });
       if (!customer) throw new ApiError(401, "Customer no longer exists");
       req.user = {
         id: customer.id,

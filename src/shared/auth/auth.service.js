@@ -59,52 +59,25 @@ const verifyOtp = async (db, phone, code, tenantId) => {
 
   await db.otp.update({ where: { id: otp.id }, data: { verified: true } });
 
-  let customer = await mainPrisma.customer.findUnique({ where: { phone } });
+  let customer = await mainPrisma.appUser.findUnique({ where: { phone } });
   const isNewUser = !customer;
 
   if (!customer) {
-    // Check if customer has an aggregated customer profile registered
-    const agg = await mainPrisma.aggregatedCustomer.findFirst({
-      where: { phone },
-      orderBy: { updatedAt: "desc" },
-    });
-
-    customer = await mainPrisma.customer.create({
+    customer = await mainPrisma.appUser.create({
       data: {
         phone,
-        name: agg?.name || null,
-        email: agg?.email || null,
       },
     });
   }
 
   // Make sure global Wallet exists
-  let wallet = await mainPrisma.wallet.findUnique({ where: { customerId: customer.id } });
+  let wallet = await mainPrisma.wallet.findUnique({ where: { appUserId: customer.id } });
   if (!wallet) {
     wallet = await mainPrisma.wallet.create({
       data: {
-        customerId: customer.id,
+        appUserId: customer.id,
         points: 0,
         lifetimeEarn: 0,
-      },
-    });
-  }
-
-  // Ensure AggregatedCustomer link exists for this tenant
-  if (tenantId) {
-    const aggId = `${tenantId}_${customer.id}`;
-    await mainPrisma.aggregatedCustomer.upsert({
-      where: { id: aggId },
-      update: {},
-      create: {
-        id: aggId,
-        tenantId,
-        customerId: customer.id,
-        name: customer.name,
-        phone: customer.phone,
-        email: customer.email,
-        points: wallet.points,
-        joinedAt: new Date(),
       },
     });
   }
