@@ -18,5 +18,6 @@ router.use(authenticate, requireCustomer);
 
 router.get("/", ctrl.getWallet);
 router.get("/transactions", ctrl.getTransactions);
+router.post("/transfer", ctrl.transferPoints);
 
 module.exports = router;

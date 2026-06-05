@@ -15,4 +15,15 @@ const getTransactions = catchAsync(async (req, res) => {
   res.json({ success: true, ...result });
 });
 
-module.exports = { getWallet, getTransactions };
+// ─── POST /wallet/transfer ───────────────────────────────────────────────────
+const transferPoints = catchAsync(async (req, res) => {
+  const { recipientPhone, points, message } = req.body;
+  const result = await walletService.transferPoints(req.tenantDb, req.tenantId, req.user.id, {
+    recipientPhone,
+    points: parseInt(points),
+    message
+  });
+  res.json({ success: true, message: "Points transferred successfully", data: result });
+});
+
+module.exports = { getWallet, getTransactions, transferPoints };
