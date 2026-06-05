@@ -7,7 +7,7 @@ const execPromise = util.promisify(exec);
 const config = require("../../../config");
 const bcrypt = require("bcryptjs");
 const { getTenantClient } = require("../../../config/tenantManager");
-const { syncToAggregatedCustomer } = require("../../../shared/customers/customers.service");
+
 
 const getAll = async (filters = {}) => {
   const where = {};
@@ -334,15 +334,15 @@ const getLoyaltyOverview = async (filters = {}) => {
         where: customerWhere
       });
 
-      const txWhere = { points: { lt: 0 } };
+      const txWhere = { points: { lt: 0 }, tenantId: tenant.id };
       if (filters.startDate || filters.endDate) {
         txWhere.createdAt = {};
         if (filters.startDate) txWhere.createdAt.gte = new Date(filters.startDate);
         if (filters.endDate) txWhere.createdAt.lte = new Date(filters.endDate);
       }
 
-      // Count redemptions: WalletTransaction table where points is negative
-      redemptionsCount = await tenantPrisma.walletTransaction.count({
+      // Count redemptions: WalletTransaction table in main registry
+      redemptionsCount = await mainPrisma.walletTransaction.count({
         where: txWhere
       });
     } catch (err) {
@@ -565,39 +565,38 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
       { name: { contains: cleanSearch, mode: "insensitive" } },
       { phone: { contains: cleanSearch, mode: "insensitive" } },
       { email: { contains: cleanSearch, mode: "insensitive" } },
-      { tenant: { name: { contains: cleanSearch, mode: "insensitive" } } },
     ];
   }
 
   if (startDate || endDate) {
-    where.joinedAt = {};
-    if (startDate) where.joinedAt.gte = new Date(startDate);
-    if (endDate) where.joinedAt.lte = new Date(endDate);
+    where.createdAt = {};
+    if (startDate) where.createdAt.gte = new Date(startDate);
+    if (endDate) where.createdAt.lte = new Date(endDate);
   }
 
   const [customers, total] = await Promise.all([
-    mainPrisma.aggregatedCustomer.findMany({
+    mainPrisma.customer.findMany({
       where,
-      include: { tenant: true },
-      orderBy: { joinedAt: "desc" },
+      include: { wallet: true },
+      orderBy: { createdAt: "desc" },
       skip,
       take: limit,
     }),
-    mainPrisma.aggregatedCustomer.count({ where }),
+    mainPrisma.customer.count({ where }),
   ]);
 
   return {
     customers: customers.map((c) => ({
       id: c.id,
-      customerId: c.customerId,
-      tenantId: c.tenantId,
-      name: c.name,
+      customerId: c.id,
+      tenantId: null,
+      name: c.name || "Unnamed",
       phone: c.phone,
       email: c.email,
-      tenantName: c.tenant?.name || "Unknown Brand",
-      points: c.points,
-      tier: c.tier,
-      joinedAt: c.joinedAt,
+      tenantName: "Servio Platform",
+      points: c.wallet?.points || 0,
+      tier: getTier(c.wallet?.points || 0),
+      joinedAt: c.createdAt,
     })),
     pagination: {
       total,
@@ -609,35 +608,45 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
 };
 
 const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
-  const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-  if (!tenant) throw new ApiError(404, "Tenant not found");
+  const tenant = tenantId ? await mainPrisma.tenant.findUnique({ where: { id: tenantId } }) : null;
 
-  const tenantPrisma = getTenantClient(tenant.dbUrl);
-  const user = await tenantPrisma.user.findUnique({
-    where: { id: customerId },
+  const customer = await mainPrisma.customer.findUnique({
+    where: { id: customerId }
+  });
+  if (!customer) throw new ApiError(404, "Customer not found");
+
+  // Get global wallet
+  const wallet = await mainPrisma.wallet.findUnique({
+    where: { customerId },
     include: {
-      wallet: {
-        include: {
-          transactions: { orderBy: { createdAt: "desc" }, take: 50 },
-        },
-      },
-      orders: {
-        include: {
-          items: { include: { menuItem: true } },
-          branch: true,
-        },
+      transactions: {
         orderBy: { createdAt: "desc" },
         take: 50,
       },
     },
   });
 
-  if (!user || user.role !== "CUSTOMER") {
-    throw new ApiError(404, "Customer not found");
+  const orders = [];
+  if (tenant) {
+    try {
+      const tenantPrisma = getTenantClient(tenant.dbUrl);
+      const tenantOrders = await tenantPrisma.order.findMany({
+        where: { customerId },
+        include: {
+          items: { include: { menuItem: true } },
+          branch: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      });
+      orders.push(...tenantOrders);
+    } catch (err) {
+      console.error(`Failed to fetch orders from tenant ${tenant.name} for customer details:`, err.message);
+    }
   }
 
   // Deterministic visits derived from orders since there is no native visit table
-  const visits = user.orders.map((o) => ({
+  const visits = orders.map((o) => ({
     id: `v_${o.id}`,
     date: o.createdAt.toISOString().slice(0, 10),
     branch: o.branch?.name || "Downtown Flagship",
@@ -645,7 +654,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     duration: `${Math.floor(20 + (o.total % 40))} min`,
   }));
 
-  const pointsHistory = (user.wallet?.transactions || []).map((t) => ({
+  const pointsHistory = (wallet?.transactions || []).map((t) => ({
     id: t.id,
     date: t.createdAt.toISOString().slice(0, 10),
     type: t.points > 0 ? "earned" : "redeemed",
@@ -653,11 +662,11 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     reason: t.description || "Loyalty points transaction",
   }));
 
-  const orderHistory = user.orders.map((o) => {
-    const earnPointsTx = (user.wallet?.transactions || []).find(
+  const orderHistory = orders.map((o) => {
+    const earnPointsTx = (wallet?.transactions || []).find(
       (tx) => tx.description && tx.description.includes(o.orderNumber)
     );
-    const pointsEarned = earnPointsTx ? Math.abs(earnPointsTx.points) : Math.floor(o.total * tenant.loyaltyEarnRate);
+    const pointsEarned = earnPointsTx ? Math.abs(earnPointsTx.points) : Math.floor(o.total * (tenant?.loyaltyEarnRate || 1.0));
 
     return {
       id: o.id,
@@ -670,16 +679,16 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
   });
 
   return {
-    id: user.id,
-    customerId: user.id,
-    tenantId: tenant.id,
-    name: user.name || "Walk-in Customer",
-    phone: user.phone || null,
-    email: user.email || null,
-    tenantName: tenant.name,
-    points: user.wallet?.points || 0,
-    tier: getTier(user.wallet?.points || 0),
-    joinedAt: user.createdAt,
+    id: customer.id,
+    customerId: customer.id,
+    tenantId: tenant?.id || null,
+    name: customer.name || "Walk-in Customer",
+    phone: customer.phone || null,
+    email: customer.email || null,
+    tenantName: tenant?.name || "Servio Platform",
+    points: wallet?.points || 0,
+    tier: getTier(wallet?.points || 0),
+    joinedAt: customer.createdAt,
     pointsHistory,
     orders: orderHistory,
     visits,
@@ -687,91 +696,67 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
 };
 
 const addSuperAdminCustomer = async ({ tenantId, name, phone, email, points = 0 }) => {
-  const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-  if (!tenant) throw new ApiError(404, "Tenant not found");
+  const tenant = tenantId ? await mainPrisma.tenant.findUnique({ where: { id: tenantId } }) : null;
 
-  const tenantPrisma = getTenantClient(tenant.dbUrl);
+  if (!phone) throw new ApiError(400, "Phone number is required");
 
-  // Check if user already exists
-  let user = await tenantPrisma.user.findFirst({
-    where: {
-      OR: [
-        phone ? { phone } : null,
-        email ? { email } : null,
-      ].filter(Boolean),
-    },
-  });
-
-  if (user) {
-    throw new ApiError(400, "Customer with this phone or email already exists in this brand");
+  let customer = await mainPrisma.customer.findUnique({ where: { phone } });
+  if (customer) {
+    throw new ApiError(400, "Customer with this phone already exists");
+  } else {
+    customer = await mainPrisma.customer.create({
+      data: { name, phone, email },
+    });
   }
 
-  // Create user
-  user = await tenantPrisma.user.create({
-    data: {
-      name,
-      phone,
-      email,
-      role: "CUSTOMER",
-    },
-  });
-
-  // Create wallet
-  const wallet = await tenantPrisma.wallet.create({
-    data: {
-      userId: user.id,
-      points,
-      lifetimeEarn: points,
-    },
-  });
-
-  if (points > 0) {
-    await tenantPrisma.walletTransaction.create({
+  // Create/update global wallet
+  let wallet = await mainPrisma.wallet.findUnique({ where: { customerId: customer.id } });
+  if (!wallet) {
+    wallet = await mainPrisma.wallet.create({
       data: {
-        walletId: wallet.id,
+        customerId: customer.id,
         points,
-        description: "Starting balance (Admin enrolled)",
+        lifetimeEarn: points,
+      },
+    });
+  } else if (points > 0) {
+    wallet = await mainPrisma.wallet.update({
+      where: { customerId: customer.id },
+      data: {
+        points: { increment: points },
+        lifetimeEarn: { increment: points },
       },
     });
   }
 
-  // Sync
-  await syncToAggregatedCustomer(tenantPrisma, tenant.id, user.id);
+  if (points > 0) {
+    await mainPrisma.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        points,
+        description: "Starting balance (Admin enrolled)",
+        tenantId: tenant?.id || null,
+      },
+    });
+  }
 
   return {
-    id: `${tenant.id}_${user.id}`,
-    customerId: user.id,
-    tenantId: tenant.id,
-    name: user.name,
-    phone: user.phone,
-    email: user.email,
-    tenantName: tenant.name,
-    points,
-    tier: getTier(points),
-    joinedAt: user.createdAt,
+    id: customer.id,
+    customerId: customer.id,
+    tenantId: tenant?.id || null,
+    name: customer.name,
+    phone: customer.phone,
+    email: customer.email,
+    tenantName: tenant?.name || "Servio Platform",
+    points: wallet.points,
+    tier: getTier(wallet.points),
+    joinedAt: customer.createdAt,
   };
 };
 
 const deleteSuperAdminCustomer = async (tenantId, customerId) => {
-  const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-  if (!tenant) throw new ApiError(404, "Tenant not found");
-
-  const tenantPrisma = getTenantClient(tenant.dbUrl);
-  
-  try {
-    const wallet = await tenantPrisma.wallet.findUnique({ where: { userId: customerId } });
-    if (wallet) {
-      await tenantPrisma.walletTransaction.deleteMany({ where: { walletId: wallet.id } });
-      await tenantPrisma.wallet.delete({ where: { id: wallet.id } });
-    }
-    await tenantPrisma.user.delete({ where: { id: customerId } });
-  } catch (err) {
-    console.error("Failed to delete user manually:", err.message);
-    throw new ApiError(500, "Failed to delete customer from tenant database");
-  }
-
-  await mainPrisma.aggregatedCustomer.deleteMany({
-    where: { tenantId, customerId }
+  await mainPrisma.customer.delete({
+    where: { id: customerId }
   });
 };
 

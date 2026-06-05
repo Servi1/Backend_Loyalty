@@ -2,7 +2,15 @@ const catchAsync = require("../../../utils/catchAsync");
 const ordersService = require("./orders.service");
 
 const create = catchAsync(async (req, res) => {
-  const order = await ordersService.create(req.tenantDb, { userId: req.user.id, ...req.body }, req.tenantId);
+  const isCustomer = req.user.role === "CUSTOMER";
+  const userId = isCustomer ? null : req.user.id;
+  const customerId = isCustomer ? req.user.id : req.body.customerId;
+
+  const order = await ordersService.create(
+    req.tenantDb,
+    { userId, customerId, ...req.body },
+    req.tenantId
+  );
   // Emit to Socket.io so cashier POS receives instantly
   const io = req.app.get("io");
   if (io) {
@@ -18,7 +26,10 @@ const getByBranch = catchAsync(async (req, res) => {
 });
 
 const getMyOrders = catchAsync(async (req, res) => {
-  const orders = await ordersService.getByUser(req.tenantDb, req.user.id);
+  const isCustomer = req.user.role === "CUSTOMER";
+  const orders = isCustomer
+    ? await ordersService.getByCustomer(req.tenantDb, req.user.id)
+    : await ordersService.getByUser(req.tenantDb, req.user.id);
   res.json({ success: true, data: orders });
 });
 

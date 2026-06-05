@@ -44,7 +44,7 @@ const sendOtp = async (db, phone) => {
   return { message: "OTP sent" };
 };
 
-const { syncToAggregatedCustomer } = require("../customers/customers.service");
+
 
 /**
  * Verify OTP and return a token + user (creates user if first login).
@@ -59,56 +59,58 @@ const verifyOtp = async (db, phone, code, tenantId) => {
 
   await db.otp.update({ where: { id: otp.id }, data: { verified: true } });
 
-  let user = await db.user.findUnique({ where: { phone }, include: { wallet: true } });
-  const isNewUser = !user;
+  let customer = await mainPrisma.customer.findUnique({ where: { phone } });
+  const isNewUser = !customer;
 
-  if (user) {
-    // Sync points to global balance if out of sync
-    const globalCustomer = await mainPrisma.aggregatedCustomer.findFirst({
-      where: { phone },
-      orderBy: { updatedAt: "desc" },
-    });
-    if (globalCustomer && user.wallet && user.wallet.points !== globalCustomer.points) {
-      await db.wallet.update({
-        where: { id: user.wallet.id },
-        data: { points: globalCustomer.points }
-      });
-      user.wallet.points = globalCustomer.points;
-    }
-  } else {
-    // Check if customer exists in another tenant's database via the aggregated table
-    const globalCustomer = await mainPrisma.aggregatedCustomer.findFirst({
+  if (!customer) {
+    // Check if customer has an aggregated customer profile registered
+    const agg = await mainPrisma.aggregatedCustomer.findFirst({
       where: { phone },
       orderBy: { updatedAt: "desc" },
     });
 
-    const initialPoints = globalCustomer ? globalCustomer.points : 0;
-
-    user = await db.user.create({
+    customer = await mainPrisma.customer.create({
       data: {
         phone,
-        name: globalCustomer?.name || null,
-        email: globalCustomer?.email || null,
-        role: "CUSTOMER",
+        name: agg?.name || null,
+        email: agg?.email || null,
       },
     });
-
-    // Create wallet with matched global points balance
-    await db.wallet.create({
-      data: {
-        userId: user.id,
-        points: initialPoints,
-        lifetimeEarn: initialPoints,
-      },
-    });
-
-    if (tenantId) {
-      syncToAggregatedCustomer(db, tenantId, user.id).catch(console.error);
-    }
   }
 
-  const token = signToken(user.id, "user");
-  return { token, user, isNewUser };
+  // Make sure global Wallet exists
+  let wallet = await mainPrisma.wallet.findUnique({ where: { customerId: customer.id } });
+  if (!wallet) {
+    wallet = await mainPrisma.wallet.create({
+      data: {
+        customerId: customer.id,
+        points: 0,
+        lifetimeEarn: 0,
+      },
+    });
+  }
+
+  // Ensure AggregatedCustomer link exists for this tenant
+  if (tenantId) {
+    const aggId = `${tenantId}_${customer.id}`;
+    await mainPrisma.aggregatedCustomer.upsert({
+      where: { id: aggId },
+      update: {},
+      create: {
+        id: aggId,
+        tenantId,
+        customerId: customer.id,
+        name: customer.name,
+        phone: customer.phone,
+        email: customer.email,
+        points: wallet.points,
+        joinedAt: new Date(),
+      },
+    });
+  }
+
+  const token = signToken(customer.id, "customer");
+  return { token, user: { ...customer, role: "CUSTOMER" }, isNewUser };
 };
 
 /**
@@ -117,6 +119,10 @@ const verifyOtp = async (db, phone, code, tenantId) => {
 const loginWithEmail = async (db, email, password) => {
   const user = await db.user.findUnique({ where: { email }, include: { branch: true } });
   if (!user) throw new ApiError(401, "Invalid credentials");
+
+  if (user.branch && !user.branch.isOpen && user.role !== "BRAND_MANAGER") {
+    throw new ApiError(403, "This branch is currently deactivated.");
+  }
 
   // Check if PIN code is provided as password for cashier/waiter
   if (user.pinCode && password === user.pinCode) {

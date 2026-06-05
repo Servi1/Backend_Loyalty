@@ -1,15 +1,23 @@
 const ApiError = require("../../../utils/ApiError");
 const crypto = require("crypto");
 const mainPrisma = require("../../../config/prisma");
-const { syncToAggregatedCustomer } = require("../../../shared/customers/customers.service");
 
 const syncToAggregatedOrder = async (db, tenantId, order) => {
   if (!tenantId) return;
   try {
-    let user = order.user;
-    if (!user && order.userId) {
-      user = await db.user.findUnique({ where: { id: order.userId } });
+    let customerName = "Customer Walk-in";
+    if (order.customerId) {
+      const customer = await mainPrisma.customer.findUnique({ where: { id: order.customerId } });
+      if (customer) {
+        customerName = customer.name || customer.phone || "Customer Walk-in";
+      }
+    } else if (order.userId) {
+      const user = await db.user.findUnique({ where: { id: order.userId } });
+      if (user) {
+        customerName = user.name || user.phone || "Customer Walk-in";
+      }
     }
+
     let branch = order.branch;
     if (!branch && order.branchId) {
       branch = await db.branch.findUnique({ where: { id: order.branchId } });
@@ -26,7 +34,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         type: order.type,
         total: order.total,
         notes: order.notes,
-        customerName: user?.name || user?.phone || "Customer Walk-in",
+        customerName,
         branchName: branch?.name || "Register Terminal",
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
@@ -35,7 +43,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         status: order.status,
         total: order.total,
         notes: order.notes,
-        customerName: user?.name || user?.phone || "Customer Walk-in",
+        customerName,
         branchName: branch?.name || "Register Terminal",
         updatedAt: order.updatedAt,
       }
@@ -53,7 +61,7 @@ const generateOrderNumber = () => {
   return `SRV-${hex}`;
 };
 
-const create = async (db, { userId, branchId, tableId, type, items, notes, total }, tenantId) => {
+const create = async (db, { userId, customerId, branchId, tableId, type, items, notes, total }, tenantId) => {
   // Calculate total from items
   const menuItemIds = items.map((i) => i.menuItemId);
   const menuItems = await db.menuItem.findMany({ where: { id: { in: menuItemIds } } });
@@ -67,13 +75,14 @@ const create = async (db, { userId, branchId, tableId, type, items, notes, total
     return { menuItemId: item.menuItemId, quantity: item.quantity || 1, price: menuItem.price, notes: item.notes };
   });
 
-  // Use the passed total (which includes tax and discount) if provided; otherwise fall back to subtotal
+  // Use the passed total if provided; otherwise fall back to subtotal
   const finalTotal = typeof total === "number" ? total : subtotal;
 
   const order = await db.order.create({
     data: {
       orderNumber: generateOrderNumber(),
-      userId,
+      userId: userId || null,
+      customerId: customerId || null,
       branchId,
       tableId: tableId || null,
       type: type || "DINE_IN",
@@ -112,6 +121,13 @@ const getByUser = async (db, userId) =>
     orderBy: { createdAt: "desc" },
   });
 
+const getByCustomer = async (db, customerId) =>
+  db.order.findMany({
+    where: { customerId },
+    include: { items: { include: { menuItem: true } }, branch: true },
+    orderBy: { createdAt: "desc" },
+  });
+
 const updateStatus = async (db, id, status, tenantId, notes) => {
   const order = await db.order.findUnique({ where: { id } });
   if (!order) throw new ApiError(404, "Order not found");
@@ -127,48 +143,34 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
     include: { items: { include: { menuItem: true } }, user: true, table: true, branch: true }
   });
 
-  if (status === "COMPLETED" && updated.user && updated.user.role === "CUSTOMER") {
+  if (status === "COMPLETED" && updated.customerId) {
     // Do not award points if paid using loyalty points
     if (updated.notes && updated.notes.includes("Paid by Loyalty Points")) {
-      // Sync to super admin aggregated orders asynchronously and return
       syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
       return updated;
     }
 
     try {
-      const wallet = await db.wallet.findUnique({ where: { userId: updated.userId } });
-      if (wallet) {
+      const customer = await mainPrisma.customer.findUnique({
+        where: { id: updated.customerId },
+        include: { wallet: true }
+      });
+      if (customer && customer.wallet) {
         const description = `Earned on Order #${updated.orderNumber}`;
-        const alreadyEarned = await db.walletTransaction.findFirst({
+        const tx = await mainPrisma.walletTransaction.findFirst({
           where: {
-            walletId: wallet.id,
+            walletId: customer.wallet.id,
             description,
           }
         });
 
-        if (!alreadyEarned) {
+        if (!tx) {
           const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
           const earnRate = tenant ? tenant.loyaltyEarnRate : 1.0;
           const pointsToEarn = Math.floor(updated.total * earnRate);
           if (pointsToEarn > 0) {
-            await db.wallet.update({
-              where: { userId: updated.userId },
-              data: {
-                points: { increment: pointsToEarn },
-                lifetimeEarn: { increment: pointsToEarn },
-              }
-            });
-            await db.walletTransaction.create({
-              data: {
-                walletId: wallet.id,
-                points: pointsToEarn,
-                description,
-              }
-            });
-
-            if (tenantId) {
-              await syncToAggregatedCustomer(db, tenantId, updated.userId);
-            }
+            const loyaltyService = require("../loyalty/loyalty.service");
+            await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId);
           }
         }
       }
@@ -193,4 +195,4 @@ const getAll = async (db, status) => {
   });
 };
 
-module.exports = { create, getByBranch, getByUser, updateStatus, getAll };
+module.exports = { create, getByBranch, getByUser, getByCustomer, updateStatus, getAll };

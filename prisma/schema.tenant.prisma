@@ -19,7 +19,7 @@ enum Role {
   CASHIER
   WAITER
   KITCHEN
-  CUSTOMER
+  CUSTOM
 }
 
 enum OrderStatus {
@@ -47,7 +47,8 @@ model User {
   email     String?  @unique
   password  String?  // hashed — null for OTP-only customers
   name      String?
-  role      Role     @default(CUSTOMER)
+  role      Role     @default(CASHIER)
+  customRole String?
   avatarUrl String?
   pinCode   String?
 
@@ -56,7 +57,6 @@ model User {
   branch    Branch?  @relation(fields: [branchId], references: [id])
 
   orders    Order[]
-  wallet    Wallet?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -75,7 +75,7 @@ model Otp {
   verified  Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  @@index([phone, code])
+  @@index([phone])
 }
 
 // ─── Branches (Individual Locations) ─────────────────
@@ -155,9 +155,10 @@ model Order {
   notes       String?
 
   // Relations
-  userId   String
-  user     User   @relation(fields: [userId], references: [id])
-  branchId String
+  userId     String?
+  user       User?   @relation(fields: [userId], references: [id])
+  customerId String? // Global customer ID from main database
+  branchId   String
   branch   Branch @relation(fields: [branchId], references: [id])
   tableId  String?
   table    Table? @relation(fields: [tableId], references: [id])
@@ -178,33 +179,6 @@ model OrderItem {
   order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuItemId String
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
-}
-
-// ─── Loyalty / Wallet ────────────────────────────────
-
-model Wallet {
-  id           String @id @default(uuid())
-  points       Int    @default(0)
-  lifetimeEarn Int    @default(0)
-
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id])
-
-  transactions WalletTransaction[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model WalletTransaction {
-  id          String @id @default(uuid())
-  points      Int    // positive = earn, negative = redeem
-  description String?
-
-  walletId String
-  wallet   Wallet @relation(fields: [walletId], references: [id])
-
-  createdAt DateTime @default(now())
 }
 
 // ─── Inventory (Branch-level) ────────────────────────

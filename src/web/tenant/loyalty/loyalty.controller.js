@@ -8,16 +8,17 @@ const getWallet = catchAsync(async (req, res) => {
 });
 
 const earn = catchAsync(async (req, res) => {
-  const { userId, points, description } = req.body;
-  const wallet = await loyaltyService.earnPoints(req.tenantDb, userId, points, description, req.tenantId);
+  const customerId = req.body.customerId || req.body.userId;
+  const { points, description } = req.body;
+  const wallet = await loyaltyService.earnPoints(req.tenantDb, customerId, points, description, req.tenantId);
   res.json({ success: true, data: wallet });
 });
 
 const redeem = catchAsync(async (req, res) => {
-  const targetUserId = (req.body.userId && ["ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"].includes(req.user.role))
-    ? req.body.userId
+  const targetCustomerId = ((req.body.customerId || req.body.userId) && ["ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"].includes(req.user.role))
+    ? (req.body.customerId || req.body.userId)
     : req.user.id;
-  const wallet = await loyaltyService.redeemPoints(req.tenantDb, targetUserId, req.body.points, req.body.description, req.tenantId);
+  const wallet = await loyaltyService.redeemPoints(req.tenantDb, targetCustomerId, req.body.points, req.body.description, req.tenantId);
   res.json({ success: true, data: wallet });
 });
 
@@ -36,12 +37,12 @@ const searchCustomers = catchAsync(async (req, res) => {
 });
 
 const getAllCustomers = catchAsync(async (req, res) => {
-  const customers = await loyaltyService.getAllCustomersForReport(req.tenantDb);
+  const customers = await loyaltyService.getAllCustomersForReport(req.tenantDb, req.tenantId);
   res.json({ success: true, data: customers });
 });
 
 const getAllTransactions = catchAsync(async (req, res) => {
-  const transactions = await loyaltyService.getAllTransactionsForReport(req.tenantDb);
+  const transactions = await loyaltyService.getAllTransactionsForReport(req.tenantDb, req.tenantId);
   res.json({ success: true, data: transactions });
 });
 

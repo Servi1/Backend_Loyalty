@@ -4,7 +4,7 @@ const bcrypt = require("bcryptjs");
 const getAllStaff = async (db, branchId, startDate, endDate) => {
   const where = {
     role: {
-      in: ["BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN"]
+      in: ["BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"]
     }
   };
   if (branchId) {
@@ -47,6 +47,7 @@ const createStaff = async (db, data) => {
       email: data.email,
       name: data.name,
       role: data.role,
+      customRole: data.customRole || null,
       branchId: data.branchId || null,
       password: hashedPassword,
       pinCode,

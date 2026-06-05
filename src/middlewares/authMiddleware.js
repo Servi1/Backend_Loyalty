@@ -21,12 +21,30 @@ const authenticate = async (req, _res, next) => {
       if (!admin) throw new ApiError(401, "Admin no longer exists");
       req.admin = admin;
       req.user = { id: admin.id, role: "SUPER_ADMIN" }; // standardize for authorize middleware
+    } else if (decoded.type === "customer") {
+      const customer = await mainPrisma.customer.findUnique({ where: { id: decoded.sub } });
+      if (!customer) throw new ApiError(401, "Customer no longer exists");
+      req.user = {
+        id: customer.id,
+        role: "CUSTOMER",
+        phone: customer.phone,
+        email: customer.email,
+        name: customer.name,
+      };
     } else {
       if (!req.tenantDb) {
         throw new ApiError(400, "Tenant context required for this user token");
       }
-      const user = await req.tenantDb.user.findUnique({ where: { id: decoded.sub } });
+      const user = await req.tenantDb.user.findUnique({
+        where: { id: decoded.sub },
+        include: { branch: true }
+      });
       if (!user) throw new ApiError(401, "User no longer exists");
+
+      if (user.branch && !user.branch.isOpen && user.role !== "BRAND_MANAGER") {
+        throw new ApiError(403, "This branch is currently deactivated.");
+      }
+
       req.user = user;
     }
 

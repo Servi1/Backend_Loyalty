@@ -78,7 +78,6 @@ model Tenant {
 
   // Relations
   aggregatedOrders    AggregatedOrder[]
-  aggregatedCustomers AggregatedCustomer[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -104,23 +103,43 @@ model AggregatedOrder {
   @@index([createdAt])
 }
 
-model AggregatedCustomer {
-  id          String   @id // format: tenantId_customerId
-  tenantId    String
-  customerId  String
-  name        String?
-  phone       String?
-  email       String?
-  points      Int      @default(0)
-  tier        String   @default("bronze")
-  joinedAt    DateTime @default(now())
+// ─── Global Loyalty Customers ────────────────────────
+
+model Customer {
+  id        String   @id @default(uuid())
+  phone     String   @unique
+  email     String?  @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  wallet              Wallet?
+}
+
+// ─── Global Loyalty Wallets ──────────────────────────
+
+model Wallet {
+  id           String              @id @default(uuid())
+  points       Int                 @default(0)
+  lifetimeEarn Int                 @default(0)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  customerId   String              @unique
+  customer     Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  transactions WalletTransaction[]
+}
+
+model WalletTransaction {
+  id          String   @id @default(uuid())
+  points      Int      // positive = earn, negative = redeem
+  description String?
+  tenantId    String?  // The tenant brand where this happened
+
+  walletId    String
+  wallet      Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
   createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@unique([tenantId, customerId])
-  @@index([tenantId])
-  @@index([phone])
 }
 
