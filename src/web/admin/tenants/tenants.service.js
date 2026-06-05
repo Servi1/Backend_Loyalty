@@ -320,19 +320,17 @@ const getLoyaltyOverview = async (filters = {}) => {
     let redemptionsCount = 0;
 
     try {
-      const tenantPrisma = getTenantClient(tenant.dbUrl);
-
-      const customerWhere = { role: "CUSTOMER" };
+      const txCountWhere = { tenantId: tenant.id };
       if (filters.startDate || filters.endDate) {
-        customerWhere.createdAt = {};
-        if (filters.startDate) customerWhere.createdAt.gte = new Date(filters.startDate);
-        if (filters.endDate) customerWhere.createdAt.lte = new Date(filters.endDate);
+        txCountWhere.createdAt = {};
+        if (filters.startDate) txCountWhere.createdAt.gte = new Date(filters.startDate);
+        if (filters.endDate) txCountWhere.createdAt.lte = new Date(filters.endDate);
       }
-
-      // Count members: user table where role === 'CUSTOMER'
-      membersCount = await tenantPrisma.user.count({
-        where: customerWhere
+      const uniqueWallets = await mainPrisma.walletTransaction.groupBy({
+        by: ['walletId'],
+        where: txCountWhere
       });
+      membersCount = uniqueWallets.length;
 
       const txWhere = { points: { lt: 0 }, tenantId: tenant.id };
       if (filters.startDate || filters.endDate) {
