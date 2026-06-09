@@ -26,4 +26,29 @@ const transferPoints = catchAsync(async (req, res) => {
   res.json({ success: true, message: "Points transferred successfully", data: result });
 });
 
-module.exports = { getWallet, getTransactions, transferPoints };
+// ─── GET /wallet/gifts ────────────────────────────────────────────────────────
+const getGifts = catchAsync(async (req, res) => {
+  const gifts = await walletService.getGifts(req.tenantDb, req.user.id);
+  res.json({ success: true, data: gifts });
+});
+
+// ─── POST /wallet/gifts/:giftId/claim ──────────────────────────────────────────
+const claimGift = catchAsync(async (req, res) => {
+  const result = await walletService.claimGift(req.tenantDb, req.tenantId, req.user.id, req.params.giftId);
+  res.json({ success: true, message: "Gift claimed successfully", data: result });
+});
+
+// ─── POST /wallet/gifts/claim-all ──────────────────────────────────────────────
+const claimAllGifts = catchAsync(async (req, res) => {
+  const result = await walletService.claimAllGifts(req.tenantDb, req.tenantId, req.user.id);
+  res.json({ success: true, message: "All gifts claimed successfully", data: result });
+});
+
+module.exports = {
+  getWallet,
+  getTransactions,
+  transferPoints,
+  getGifts,
+  claimGift,
+  claimAllGifts,
+};

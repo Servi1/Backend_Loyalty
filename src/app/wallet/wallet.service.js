@@ -1,12 +1,11 @@
 /**
  * App Wallet Service
- *
- * getWallet      — full wallet + transaction history
- * getTransactions — paginated transaction history
+ * 
+ * Rewired to use the global main database (mainPrisma).
  */
 
 const ApiError = require("../../utils/ApiError");
-const { syncToAggregatedCustomer } = require("../../shared/customers/customers.service");
+const mainPrisma = require("../../config/prisma");
 
 // Helper to normalise phone numbers
 const normalisePhone = (raw) => {
@@ -15,11 +14,31 @@ const normalisePhone = (raw) => {
   return phone;
 };
 
+// ─── Private helpers ──────────────────────────────────────────────────────────
+
+const _formatTx = (tx) => ({
+  id: tx.id,
+  points: tx.points,
+  type: tx.points >= 0 ? "earn" : "redeem",
+  description: tx.description,
+  createdAt: tx.createdAt,
+});
+
+const _formatGiftDate = (date) => {
+  try {
+    const d = new Date(date);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[d.getMonth()]} ${d.getDate()}`;
+  } catch {
+    return '';
+  }
+};
+
 // ─── getWallet ────────────────────────────────────────────────────────────────
 
 const getWallet = async (db, userId) => {
-  const wallet = await db.wallet.findUnique({
-    where: { userId },
+  const wallet = await mainPrisma.wallet.findUnique({
+    where: { appUserId: userId },
     include: {
       transactions: {
         orderBy: { createdAt: "desc" },
@@ -41,19 +60,19 @@ const getWallet = async (db, userId) => {
 // ─── getTransactions ──────────────────────────────────────────────────────────
 
 const getTransactions = async (db, userId, { page = 1, limit = 30 } = {}) => {
-  const wallet = await db.wallet.findUnique({ where: { userId } });
+  const wallet = await mainPrisma.wallet.findUnique({ where: { appUserId: userId } });
   if (!wallet) throw new ApiError(404, "Wallet not found");
 
   const skip = (page - 1) * limit;
 
-  const [transactions, total] = await db.$transaction([
-    db.walletTransaction.findMany({
+  const [transactions, total] = await mainPrisma.$transaction([
+    mainPrisma.walletTransaction.findMany({
       where: { walletId: wallet.id },
       orderBy: { createdAt: "desc" },
       skip,
       take: limit,
     }),
-    db.walletTransaction.count({ where: { walletId: wallet.id } }),
+    mainPrisma.walletTransaction.count({ where: { walletId: wallet.id } }),
   ]);
 
   return {
@@ -71,16 +90,6 @@ const getTransactions = async (db, userId, { page = 1, limit = 30 } = {}) => {
   };
 };
 
-// ─── Private helpers ──────────────────────────────────────────────────────────
-
-const _formatTx = (tx) => ({
-  id: tx.id,
-  points: tx.points,
-  type: tx.points >= 0 ? "earn" : "redeem",
-  description: tx.description,
-  createdAt: tx.createdAt,
-});
-
 // ─── transferPoints ────────────────────────────────────────────────────────────
 
 const transferPoints = async (db, tenantId, senderId, { recipientPhone, points, message } = {}) => {
@@ -88,7 +97,7 @@ const transferPoints = async (db, tenantId, senderId, { recipientPhone, points, 
     throw new ApiError(400, "Points must be a positive integer");
   }
 
-  const sender = await db.appUser.findUnique({
+  const sender = await mainPrisma.appUser.findUnique({
     where: { id: senderId },
     include: { wallet: true },
   });
@@ -103,7 +112,7 @@ const transferPoints = async (db, tenantId, senderId, { recipientPhone, points, 
 
   const normalisedPhone = normalisePhone(recipientPhone);
 
-  const recipient = await db.appUser.findUnique({
+  const recipient = await mainPrisma.appUser.findUnique({
     where: { phone: normalisedPhone },
     include: { wallet: true },
   });
@@ -120,56 +129,160 @@ const transferPoints = async (db, tenantId, senderId, { recipientPhone, points, 
     throw new ApiError(404, "Recipient wallet not found");
   }
 
-  // Deduct from sender and add to recipient
-  await db.$transaction([
-    db.wallet.update({
+  // Deduct from sender and create a pending Gift record in mainPrisma
+  await mainPrisma.$transaction([
+    mainPrisma.wallet.update({
       where: { id: sender.wallet.id },
       data: { points: { decrement: points } },
     }),
-    db.walletTransaction.create({
+    mainPrisma.walletTransaction.create({
       data: {
         walletId: sender.wallet.id,
         points: -points,
-        description: message ? `Sent to ${recipient.name || normalisedPhone}: ${message}` : `Sent to ${recipient.name || normalisedPhone}`,
+        description: message ? `Gift sent to ${recipient.name || normalisedPhone}: ${message}` : `Gift sent to ${recipient.name || normalisedPhone}`,
+        tenantId: tenantId || null,
       },
     }),
-    db.wallet.update({
-      where: { id: recipient.wallet.id },
+    mainPrisma.gift.create({
       data: {
-        points: { increment: points },
-        lifetimeEarn: { increment: points },
+        senderId: sender.id,
+        recipientId: recipient.id,
+        points,
+        message,
+        claimed: false
+      }
+    })
+  ]);
+
+  return getWallet(db, senderId);
+};
+
+// ─── getGifts ──────────────────────────────────────────────────────────────────
+
+const getGifts = async (db, userId) => {
+  const gifts = await mainPrisma.gift.findMany({
+    where: { recipientId: userId },
+    include: {
+      sender: {
+        select: {
+          name: true,
+          phone: true,
+        }
+      }
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return gifts.map(g => ({
+    id: g.id,
+    name: g.sender.name || g.sender.phone,
+    date: _formatGiftDate(g.createdAt),
+    message: g.message || "",
+    points: g.points,
+    claimed: g.claimed,
+  }));
+};
+
+// ─── claimGift ─────────────────────────────────────────────────────────────────
+
+const claimGift = async (db, tenantId, userId, giftId) => {
+  const gift = await mainPrisma.gift.findUnique({
+    where: { id: giftId },
+    include: {
+      sender: true,
+      recipient: {
+        include: { wallet: true }
+      }
+    }
+  });
+
+  if (!gift) throw new ApiError(404, "Gift not found");
+  if (gift.recipientId !== userId) throw new ApiError(403, "You are not authorized to claim this gift");
+  if (gift.claimed) throw new ApiError(400, "Gift has already been claimed");
+
+  const recipientWallet = gift.recipient.wallet;
+  if (!recipientWallet) throw new ApiError(404, "Recipient wallet not found");
+
+  await mainPrisma.$transaction([
+    mainPrisma.gift.update({
+      where: { id: giftId },
+      data: { claimed: true },
+    }),
+    mainPrisma.wallet.update({
+      where: { id: recipientWallet.id },
+      data: {
+        points: { increment: gift.points },
+        lifetimeEarn: { increment: gift.points },
       },
     }),
-    db.walletTransaction.create({
+    mainPrisma.walletTransaction.create({
       data: {
-        walletId: recipient.wallet.id,
-        points: points,
-        description: message ? `Received from ${sender.name || sender.phone}: ${message}` : `Received from ${sender.name || sender.phone}`,
+        walletId: recipientWallet.id,
+        points: gift.points,
+        description: gift.message ? `Claimed gift from ${gift.sender.name || gift.sender.phone}: ${gift.message}` : `Claimed gift from ${gift.sender.name || gift.sender.phone}`,
+        tenantId: tenantId || null,
       },
     }),
   ]);
 
-  // Sync to global registries (fire and forget / async)
-  syncToAggregatedCustomer(db, tenantId, sender.id).catch(console.error);
-  syncToAggregatedCustomer(db, tenantId, recipient.id).catch(console.error);
-
-  // Get the updated sender wallet
-  const updatedSenderWallet = await db.wallet.findUnique({
-    where: { id: sender.wallet.id },
-    include: {
-      transactions: {
-        orderBy: { createdAt: "desc" },
-        take: 20,
-      },
-    },
-  });
-
-  return {
-    id: updatedSenderWallet.id,
-    points: updatedSenderWallet.points,
-    lifetimeEarn: updatedSenderWallet.lifetimeEarn,
-    recentTransactions: updatedSenderWallet.transactions.map(_formatTx),
-  };
+  return getWallet(db, userId);
 };
 
-module.exports = { getWallet, getTransactions, transferPoints };
+// ─── claimAllGifts ─────────────────────────────────────────────────────────────
+
+const claimAllGifts = async (db, tenantId, userId) => {
+  const unclaimedGifts = await mainPrisma.gift.findMany({
+    where: { recipientId: userId, claimed: false },
+    include: { sender: true }
+  });
+
+  if (unclaimedGifts.length === 0) {
+    return getWallet(db, userId);
+  }
+
+  const user = await mainPrisma.appUser.findUnique({
+    where: { id: userId },
+    include: { wallet: true },
+  });
+
+  if (!user || !user.wallet) throw new ApiError(404, "Wallet not found");
+
+  const totalPoints = unclaimedGifts.reduce((sum, gift) => sum + gift.points, 0);
+
+  const operations = [
+    mainPrisma.gift.updateMany({
+      where: {
+        id: { in: unclaimedGifts.map(g => g.id) }
+      },
+      data: { claimed: true }
+    }),
+    mainPrisma.wallet.update({
+      where: { id: user.wallet.id },
+      data: {
+        points: { increment: totalPoints },
+        lifetimeEarn: { increment: totalPoints },
+      }
+    }),
+    ...unclaimedGifts.map(gift => mainPrisma.walletTransaction.create({
+      data: {
+        walletId: user.wallet.id,
+        points: gift.points,
+        description: gift.message ? `Claimed gift from ${gift.sender.name || gift.sender.phone}: ${gift.message}` : `Claimed gift from ${gift.sender.name || gift.sender.phone}`,
+        tenantId: tenantId || null,
+      }
+    }))
+  ];
+
+  await mainPrisma.$transaction(operations);
+
+  return getWallet(db, userId);
+};
+
+module.exports = {
+  getWallet,
+  getTransactions,
+  transferPoints,
+  getGifts,
+  claimGift,
+  claimAllGifts,
+};

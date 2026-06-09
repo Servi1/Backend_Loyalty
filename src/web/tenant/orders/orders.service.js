@@ -1,14 +1,13 @@
 const ApiError = require("../../../utils/ApiError");
 const crypto = require("crypto");
 const mainPrisma = require("../../../config/prisma");
-const { syncToAggregatedCustomer } = require("../../../shared/customers/customers.service");
 
 const syncToAggregatedOrder = async (db, tenantId, order) => {
   if (!tenantId) return;
   try {
     let user = order.user;
-    if (!user && order.userId) {
-      user = await db.appUser.findUnique({ where: { id: order.userId } });
+    if (!user && order.customerId) {
+      user = await mainPrisma.appUser.findUnique({ where: { id: order.customerId } });
     }
     let branch = order.branch;
     if (!branch && order.branchId) {
@@ -54,7 +53,6 @@ const generateOrderNumber = () => {
 };
 
 const create = async (db, { userId, branchId, tableId, type, items, notes, total }, tenantId) => {
-  // Calculate total from items
   const menuItemIds = items.map((i) => i.menuItemId);
   const menuItems = await db.menuItem.findMany({ where: { id: { in: menuItemIds } } });
 
@@ -67,13 +65,12 @@ const create = async (db, { userId, branchId, tableId, type, items, notes, total
     return { menuItemId: item.menuItemId, quantity: item.quantity || 1, price: menuItem.price, notes: item.notes };
   });
 
-  // Use the passed total (which includes tax and discount) if provided; otherwise fall back to subtotal
   const finalTotal = typeof total === "number" ? total : subtotal;
 
   const order = await db.order.create({
     data: {
       orderNumber: generateOrderNumber(),
-      userId,
+      customerId: userId,
       branchId,
       tableId: tableId || null,
       type: type || "DINE_IN",
@@ -81,8 +78,13 @@ const create = async (db, { userId, branchId, tableId, type, items, notes, total
       total: finalTotal,
       items: { create: orderItems },
     },
-    include: { items: { include: { menuItem: true } }, user: true, branch: true },
+    include: { items: { include: { menuItem: true } }, branch: true },
   });
+
+  if (userId) {
+    const user = await mainPrisma.appUser.findUnique({ where: { id: userId } });
+    order.user = user;
+  }
 
   // Sync to super admin aggregated orders asynchronously
   syncToAggregatedOrder(db, tenantId, order).catch(console.error);
@@ -98,16 +100,27 @@ const getByBranch = async (db, branchId, status, startDate, endDate) => {
     if (startDate) where.createdAt.gte = new Date(startDate);
     if (endDate) where.createdAt.lte = new Date(endDate);
   }
-  return db.order.findMany({
+  const orders = await db.order.findMany({
     where,
-    include: { items: { include: { menuItem: true } }, user: true, table: true },
+    include: { items: { include: { menuItem: true } }, table: true },
     orderBy: { createdAt: "desc" },
   });
+
+  const customerIds = [...new Set(orders.map(o => o.customerId).filter(Boolean))];
+  const users = await mainPrisma.appUser.findMany({
+    where: { id: { in: customerIds } }
+  });
+
+  orders.forEach(o => {
+    o.user = users.find(u => u.id === o.customerId) || null;
+  });
+
+  return orders;
 };
 
 const getByUser = async (db, userId) =>
   db.order.findMany({
-    where: { userId },
+    where: { customerId: userId },
     include: { items: { include: { menuItem: true } }, branch: true },
     orderBy: { createdAt: "desc" },
   });
@@ -124,22 +137,25 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
   const updated = await db.order.update({
     where: { id },
     data: updateData,
-    include: { items: { include: { menuItem: true } }, user: true, table: true, branch: true }
+    include: { items: { include: { menuItem: true } }, table: true, branch: true }
   });
 
-  if (status === "COMPLETED" && updated.user) {
-    // Do not award points if paid using loyalty points
+  if (updated.customerId) {
+    const user = await mainPrisma.appUser.findUnique({ where: { id: updated.customerId } });
+    updated.user = user;
+  }
+
+  if (status === "COMPLETED" && updated.customerId) {
     if (updated.notes && updated.notes.includes("Paid by Loyalty Points")) {
-      // Sync to super admin aggregated orders asynchronously and return
       syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
       return updated;
     }
 
     try {
-      const wallet = await db.wallet.findUnique({ where: { userId: updated.userId } });
+      const wallet = await mainPrisma.wallet.findUnique({ where: { appUserId: updated.customerId } });
       if (wallet) {
         const description = `Earned on Order #${updated.orderNumber}`;
-        const alreadyEarned = await db.walletTransaction.findFirst({
+        const alreadyEarned = await mainPrisma.walletTransaction.findFirst({
           where: {
             walletId: wallet.id,
             description,
@@ -151,24 +167,21 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
           const earnRate = tenant ? tenant.loyaltyEarnRate : 1.0;
           const pointsToEarn = Math.floor(updated.total * earnRate);
           if (pointsToEarn > 0) {
-            await db.wallet.update({
-              where: { userId: updated.userId },
+            await mainPrisma.wallet.update({
+              where: { appUserId: updated.customerId },
               data: {
                 points: { increment: pointsToEarn },
                 lifetimeEarn: { increment: pointsToEarn },
               }
             });
-            await db.walletTransaction.create({
+            await mainPrisma.walletTransaction.create({
               data: {
                 walletId: wallet.id,
                 points: pointsToEarn,
                 description,
+                tenantId: tenantId || null,
               }
             });
-
-            if (tenantId) {
-              await syncToAggregatedCustomer(db, tenantId, updated.userId);
-            }
           }
         }
       }
@@ -186,11 +199,22 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
 const getAll = async (db, status) => {
   const where = {};
   if (status) where.status = status;
-  return db.order.findMany({
+  const orders = await db.order.findMany({
     where,
-    include: { items: { include: { menuItem: true } }, user: true, table: true, branch: true },
+    include: { items: { include: { menuItem: true } }, table: true, branch: true },
     orderBy: { createdAt: "desc" },
   });
+
+  const customerIds = [...new Set(orders.map(o => o.customerId).filter(Boolean))];
+  const users = await mainPrisma.appUser.findMany({
+    where: { id: { in: customerIds } }
+  });
+
+  orders.forEach(o => {
+    o.user = users.find(u => u.id === o.customerId) || null;
+  });
+
+  return orders;
 };
 
 module.exports = { create, getByBranch, getByUser, updateStatus, getAll };

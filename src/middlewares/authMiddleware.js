@@ -22,10 +22,7 @@ const authenticate = async (req, _res, next) => {
       req.admin = admin;
       req.user = { id: admin.id, role: "SUPER_ADMIN" }; // standardize for authorize middleware
     } else if (decoded.type === "customer") {
-      if (!req.tenantDb) {
-        throw new ApiError(400, "Tenant context required for this user token");
-      }
-      const user = await req.tenantDb.appUser.findUnique({ where: { id: decoded.sub } });
+      const user = await mainPrisma.appUser.findUnique({ where: { id: decoded.sub } });
       if (!user) throw new ApiError(401, "Customer no longer exists");
       req.user = { ...user, role: "CUSTOMER" }; // Attach as req.user with role CUSTOMER for compatibility
     } else {

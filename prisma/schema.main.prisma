@@ -1,26 +1,26 @@
 // ─── Servio Main Database — Prisma Schema ────────────────
-
+ 
 generator client {
   provider = "prisma-client-js"
   output   = "../node_modules/@prisma/client-main"
 }
-
+ 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-
+ 
 // ─── Enums ───────────────────────────────────────────
-
+ 
 enum SubscriptionTier {
   FREE
   STARTER
   PROFESSIONAL
   ENTERPRISE
 }
-
+ 
 // ─── Super Admins ────────────────────────────────────
-
+ 
 model SuperAdmin {
   id        String   @id @default(uuid())
   email     String   @unique
@@ -29,9 +29,9 @@ model SuperAdmin {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
+ 
 // ─── Tenants (Registry) ──────────────────────────────
-
+ 
 model Tenant {
   id               String           @id @default(uuid())
   name             String
@@ -43,7 +43,7 @@ model Tenant {
   accentColor      String?          @default("#f59e0b")
   fontFamily       String?          @default("Inter")
   layoutStyle      String?          @default("modern")
-
+ 
   // ─── Contact Info
   contactEmail     String?
   phone            String?
@@ -51,7 +51,7 @@ model Tenant {
   address          String?
   city             String?
   country          String?
-
+ 
   // ─── Billing & Operations
   timezone         String?
   currency         String?
@@ -60,7 +60,12 @@ model Tenant {
   notes            String?
   subscriptionTier SubscriptionTier @default(FREE)
   plan             String?          @default("starter")
-
+  subAppServi      Boolean          @default(false)
+  subAppBrand      Boolean          @default(false)
+  subPos           Boolean          @default(false)
+  subQrTable       Boolean          @default(false)
+  subQrCashier     Boolean          @default(false)
+ 
   // ─── Feature Flags
   notificationsEnabled Boolean @default(true)
   autoPayouts          Boolean @default(true)
@@ -68,17 +73,15 @@ model Tenant {
   loyaltyEnabled       Boolean @default(false)
   loyaltyEarnRate      Float   @default(1.0)
   loyaltyRedeemRate    Float   @default(100.0)
-  
   isActive         Boolean          @default(true)
-
+ 
   // Relations
   aggregatedOrders    AggregatedOrder[]
-  aggregatedCustomers AggregatedCustomer[]
-
+ 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
+ 
 model AggregatedOrder {
   id             String   @id // format: tenantId_orderId
   tenantId       String
@@ -92,30 +95,84 @@ model AggregatedOrder {
   branchName     String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-
+ 
   tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
+ 
   @@index([tenantId])
   @@index([createdAt])
 }
+ 
+// ─── Global App Users ────────────────────────────────
+model AppUser {
+  id             String   @id @default(uuid())
+  phone          String   @unique
+  email          String?  @unique
+  name           String?
+  avatarUrl      String?
+  cars           Json?    @default("[]")
+  addresses      Json?    @default("[]")
+  paymentMethods Json?    @default("[]")
+  favoriteBrands Json?    @default("[]")
+  // Relations
+  orders        Order[]
+  wallet        Wallet?
+  sentGifts     Gift[]   @relation("SentGifts")
+  receivedGifts Gift[]   @relation("ReceivedGifts")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@index([phone])
+  @@index([email])
+}
+ 
+model Order {
+  id        String   @id @default(uuid())
+  appUserId String
+  appUser   AppUser  @relation(fields: [appUserId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+ 
+// ─── Global Loyalty Wallets ──────────────────────────
+ 
+model Wallet {
+  id           String              @id @default(uuid())
+  points       Int                 @default(0)
+  lifetimeEarn Int                 @default(0)
+  tier         String?             @default("bronze")
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+ 
+  appUserId    String              @unique
+  appUser      AppUser             @relation(fields: [appUserId], references: [id], onDelete: Cascade)
+ 
+  transactions WalletTransaction[]
+}
+ 
+model WalletTransaction {
+  id          String   @id @default(uuid())
+  points      Int      // positive = earn, negative = redeem
+  description String?
+  tenantId    String?  // The tenant brand where this happened
+ 
+  walletId    String
+  wallet      Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+ 
+  createdAt   DateTime @default(now())
+}
 
-model AggregatedCustomer {
-  id          String   @id // format: tenantId_customerId
-  tenantId    String
-  customerId  String
-  name        String?
-  phone       String?
-  email       String?
-  points      Int      @default(0)
-  tier        String   @default("bronze")
-  joinedAt    DateTime @default(now())
+// ─── Gift Model ──────────────────────────────────────
+model Gift {
+  id          String   @id @default(uuid())
+  senderId    String
+  sender      AppUser  @relation("SentGifts", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient   AppUser  @relation("ReceivedGifts", fields: [recipientId], references: [id], onDelete: Cascade)
+  points      Int
+  message     String?
+  claimed     Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@unique([tenantId, customerId])
-  @@index([tenantId])
-  @@index([phone])
+  @@index([recipientId])
+  @@index([senderId])
 }
-

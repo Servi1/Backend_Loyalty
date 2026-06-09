@@ -9,7 +9,6 @@
 const ApiError = require("../../utils/ApiError");
 const crypto = require("crypto");
 const mainPrisma = require("../../config/prisma");
-const { syncToAggregatedCustomer } = require("../../shared/customers/customers.service");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -22,8 +21,8 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
   if (!tenantId) return;
   try {
     let user = order.user;
-    if (!user && order.userId) {
-      user = await db.appUser.findUnique({ where: { id: order.userId } });
+    if (!user && order.customerId) {
+      user = await mainPrisma.appUser.findUnique({ where: { id: order.customerId } });
     }
     let branch = order.branch;
     if (!branch && order.branchId) {
@@ -96,8 +95,6 @@ const placeOrder = async (db, userId, body, tenantId) => {
     };
   });
 
-  // Use server-calculated subtotal — ignore client total for security
-  // (client total is logged for debugging discrepancy detection)
   if (typeof total === "number" && Math.abs(total - subtotal) > 0.01) {
     console.warn(
       `[APP ORDER] Client total mismatch: client=${total}, server=${subtotal}. Using server total.`
@@ -107,7 +104,7 @@ const placeOrder = async (db, userId, body, tenantId) => {
   const order = await db.order.create({
     data: {
       orderNumber: generateOrderNumber(),
-      userId,
+      customerId: userId,
       branchId,
       tableId: tableId || null,
       type,
@@ -117,11 +114,13 @@ const placeOrder = async (db, userId, body, tenantId) => {
     },
     include: {
       items: { include: { menuItem: true } },
-      user: true,
       branch: true,
       table: true,
     },
   });
+
+  const user = await mainPrisma.appUser.findUnique({ where: { id: userId } });
+  order.user = user;
 
   // Fire-and-forget — non-blocking side effects
   syncToAggregatedOrder(db, tenantId, order).catch(console.error);
@@ -136,7 +135,7 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20 } = {}) => {
 
   const [orders, total] = await db.$transaction([
     db.order.findMany({
-      where: { userId },
+      where: { customerId: userId },
       include: {
         items: { include: { menuItem: { select: { name: true, price: true } } } },
         branch: { select: { id: true, name: true, address: true } },
@@ -145,7 +144,7 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20 } = {}) => {
       skip,
       take: limit,
     }),
-    db.order.count({ where: { userId } }),
+    db.order.count({ where: { customerId: userId } }),
   ]);
 
   return {
@@ -164,7 +163,7 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20 } = {}) => {
 
 const getOrder = async (db, orderId, userId) => {
   const order = await db.order.findFirst({
-    where: { id: orderId, userId }, // ensure customer can only see their own orders
+    where: { id: orderId, customerId: userId }, // ensure customer can only see their own orders
     include: {
       items: { include: { menuItem: true } },
       branch: true,

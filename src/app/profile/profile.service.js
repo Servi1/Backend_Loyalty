@@ -6,22 +6,24 @@
  */
 
 const ApiError = require("../../utils/ApiError");
-const { syncToAggregatedCustomer } = require("../../shared/customers/customers.service");
 const mainPrisma = require("../../config/prisma");
 
 // ─── Update profile ───────────────────────────────────────────────────────────
 
 const updateProfile = async (db, userId, { name, email, avatarUrl, cars, addresses, paymentMethods, favoriteBrands }, tenantId) => {
-  const user = await db.appUser.findUnique({ where: { id: userId } });
+  const user = await mainPrisma.appUser.findUnique({
+    where: { id: userId },
+    include: { wallet: true },
+  });
   if (!user) throw new ApiError(404, "User not found");
 
   // Email uniqueness check (if changing)
   if (email && email !== user.email) {
-    const exists = await db.appUser.findUnique({ where: { email } });
+    const exists = await mainPrisma.appUser.findUnique({ where: { email } });
     if (exists) throw new ApiError(409, "That email is already in use");
   }
 
-  const updated = await db.appUser.update({
+  const updated = await mainPrisma.appUser.update({
     where: { id: userId },
     data: {
       ...(name !== undefined && { name }),
@@ -35,18 +37,13 @@ const updateProfile = async (db, userId, { name, email, avatarUrl, cars, address
     include: { wallet: true },
   });
 
-  // Sync changes to global aggregated registry (non-blocking)
-  if (tenantId) {
-    syncToAggregatedCustomer(db, tenantId, userId).catch(console.error);
-  }
-
   const ordersCount = await db.order.count({
-    where: { userId },
+    where: { customerId: userId },
   });
 
   const totalSpentResult = await db.order.aggregate({
     where: {
-      userId,
+      customerId: userId,
       status: "COMPLETED",
     },
     _sum: {
@@ -65,11 +62,11 @@ const updateProfile = async (db, userId, { name, email, avatarUrl, cars, address
 // ─── Delete / anonymise account ───────────────────────────────────────────────
 
 const deleteAccount = async (db, userId) => {
-  const user = await db.appUser.findUnique({ where: { id: userId } });
+  const user = await mainPrisma.appUser.findUnique({ where: { id: userId } });
   if (!user) throw new ApiError(404, "User not found");
 
   // Anonymise instead of hard-delete — preserves order history integrity
-  await db.appUser.update({
+  await mainPrisma.appUser.update({
     where: { id: userId },
     data: {
       name: "Deleted User",

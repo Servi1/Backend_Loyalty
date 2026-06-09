@@ -11,7 +11,6 @@ const jwt = require("jsonwebtoken");
 const config = require("../../config");
 const ApiError = require("../../utils/ApiError");
 const mainPrisma = require("../../config/prisma");
-const { syncToAggregatedCustomer } = require("../../shared/customers/customers.service");
 
 // ─── OTP Constant (dev) ───────────────────────────────────────────────────────
 const DEV_OTP = "1111";
@@ -23,10 +22,6 @@ const signToken = (userId) =>
     expiresIn: config.jwt.expiresIn,
   });
 
-/**
- * Normalise phone: strip spaces/dashes, ensure it has a leading +.
- * e.g.  "966 50 123 4567" → "+966501234567"
- */
 const normalisePhone = (raw) => {
   let phone = String(raw).replace(/[\s\-().]/g, "");
   if (!phone.startsWith("+")) phone = "+" + phone;
@@ -41,7 +36,7 @@ const sendOtp = async (db, rawPhone) => {
   // Invalidate any previous unused OTPs for this phone
   await db.otp.updateMany({
     where: { phone, verified: false },
-    data: { verified: true }, // mark old ones as used so they won't match
+    data: { verified: true },
   });
 
   const code = process.env.NODE_ENV !== "production" ? DEV_OTP : _generateSecureOtp();
@@ -49,7 +44,6 @@ const sendOtp = async (db, rawPhone) => {
 
   await db.otp.create({ data: { phone, code, expiresAt } });
 
-  // In production: call your SMS provider here
   if (process.env.NODE_ENV !== "production") {
     console.log(`[APP-AUTH] OTP for ${phone}: ${code}  (static dev code)`);
   }
@@ -78,62 +72,31 @@ const verifyOtp = async (db, rawPhone, code, tenantId) => {
   // Mark as consumed
   await db.otp.update({ where: { id: otp.id }, data: { verified: true } });
 
-  // ── Find or create user ──────────────────────────────────────────
-  let user = await db.appUser.findUnique({
+  // ── Find or create user globally ──────────────────────────────────────────
+  let user = await mainPrisma.appUser.findUnique({
     where: { phone },
-    include: { wallet: true },
+    include: { wallet: { include: { transactions: { orderBy: { createdAt: "desc" }, take: 10 } } } },
   });
   const isNewUser = !user || !user.name;
 
   if (!user) {
-    // Check global registry — customer may already exist under another brand
-    const globalCustomer = await mainPrisma.aggregatedCustomer.findFirst({
-      where: { phone },
-      orderBy: { updatedAt: "desc" },
-    });
-
-    const initialPoints = globalCustomer?.points ?? 0;
-
-    user = await db.appUser.create({
+    user = await mainPrisma.appUser.create({
       data: {
         phone,
-        name: globalCustomer?.name ?? null,
-        email: globalCustomer?.email ?? null,
       },
     });
 
-    // Create wallet seeded with cross-brand points
-    const wallet = await db.wallet.create({
+    // Create wallet globally
+    const wallet = await mainPrisma.wallet.create({
       data: {
-        userId: user.id,
-        points: initialPoints,
-        lifetimeEarn: initialPoints,
+        appUserId: user.id,
+        points: 0,
+        lifetimeEarn: 0,
       },
+      include: { transactions: true }
     });
 
     user = { ...user, wallet };
-
-    // Sync to global aggregated registry (fire & forget)
-    if (tenantId) {
-      syncToAggregatedCustomer(db, tenantId, user.id).catch(console.error);
-    }
-  } else {
-    // Returning user — resync points from global registry if out of date
-    const globalCustomer = await mainPrisma.aggregatedCustomer.findFirst({
-      where: { phone },
-      orderBy: { updatedAt: "desc" },
-    });
-    if (
-      globalCustomer &&
-      user.wallet &&
-      user.wallet.points !== globalCustomer.points
-    ) {
-      await db.wallet.update({
-        where: { id: user.wallet.id },
-        data: { points: globalCustomer.points },
-      });
-      user.wallet.points = globalCustomer.points;
-    }
   }
 
   const token = signToken(user.id);
@@ -152,7 +115,7 @@ const verifyOtp = async (db, rawPhone, code, tenantId) => {
 // ─── getMe ───────────────────────────────────────────────────────────────────
 
 const getMe = async (db, userId) => {
-  const user = await db.appUser.findUnique({
+  const user = await mainPrisma.appUser.findUnique({
     where: { id: userId },
     include: {
       wallet: {
@@ -211,12 +174,12 @@ const getFavoriteBrandsDetails = async (brandIds) => {
 
 const _getUserStats = async (db, userId) => {
   const ordersCount = await db.order.count({
-    where: { userId },
+    where: { customerId: userId },
   });
 
   const totalSpentResult = await db.order.aggregate({
     where: {
-      userId,
+      customerId: userId,
       status: "COMPLETED",
     },
     _sum: {

@@ -1,70 +1,61 @@
 const ApiError = require("../../../utils/ApiError");
-const { syncToAggregatedCustomer } = require("../../../shared/customers/customers.service");
+const mainPrisma = require("../../../config/prisma");
 
 const getWallet = async (db, userId) => {
-  const wallet = await db.wallet.findUnique({
-    where: { userId },
+  const wallet = await mainPrisma.wallet.findUnique({
+    where: { appUserId: userId },
     include: { transactions: { orderBy: { createdAt: "desc" }, take: 20 } },
   });
   if (!wallet) throw new ApiError(404, "Wallet not found");
   return wallet;
- };
- 
- /**
-  * Award points to a user (e.g. after order completion).
-  */
- const earnPoints = async (db, userId, points, description, tenantId) => {
-   const wallet = await db.wallet.findUnique({ where: { userId } });
-   if (!wallet) throw new ApiError(404, "Wallet not found");
- 
-   const [updatedWallet] = await db.$transaction([
-     db.wallet.update({
-       where: { userId },
-       data: { points: { increment: points }, lifetimeEarn: { increment: points } },
-     }),
-     db.walletTransaction.create({
-       data: { walletId: wallet.id, points, description: description || "Points earned" },
-     }),
-   ]);
- 
-   if (tenantId) {
-     syncToAggregatedCustomer(db, tenantId, userId).catch(console.error);
-   }
+};
 
-   return updatedWallet;
- };
- 
- /**
-  * Redeem points from a user's wallet.
-  */
- const redeemPoints = async (db, userId, points, description, tenantId) => {
-   const wallet = await db.wallet.findUnique({ where: { userId } });
-   if (!wallet) throw new ApiError(404, "Wallet not found");
-   if (wallet.points < points) throw new ApiError(400, "Insufficient points");
- 
-   const [updatedWallet] = await db.$transaction([
-     db.wallet.update({
-       where: { userId },
-       data: { points: { decrement: points } },
-     }),
-     db.walletTransaction.create({
-       data: { walletId: wallet.id, points: -points, description: description || "Points redeemed" },
-     }),
-   ]);
- 
-   if (tenantId) {
-     syncToAggregatedCustomer(db, tenantId, userId).catch(console.error);
-   }
+/**
+ * Award points to a user (e.g. after order completion).
+ */
+const earnPoints = async (db, userId, points, description, tenantId) => {
+  const wallet = await mainPrisma.wallet.findUnique({ where: { appUserId: userId } });
+  if (!wallet) throw new ApiError(404, "Wallet not found");
 
-   return updatedWallet;
- };
+  const [updatedWallet] = await mainPrisma.$transaction([
+    mainPrisma.wallet.update({
+      where: { appUserId: userId },
+      data: { points: { increment: points }, lifetimeEarn: { increment: points } },
+    }),
+    mainPrisma.walletTransaction.create({
+      data: { walletId: wallet.id, points, description: description || "Points earned", tenantId: tenantId || null },
+    }),
+  ]);
+
+  return updatedWallet;
+};
+
+/**
+ * Redeem points from a user's wallet.
+ */
+const redeemPoints = async (db, userId, points, description, tenantId) => {
+  const wallet = await mainPrisma.wallet.findUnique({ where: { appUserId: userId } });
+  if (!wallet) throw new ApiError(404, "Wallet not found");
+  if (wallet.points < points) throw new ApiError(400, "Insufficient points");
+
+  const [updatedWallet] = await mainPrisma.$transaction([
+    mainPrisma.wallet.update({
+      where: { appUserId: userId },
+      data: { points: { decrement: points } },
+    }),
+    mainPrisma.walletTransaction.create({
+      data: { walletId: wallet.id, points: -points, description: description || "Points redeemed", tenantId: tenantId || null },
+    }),
+  ]);
+
+  return updatedWallet;
+};
 
 const searchCustomers = async (db, search) => {
   const query = search ? search.trim() : "";
   if (!query) return [];
 
-  // 1. Search locally
-  const localCustomers = await db.appUser.findMany({
+  const customers = await mainPrisma.appUser.findMany({
     where: {
       OR: [
         { name: { contains: query, mode: "insensitive" } },
@@ -75,79 +66,10 @@ const searchCustomers = async (db, search) => {
     include: {
       wallet: true,
     },
-    take: 10,
+    take: 20,
   });
 
-  // 2. Search globally in aggregated customer registry
-  const mainPrisma = require("../../../config/prisma");
-  const globalMatches = await mainPrisma.aggregatedCustomer.findMany({
-    where: {
-      OR: [
-        { phone: { contains: query, mode: "insensitive" } },
-        { email: { contains: query, mode: "insensitive" } },
-      ],
-    },
-    take: 10,
-  });
-
-  // 3. Auto-import/sync global customers that aren't present locally or need updating
-  for (const match of globalMatches) {
-    if (!match.phone && !match.email) continue;
-
-    // Check if customer is already returned in local search results
-    const alreadyLocal = localCustomers.some(
-      (lc) => (match.phone && lc.phone === match.phone) || (match.email && lc.email === match.email)
-    );
-    if (alreadyLocal) continue;
-
-    // Double check database if they exist but were missed by containing query match
-    const existingLocalUser = await db.appUser.findFirst({
-      where: {
-        OR: [
-          match.phone ? { phone: match.phone } : null,
-          match.email ? { email: match.email } : null,
-        ].filter(Boolean),
-      },
-      include: { wallet: true },
-    });
-
-    if (existingLocalUser) {
-      if (existingLocalUser.wallet && existingLocalUser.wallet.points !== match.points) {
-        await db.wallet.update({
-          where: { id: existingLocalUser.wallet.id },
-          data: { points: match.points }
-        });
-        existingLocalUser.wallet.points = match.points;
-      }
-      localCustomers.push(existingLocalUser);
-    } else {
-      // Auto-import global customer to the local tenant DB
-      try {
-        const newUser = await db.appUser.create({
-          data: {
-            name: match.name || "Walk-in Customer",
-            phone: match.phone,
-            email: match.email,
-          },
-        });
-        const newWallet = await db.wallet.create({
-          data: {
-            userId: newUser.id,
-            points: match.points,
-            lifetimeEarn: match.points,
-          },
-        });
-        localCustomers.push({
-          ...newUser,
-          wallet: newWallet,
-        });
-      } catch (err) {
-        console.error("Failed to auto-import global customer on lookup:", err.message);
-      }
-    }
-  }
-
-  return localCustomers.map((u) => ({
+  return customers.map((u) => ({
     id: u.id,
     name: u.name || "Unnamed",
     phone: u.phone,
@@ -157,7 +79,7 @@ const searchCustomers = async (db, search) => {
 };
 
 const getAllCustomersForReport = async (db) => {
-  const customers = await db.appUser.findMany({
+  const customers = await mainPrisma.appUser.findMany({
     include: { wallet: true },
     orderBy: { createdAt: "desc" },
   });
@@ -173,11 +95,11 @@ const getAllCustomersForReport = async (db) => {
 };
 
 const getAllTransactionsForReport = async (db) => {
-  const transactions = await db.walletTransaction.findMany({
+  const transactions = await mainPrisma.walletTransaction.findMany({
     include: {
       wallet: {
         include: {
-          user: true,
+          appUser: true,
         },
       },
     },
@@ -185,8 +107,8 @@ const getAllTransactionsForReport = async (db) => {
   });
   return transactions.map((t) => ({
     id: t.id,
-    customerName: t.wallet?.user?.name || "Unnamed",
-    customerPhone: t.wallet?.user?.phone || "",
+    customerName: t.wallet?.appUser?.name || "Unnamed",
+    customerPhone: t.wallet?.appUser?.phone || "",
     points: t.points,
     description: t.description,
     createdAt: t.createdAt,
@@ -194,8 +116,7 @@ const getAllTransactionsForReport = async (db) => {
 };
 
 const createCustomer = async (db, { name, phone, email, points = 0 }, tenantId) => {
-  // Check if customer already exists in this tenant DB
-  let user = await db.appUser.findFirst({
+  let user = await mainPrisma.appUser.findFirst({
     where: {
       OR: [
         phone ? { phone } : null,
@@ -208,8 +129,7 @@ const createCustomer = async (db, { name, phone, email, points = 0 }, tenantId) 
     throw new ApiError(400, "Customer with this phone or email already registered");
   }
 
-  // Create user locally
-  user = await db.appUser.create({
+  user = await mainPrisma.appUser.create({
     data: {
       name,
       phone,
@@ -217,27 +137,24 @@ const createCustomer = async (db, { name, phone, email, points = 0 }, tenantId) 
     },
   });
 
-  // Create wallet locally
-  const wallet = await db.wallet.create({
+  const wallet = await mainPrisma.wallet.create({
     data: {
-      userId: user.id,
+      appUserId: user.id,
       points,
       lifetimeEarn: points,
     },
   });
 
   if (points > 0) {
-    await db.walletTransaction.create({
+    await mainPrisma.walletTransaction.create({
       data: {
         walletId: wallet.id,
         points,
         description: "Starting balance (Staff enrolled)",
+        tenantId: tenantId || null,
       },
     });
   }
-
-  // Sync to global AggregatedCustomer registry
-  await syncToAggregatedCustomer(db, tenantId, user.id);
 
   return {
     id: user.id,
@@ -249,12 +166,12 @@ const createCustomer = async (db, { name, phone, email, points = 0 }, tenantId) 
   };
 };
 
-module.exports = { 
-  getWallet, 
-  earnPoints, 
-  redeemPoints, 
-  searchCustomers, 
-  getAllCustomersForReport, 
+module.exports = {
+  getWallet,
+  earnPoints,
+  redeemPoints,
+  searchCustomers,
+  getAllCustomersForReport,
   getAllTransactionsForReport,
   createCustomer
 };
