@@ -57,7 +57,7 @@ const create = async (data) => {
 
   // 1. Generate DB name based on slug
   const dbName = `tenant_${data.slug.replace(/[^a-zA-Z0-9]/g, "_")}_db`;
-  
+
   // Extract base connection string from main database URL
   // e.g., postgresql://postgres:root@localhost:5432/servio_main?schema=public
   // becomes postgresql://postgres:root@localhost:5432
@@ -67,7 +67,7 @@ const create = async (data) => {
 
   // 2. Connect to the default DB to create the new database
   const client = new Client({ connectionString: mainDbUrl });
-  
+
   try {
     await client.connect();
     // In PostgreSQL, CREATE DATABASE cannot run inside a transaction block
@@ -84,7 +84,7 @@ const create = async (data) => {
   try {
     console.log(`Pushing schema to ${dbName}...`);
     // Run prisma db push using the specific schema and injecting the URL
-    await execPromise(`npx prisma db push --schema=prisma/schema.tenant.prisma`, {
+    await execPromise(`npx prisma db push --schema=prisma/schema.tenant.prisma --accept-data-loss`, {
       env: { ...process.env, TENANT_DATABASE_URL: tenantDbUrl },
     });
   } catch (err) {
@@ -144,23 +144,23 @@ const remove = async (id) => {
 
 const getOverview = async () => {
   const tenants = await mainPrisma.tenant.findMany();
-  
+
   let totalOrders = 0;
   let totalRevenue = 0;
   let totalUsers = 0;
   let totalLocations = 0;
-  
+
   const tenantsOverview = [];
-  
+
   for (const tenant of tenants) {
     let ordersCount = 0;
     let revenueSum = 0;
     let locationsCount = 0;
     let usersCount = 0;
-    
+
     try {
       const tenantPrisma = getTenantClient(tenant.dbUrl);
-      
+
       const [oCount, oSum, lCount, uCount] = await Promise.all([
         tenantPrisma.order.count(),
         tenantPrisma.order.aggregate({
@@ -170,7 +170,7 @@ const getOverview = async () => {
         tenantPrisma.branch.count(),
         tenantPrisma.user.count()
       ]);
-      
+
       ordersCount = oCount;
       revenueSum = oSum._sum.total || 0;
       locationsCount = lCount;
@@ -178,12 +178,12 @@ const getOverview = async () => {
     } catch (err) {
       console.error(`Failed to fetch stats for tenant ${tenant.slug}:`, err.message);
     }
-    
+
     totalOrders += ordersCount;
     totalRevenue += revenueSum;
     totalLocations += locationsCount;
     totalUsers += usersCount;
-    
+
     tenantsOverview.push({
       id: tenant.id,
       name: tenant.name,
@@ -435,7 +435,7 @@ const getInvoices = async (filters = {}) => {
       const cycleEnd = cycleStart + intervalMs;
       const startStr = new Date(cycleStart).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
       const endStr = new Date(cycleEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-      
+
       const invoiceDate = startedAt;
       let match = true;
       if (filters.startDate && invoiceDate < new Date(filters.startDate)) match = false;
@@ -744,7 +744,7 @@ const deleteSuperAdminCustomer = async (tenantId, customerId) => {
   if (!tenant) throw new ApiError(404, "Tenant not found");
 
   const tenantPrisma = getTenantClient(tenant.dbUrl);
-  
+
   try {
     const wallet = await tenantPrisma.wallet.findUnique({ where: { userId: customerId } });
     if (wallet) {

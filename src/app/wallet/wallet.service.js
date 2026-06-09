@@ -278,10 +278,45 @@ const claimAllGifts = async (db, tenantId, userId) => {
   return getWallet(db, userId);
 };
 
+// ─── getLeaderboard ────────────────────────────────────────────────────────────
+const getLeaderboard = async (db) => {
+  const topUsers = await mainPrisma.appUser.findMany({
+    take: 10,
+    include: { wallet: true },
+    orderBy: {
+      wallet: {
+        points: "desc"
+      }
+    }
+  });
+
+  const AVATARS = [
+    "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop",
+    "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100&h=100&fit=crop",
+    "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop",
+    "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop",
+    "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&h=100&fit=crop",
+    "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop",
+    "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop",
+    "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=100&h=100&fit=crop",
+    "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&h=100&fit=crop",
+    "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=100&h=100&fit=crop"
+  ];
+
+  return topUsers.map((user, index) => ({
+    rank: index + 1,
+    id: user.id,
+    name: user.name || user.phone || "Loyal Customer",
+    points: user.wallet?.points || 0,
+    avatar: user.avatarUrl || AVATARS[index % AVATARS.length]
+  }));
+};
+
 module.exports = {
   getWallet,
   getTransactions,
   transferPoints,
+  getLeaderboard,
   getGifts,
   claimGift,
   claimAllGifts,

@@ -134,4 +134,4 @@ const _formatProfile = async (user) => {
   };
 };
 
-module.exports = { updateProfile, deleteAccount };
+module.exports = { updateProfile, deleteAccount, formatProfile: _formatProfile };

@@ -44,10 +44,17 @@ const claimAllGifts = catchAsync(async (req, res) => {
   res.json({ success: true, message: "All gifts claimed successfully", data: result });
 });
 
+// ─── GET /wallet/leaderboard ──────────────────────────────────────────────────
+const getLeaderboard = catchAsync(async (req, res) => {
+  const result = await walletService.getLeaderboard(req.tenantDb);
+  res.json({ success: true, data: result });
+});
+
 module.exports = {
   getWallet,
   getTransactions,
   transferPoints,
+  getLeaderboard,
   getGifts,
   claimGift,
   claimAllGifts,

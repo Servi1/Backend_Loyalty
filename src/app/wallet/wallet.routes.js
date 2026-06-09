@@ -23,6 +23,7 @@ router.use(authenticate, requireCustomer);
 router.get("/", ctrl.getWallet);
 router.get("/transactions", ctrl.getTransactions);
 router.post("/transfer", ctrl.transferPoints);
+router.get("/leaderboard", ctrl.getLeaderboard);
 
 router.get("/gifts", ctrl.getGifts);
 router.post("/gifts/:giftId/claim", ctrl.claimGift);

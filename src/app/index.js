@@ -37,6 +37,7 @@ const menuRoutes     = require("./menu/menu.routes");
 const branchRoutes   = require("./branches/branches.routes");
 const orderRoutes    = require("./orders/orders.routes");
 const walletRoutes   = require("./wallet/wallet.routes");
+const brandsRoutes   = require("./brands/brands.routes");
 
 const router = Router({ mergeParams: true });
 
@@ -46,5 +47,6 @@ router.use("/menu",     menuRoutes);
 router.use("/branches", branchRoutes);
 router.use("/orders",   orderRoutes);
 router.use("/wallet",   walletRoutes);
+router.use("/brands",   brandsRoutes);
 
 module.exports = router;
