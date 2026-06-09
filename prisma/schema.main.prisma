@@ -66,6 +66,17 @@ model Tenant {
   subQrTable       Boolean          @default(false)
   subQrCashier     Boolean          @default(false)
 
+  priceAppServi    Float            @default(29.0)
+  cycleAppServi    String           @default("monthly")
+  priceAppBrand    Float            @default(99.0)
+  cycleAppBrand    String           @default("monthly")
+  pricePos         Float            @default(49.0)
+  cyclePos         String           @default("monthly")
+  priceQrTable     Float            @default(19.0)
+  cycleQrTable     String           @default("monthly")
+  priceQrCashier   Float            @default(9.0)
+  cycleQrCashier   String           @default("monthly")
+
   // ─── Feature Flags
   notificationsEnabled Boolean @default(true)
   autoPayouts          Boolean @default(true)

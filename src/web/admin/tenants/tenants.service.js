@@ -221,11 +221,11 @@ const getSubscriptions = async () => {
   for (const tenant of tenants) {
     let amount = 0;
     const activeFeatures = [];
-    if (tenant.subAppServi) { amount += 29; activeFeatures.push("APP servi"); }
-    if (tenant.subAppBrand) { amount += 99; activeFeatures.push("APP brand"); }
-    if (tenant.subPos) { amount += 49; activeFeatures.push("POS"); }
-    if (tenant.subQrTable) { amount += 19; activeFeatures.push("QR Table"); }
-    if (tenant.subQrCashier) { amount += 9; activeFeatures.push("QR Cashier"); }
+    if (tenant.subAppServi) { amount += tenant.priceAppServi !== undefined ? tenant.priceAppServi : 29.0; activeFeatures.push("APP servi"); }
+    if (tenant.subAppBrand) { amount += tenant.priceAppBrand !== undefined ? tenant.priceAppBrand : 99.0; activeFeatures.push("APP brand"); }
+    if (tenant.subPos) { amount += tenant.pricePos !== undefined ? tenant.pricePos : 49.0; activeFeatures.push("POS"); }
+    if (tenant.subQrTable) { amount += tenant.priceQrTable !== undefined ? tenant.priceQrTable : 19.0; activeFeatures.push("QR Table"); }
+    if (tenant.subQrCashier) { amount += tenant.priceQrCashier !== undefined ? tenant.priceQrCashier : 9.0; activeFeatures.push("QR Cashier"); }
 
     const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
 
@@ -388,11 +388,11 @@ const getInvoices = async (filters = {}) => {
   for (const tenant of tenants) {
     let amount = 0;
     const activeFeatures = [];
-    if (tenant.subAppServi) { amount += 29; activeFeatures.push("APP servi"); }
-    if (tenant.subAppBrand) { amount += 99; activeFeatures.push("APP brand"); }
-    if (tenant.subPos) { amount += 49; activeFeatures.push("POS"); }
-    if (tenant.subQrTable) { amount += 19; activeFeatures.push("QR Table"); }
-    if (tenant.subQrCashier) { amount += 9; activeFeatures.push("QR Cashier"); }
+    if (tenant.subAppServi) { amount += tenant.priceAppServi !== undefined ? tenant.priceAppServi : 29.0; activeFeatures.push("APP servi"); }
+    if (tenant.subAppBrand) { amount += tenant.priceAppBrand !== undefined ? tenant.priceAppBrand : 99.0; activeFeatures.push("APP brand"); }
+    if (tenant.subPos) { amount += tenant.pricePos !== undefined ? tenant.pricePos : 49.0; activeFeatures.push("POS"); }
+    if (tenant.subQrTable) { amount += tenant.priceQrTable !== undefined ? tenant.priceQrTable : 19.0; activeFeatures.push("QR Table"); }
+    if (tenant.subQrCashier) { amount += tenant.priceQrCashier !== undefined ? tenant.priceQrCashier : 9.0; activeFeatures.push("QR Cashier"); }
 
     const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
 
