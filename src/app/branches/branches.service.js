@@ -11,7 +11,6 @@ const ApiError = require("../../utils/ApiError");
 
 const getBranches = async (db) => {
   const branches = await db.branch.findMany({
-    where: { isOpen: true },
     orderBy: { name: "asc" },
     select: {
       id: true,
@@ -22,6 +21,9 @@ const getBranches = async (db) => {
       lat: true,
       lng: true,
       isOpen: true,
+      hours: true,
+      rating: true,
+      imageUrl: true,
     },
   });
   return branches;
