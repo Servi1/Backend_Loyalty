@@ -47,6 +47,9 @@ app.use("/api/auth", authRoutes); // auth handles both super admin and tenant lo
 // 2. Tenant API (requires tenantId)
 const tenantRouter = express.Router({ mergeParams: true });
 tenantRouter.use(extractTenant);
+tenantRouter.get("/info", (req, res) => {
+  res.json({ success: true, data: req.tenant });
+});
 tenantRouter.use("/branches", branchesRoutes);
 tenantRouter.use("/users", usersRoutes);
 tenantRouter.use("/tables", tablesRoutes);
