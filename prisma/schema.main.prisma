@@ -110,6 +110,7 @@ model AggregatedOrder {
   notes          String?
   customerName   String?
   branchName     String?
+  feeRate        Float    @default(0.0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

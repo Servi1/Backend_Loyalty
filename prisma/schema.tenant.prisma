@@ -153,6 +153,7 @@ model Order {
   type        OrderType   @default(DINE_IN)
   total       Float       @default(0)
   notes       String?
+  feeRate     Float       @default(0.0)
 
   // Relations
   userId     String?

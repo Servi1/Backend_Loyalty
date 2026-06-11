@@ -36,6 +36,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         notes: order.notes,
         customerName,
         branchName: branch?.name || "Register Terminal",
+        feeRate: order.feeRate || 0.0,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       },
@@ -45,6 +46,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         notes: order.notes,
         customerName,
         branchName: branch?.name || "Register Terminal",
+        feeRate: order.feeRate || 0.0,
         updatedAt: order.updatedAt,
       }
     });
@@ -78,6 +80,29 @@ const create = async (db, { userId, customerId, branchId, tableId, type, items, 
   // Use the passed total if provided; otherwise fall back to subtotal
   const finalTotal = typeof total === "number" ? total : subtotal;
 
+  // Look up fee percentage from main database
+  let feeRate = 0.0;
+  if (tenantId) {
+    try {
+      const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+      if (tenant) {
+        if (userId) {
+          feeRate = tenant.feePos ?? 0.0;
+        } else if (tableId) {
+          feeRate = tenant.feeQrTable ?? 0.0;
+        } else if (type === "TAKEAWAY" || type === "DELIVER_TO_CAR") {
+          feeRate = tenant.feeQrCashier ?? 0.0;
+        } else if (type === "DELIVERY") {
+          feeRate = tenant.feeAppBrand ?? 0.0;
+        } else {
+          feeRate = tenant.feeAppServi ?? 0.0;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to query tenant fee settings:", e.message);
+    }
+  }
+
   const order = await db.order.create({
     data: {
       orderNumber: generateOrderNumber(),
@@ -88,6 +113,7 @@ const create = async (db, { userId, customerId, branchId, tableId, type, items, 
       type: type || "DINE_IN",
       notes,
       total: finalTotal,
+      feeRate,
       items: { create: orderItems },
     },
     include: { items: { include: { menuItem: true } }, user: true, branch: true },
