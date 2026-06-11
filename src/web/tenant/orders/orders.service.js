@@ -63,7 +63,7 @@ const generateOrderNumber = () => {
   return `SRV-${hex}`;
 };
 
-const create = async (db, { userId, customerId, branchId, tableId, type, items, notes, total }, tenantId) => {
+const create = async (db, { userId, customerId, branchId, tableId, type, items, notes, total, posUnit }, tenantId) => {
   // Calculate total from items
   const menuItemIds = items.map((i) => i.menuItemId);
   const menuItems = await db.menuItem.findMany({ where: { id: { in: menuItemIds } } });
@@ -114,6 +114,7 @@ const create = async (db, { userId, customerId, branchId, tableId, type, items, 
       notes,
       total: finalTotal,
       feeRate,
+      posUnit: posUnit || null,
       items: { create: orderItems },
     },
     include: { items: { include: { menuItem: true } }, user: true, branch: true },

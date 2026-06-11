@@ -19,7 +19,7 @@ const verifyOtp = catchAsync(async (req, res) => {
 const login = catchAsync(async (req, res) => {
   const { email, password } = req.body;
   const result = await authService.loginWithEmail(req.tenantDb, email, password);
-  res.status(200).json({ success: true, ...result });
+  res.status(200).json({ success: true, ...result, tenant: req.tenant });
 });
 
 /** POST /api/auth/super-admin/login */

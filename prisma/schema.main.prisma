@@ -63,6 +63,7 @@ model Tenant {
   subAppServi      Boolean          @default(false)
   subAppBrand      Boolean          @default(false)
   subPos           Boolean          @default(false)
+  posQuantity      Int              @default(1)
   subQrTable       Boolean          @default(false)
   subQrCashier     Boolean          @default(false)
 
