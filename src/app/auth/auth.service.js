@@ -204,8 +204,11 @@ const _formatUser = async (user) => {
   return {
     id: user.id,
     name: user.name,
+    lastName: user.lastName,
     phone: user.phone,
     email: user.email,
+    gender: user.gender,
+    dob: user.dob,
     role: "CUSTOMER",
     avatarUrl: user.avatarUrl,
     cars: user.cars || [],

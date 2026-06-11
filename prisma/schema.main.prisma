@@ -108,6 +108,9 @@ model AppUser {
   phone          String   @unique
   email          String?  @unique
   name           String?
+  lastName       String?
+  gender         String?
+  dob            DateTime?
   avatarUrl      String?
   cars           Json?    @default("[]")
   addresses      Json?    @default("[]")
@@ -118,10 +121,30 @@ model AppUser {
   wallet        Wallet?
   sentGifts     Gift[]   @relation("SentGifts")
   receivedGifts Gift[]   @relation("ReceivedGifts")
+  cart          CartItem[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   @@index([phone])
   @@index([email])
+}
+
+model CartItem {
+  id          String   @id @default(uuid())
+  appUserId   String
+  appUser     AppUser  @relation(fields: [appUserId], references: [id], onDelete: Cascade)
+  cartLineId  String   // format: brandId:itemId or brandId:itemId:size:flavor
+  brandId     String
+  itemId      String
+  name        String
+  price       Float
+  qty         Int      @default(1)
+  image       String?
+  size        String?
+  flavor      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([appUserId, cartLineId])
 }
  
 model Order {

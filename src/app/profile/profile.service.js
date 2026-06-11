@@ -10,7 +10,7 @@ const mainPrisma = require("../../config/prisma");
 
 // ─── Update profile ───────────────────────────────────────────────────────────
 
-const updateProfile = async (db, userId, { name, email, avatarUrl, cars, addresses, paymentMethods, favoriteBrands }, tenantId) => {
+const updateProfile = async (db, userId, { name, email, avatarUrl, cars, addresses, paymentMethods, favoriteBrands, lastName, gender, dob }, tenantId) => {
   const user = await mainPrisma.appUser.findUnique({
     where: { id: userId },
     include: { wallet: true },
@@ -33,6 +33,9 @@ const updateProfile = async (db, userId, { name, email, avatarUrl, cars, address
       ...(addresses !== undefined && { addresses }),
       ...(paymentMethods !== undefined && { paymentMethods }),
       ...(favoriteBrands !== undefined && { favoriteBrands }),
+      ...(lastName !== undefined && { lastName }),
+      ...(gender !== undefined && { gender }),
+      ...(dob !== undefined && { dob: dob ? new Date(dob) : null }),
     },
     include: { wallet: true },
   });
@@ -118,8 +121,11 @@ const _formatProfile = async (user) => {
   return {
     id: user.id,
     name: user.name,
+    lastName: user.lastName,
     phone: user.phone,
     email: user.email,
+    gender: user.gender,
+    dob: user.dob,
     avatarUrl: user.avatarUrl,
     role: "CUSTOMER",
     cars: user.cars || [],

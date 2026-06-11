@@ -10,11 +10,11 @@ const profileService = require("./profile.service");
 
 // ─── PATCH /profile ───────────────────────────────────────────────────────────
 const update = catchAsync(async (req, res) => {
-  const { name, email, avatarUrl, cars, addresses, paymentMethods, favoriteBrands } = req.body;
+  const { name, email, avatarUrl, cars, addresses, paymentMethods, favoriteBrands, lastName, gender, dob } = req.body;
   const updated = await profileService.updateProfile(
     req.tenantDb,
     req.user.id,
-    { name, email, avatarUrl, cars, addresses, paymentMethods, favoriteBrands },
+    { name, email, avatarUrl, cars, addresses, paymentMethods, favoriteBrands, lastName, gender, dob },
     req.tenantId,
   );
   res.json({ success: true, user: updated });
