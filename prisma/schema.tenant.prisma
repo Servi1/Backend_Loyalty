@@ -89,6 +89,7 @@ model Branch {
   lat       Float?
   lng       Float?
   isOpen    Boolean @default(true)
+  ordersEnabled Boolean @default(true)
 
   tables    Table[]
   orders    Order[]
