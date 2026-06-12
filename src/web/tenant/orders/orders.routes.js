@@ -13,7 +13,7 @@ router.post("/", ctrl.create);
 router.get("/mine", ctrl.getMyOrders);
 
 // Branch staff views branch orders
-router.get("/branch/:branchId", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"), ctrl.getByBranch);
+router.get("/branch/:branchId", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"), ctrl.getByBranch);
 
 // Brand managers/admins view all orders
 router.get("/", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"), ctrl.getAll);
