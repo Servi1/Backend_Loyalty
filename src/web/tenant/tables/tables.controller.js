@@ -1,5 +1,6 @@
 const catchAsync = require("../../../utils/catchAsync");
 const tablesService = require("./tables.service");
+const ApiError = require("../../../utils/ApiError");
 
 const getAll = catchAsync(async (req, res) => {
   const tables = await tablesService.getAll(req.tenantDb, req.query.branchId);
@@ -7,6 +8,15 @@ const getAll = catchAsync(async (req, res) => {
 });
 
 const create = catchAsync(async (req, res) => {
+  const limit = req.tenant.qrTableQuantity || 10;
+  const currentCount = await req.tenantDb.table.count({
+    where: { branchId: req.body.branchId }
+  });
+  
+  if (currentCount >= limit) {
+    throw new ApiError(400, `You have reached the limit of ${limit} QR tables for this branch.`);
+  }
+
   const table = await tablesService.create(req.tenantDb, req.body);
   res.status(201).json({ success: true, data: table });
 });
