@@ -60,7 +60,9 @@ const authenticate = async (req, _res, next) => {
  * Usage: authorize("ADMIN", "BRAND_MANAGER")
  */
 const authorize = (...roles) => (req, _res, next) => {
+  console.log("[AUTH DEBUG] req.user:", req.user, "required roles:", roles);
   if (!req.user || (req.user.role !== "SUPER_ADMIN" && !roles.includes(req.user.role))) {
+    console.log("[AUTH DEBUG] ACCESS DENIED!");
     return next(new ApiError(403, "You do not have permission to perform this action"));
   }
   next();

@@ -16,9 +16,9 @@ router.get("/mine", ctrl.getMyOrders);
 router.get("/branch/:branchId", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"), ctrl.getByBranch);
 
 // Brand managers/admins view all orders
-router.get("/", authorize("ADMIN", "BRAND_MANAGER"), ctrl.getAll);
+router.get("/", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"), ctrl.getAll);
 
 // Update order status (cashier accepts / completes)
-router.patch("/:id/status", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"), ctrl.updateStatus);
+router.patch("/:id/status", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"), ctrl.updateStatus);
 
 module.exports = router;
