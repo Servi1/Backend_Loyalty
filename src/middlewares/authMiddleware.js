@@ -60,7 +60,7 @@ const authenticate = async (req, _res, next) => {
  * Usage: authorize("ADMIN", "BRAND_MANAGER")
  */
 const authorize = (...roles) => (req, _res, next) => {
-  if (!req.user || !roles.includes(req.user.role)) {
+  if (!req.user || (req.user.role !== "SUPER_ADMIN" && !roles.includes(req.user.role))) {
     return next(new ApiError(403, "You do not have permission to perform this action"));
   }
   next();
