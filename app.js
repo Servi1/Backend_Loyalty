@@ -18,6 +18,7 @@ const uploadsRoutes = require("./src/web/tenant/uploads/uploads.routes");
 const usersRoutes = require("./src/web/tenant/users/users.routes");
 const tablesRoutes = require("./src/web/tenant/tables/tables.routes");
 const inventoryRoutes = require("./src/web/tenant/inventory/inventory.routes");
+const posDevicesRoutes = require("./src/web/tenant/pos-devices/pos-devices.routes");
 
 const app = express();
 
@@ -54,6 +55,7 @@ tenantRouter.use("/branches", branchesRoutes);
 tenantRouter.use("/users", usersRoutes);
 tenantRouter.use("/tables", tablesRoutes);
 tenantRouter.use("/inventory", inventoryRoutes);
+tenantRouter.use("/pos-devices", posDevicesRoutes);
 tenantRouter.use("/menus", menusRoutes);
 tenantRouter.use("/orders", ordersRoutes);
 tenantRouter.use("/loyalty", loyaltyRoutes);

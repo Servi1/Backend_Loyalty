@@ -95,6 +95,7 @@ model Branch {
   orders    Order[]
   staff     User[]
   inventory InventoryItem[]
+  posDevices PosDevice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -197,3 +198,19 @@ model InventoryItem {
 
   updatedAt DateTime @updatedAt
 }
+
+// ─── POS Devices ──────────────────────────────────────
+
+model PosDevice {
+  id        String   @id @default(uuid())
+  name      String   // e.g., "POS 1", "POS 2", etc.
+  deviceKey String   @unique // 8-digit random number
+  isActive  Boolean  @default(true)
+
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
