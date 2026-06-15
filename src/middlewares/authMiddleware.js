@@ -25,11 +25,8 @@ const authenticate = async (req, _res, next) => {
       const customer = await mainPrisma.appUser.findUnique({ where: { id: decoded.sub } });
       if (!customer) throw new ApiError(401, "Customer no longer exists");
       req.user = {
-        id: customer.id,
-        role: "CUSTOMER",
-        phone: customer.phone,
-        email: customer.email,
-        name: customer.name,
+        ...customer,
+        role: "CUSTOMER"
       };
     } else {
       if (!req.tenantDb) {

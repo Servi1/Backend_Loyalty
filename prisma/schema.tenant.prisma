@@ -1,18 +1,18 @@
 // ─── Servio Tenant Database — Prisma Schema ──────────────
-
+ 
 generator client {
   provider = "prisma-client-js"
   output   = "../node_modules/@prisma/client-tenant"
 }
-
+ 
 // In the tenant schema, the url is provided programmatically
 datasource db {
   provider = "postgresql"
   url      = env("TENANT_DATABASE_URL")
 }
-
+ 
 // ─── Enums ───────────────────────────────────────────
-
+ 
 enum Role {
   BRAND_MANAGER
   BRANCH_MANAGER
@@ -21,7 +21,7 @@ enum Role {
   KITCHEN
   CUSTOM
 }
-
+ 
 enum OrderStatus {
   PENDING
   ACCEPTED
@@ -30,7 +30,7 @@ enum OrderStatus {
   COMPLETED
   CANCELLED
 }
-
+ 
 enum OrderType {
   DINE_IN
   TAKEAWAY
@@ -38,9 +38,9 @@ enum OrderType {
   DELIVER_TO_CAR
   SCHEDULED
 }
-
+ 
 // ─── Users ───────────────────────────────────────────
-
+ 
 model User {
   id        String   @id @default(uuid())
   phone     String?  @unique
@@ -51,22 +51,22 @@ model User {
   customRole String?
   avatarUrl String?
   pinCode   String?
-
+ 
   // Relations
   branchId  String?
   branch    Branch?  @relation(fields: [branchId], references: [id])
-
+ 
   orders    Order[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
+ 
   @@index([phone])
   @@index([email])
 }
-
+ 
 // ─── OTP (for phone-based auth) ─────────────────────
-
+ 
 model Otp {
   id        String   @id @default(uuid())
   phone     String
@@ -77,9 +77,9 @@ model Otp {
 
   @@index([phone])
 }
-
+ 
 // ─── Branches (Individual Locations) ─────────────────
-
+ 
 model Branch {
   id        String  @id @default(uuid())
   name      String
@@ -90,19 +90,20 @@ model Branch {
   lng       Float?
   isOpen    Boolean @default(true)
   ordersEnabled Boolean @default(true)
-
+  hours     String? @default("10am - 11pm")
+  rating    Float?  @default(4.8)
+  imageUrl  String?
   tables    Table[]
   orders    Order[]
   staff     User[]
   inventory InventoryItem[]
   posDevices PosDevice[]
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
+ 
 // ─── Tables ──────────────────────────────────────────
-
+ 
 model Table {
   id       String  @id @default(uuid())
   label    String  // e.g. "Table 4"
@@ -110,25 +111,25 @@ model Table {
   qrCode   String? @unique
   isActive Boolean @default(true)
   zone     String? @default("Main")
-
+ 
   branchId String
   branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
-
+ 
   orders   Order[]
-
+ 
   createdAt DateTime @default(now())
 }
-
+ 
 // ─── Menu ────────────────────────────────────────────
-
+ 
 model MenuCategory {
   id    String @id @default(uuid())
   name  String
   order Int    @default(0)
-
+ 
   items MenuItem[]
 }
-
+ 
 model MenuItem {
   id          String  @id @default(uuid())
   name        String
@@ -136,18 +137,20 @@ model MenuItem {
   price       Float
   imageUrl    String?
   isAvailable Boolean @default(true)
-
+  isChefPick  Boolean @default(false)
+  rating      Float?  @default(4.8)
+ 
   categoryId String
   category   MenuCategory @relation(fields: [categoryId], references: [id])
-
+ 
   orderItems OrderItem[]
-
+ 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
+ 
 // ─── Orders ──────────────────────────────────────────
-
+ 
 model Order {
   id          String      @id @default(uuid())
   orderNumber String      @unique
@@ -156,7 +159,6 @@ model Order {
   total       Float       @default(0)
   notes       String?
   feeRate     Float       @default(0.0)
-
   // Relations
   userId     String?
   user       User?   @relation(fields: [userId], references: [id])
@@ -166,19 +168,18 @@ model Order {
   tableId  String?
   table    Table? @relation(fields: [tableId], references: [id])
   posUnit  String?
-
   items    OrderItem[]
-
+ 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
+ 
 model OrderItem {
   id       String @id @default(uuid())
   quantity Int    @default(1)
   price    Float
   notes    String?
-
+ 
   orderId    String
   order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuItemId String
@@ -186,16 +187,16 @@ model OrderItem {
 }
 
 // ─── Inventory (Branch-level) ────────────────────────
-
+ 
 model InventoryItem {
   id       String @id @default(uuid())
   name     String
   quantity Int    @default(0)
   unit     String @default("pcs")
-
+ 
   branchId String
   branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
-
+ 
   updatedAt DateTime @updatedAt
 }
 

@@ -20,6 +20,9 @@ const tablesRoutes = require("./src/web/tenant/tables/tables.routes");
 const inventoryRoutes = require("./src/web/tenant/inventory/inventory.routes");
 const posDevicesRoutes = require("./src/web/tenant/pos-devices/pos-devices.routes");
 
+// ─── Mobile App Routes ────────────────────────────────
+const appRouter = require("./src/app/index");
+
 const app = express();
 
 // ─── Global Middlewares ──────────────────────────────
@@ -62,6 +65,15 @@ tenantRouter.use("/loyalty", loyaltyRoutes);
 tenantRouter.use("/uploads", uploadsRoutes);
 
 app.use("/api/tenant/:tenantId", tenantRouter);
+
+// 3. Mobile App API (/api/app/:tenantId/...)
+// Separate router so app endpoints never collide with dashboard routes.
+const { extractAppTenant } = require("./src/app/middlewares/appTenant.middleware");
+const appTenantRouter = express.Router({ mergeParams: true });
+appTenantRouter.use(extractAppTenant);
+appTenantRouter.use("/", appRouter);
+
+app.use("/api/app/:tenantId", appTenantRouter);
 
 // ─── 404 Fallback ────────────────────────────────────
 app.use((_req, res) => {

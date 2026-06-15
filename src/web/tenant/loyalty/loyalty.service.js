@@ -180,7 +180,6 @@ const createCustomer = async (db, { name, phone, email, points = 0 }, tenantId) 
       },
     });
   }
-
   return {
     id: customer.id,
     name: customer.name,
@@ -191,12 +190,12 @@ const createCustomer = async (db, { name, phone, email, points = 0 }, tenantId) 
   };
 };
 
-module.exports = { 
-  getWallet, 
-  earnPoints, 
-  redeemPoints, 
-  searchCustomers, 
-  getAllCustomersForReport, 
+module.exports = {
+  getWallet,
+  earnPoints,
+  redeemPoints,
+  searchCustomers,
+  getAllCustomersForReport,
   getAllTransactionsForReport,
   createCustomer
 };
