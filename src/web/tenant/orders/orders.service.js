@@ -125,6 +125,30 @@ const create = async (db, { userId, customerId, branchId, tableId, type, items, 
     order.user = user;
   }
 
+  // Create order in main database
+  try {
+    await mainPrisma.order.create({
+      data: {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        type: order.type,
+        total: order.total,
+        notes: order.notes,
+        feeRate: order.feeRate,
+        tenantId: tenantId,
+        branchId: order.branchId,
+        tableId: order.tableId,
+        posUnit: order.posUnit,
+        appUserId: order.customerId || null,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+      }
+    });
+  } catch (err) {
+    console.error("[TENANT ORDER] Failed to create main database order:", err.message);
+  }
+
   // Sync to super admin aggregated orders asynchronously
   syncToAggregatedOrder(db, tenantId, order).catch(console.error);
 
@@ -185,6 +209,23 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
     data: updateData,
     include: { items: { include: { menuItem: true } }, table: true, branch: true }
   });
+
+  // Sync status update to main database
+  try {
+    const mainOrderExists = await mainPrisma.order.findUnique({ where: { id } });
+    if (mainOrderExists) {
+      await mainPrisma.order.update({
+        where: { id },
+        data: {
+          status,
+          ...(notes !== undefined && { notes }),
+          updatedAt: updated.updatedAt,
+        }
+      });
+    }
+  } catch (err) {
+    console.error("[TENANT ORDER] Failed to update main database order status:", err.message);
+  }
 
   if (updated.customerId) {
     const user = await mainPrisma.appUser.findUnique({ where: { id: updated.customerId } });

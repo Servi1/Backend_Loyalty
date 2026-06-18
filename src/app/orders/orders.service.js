@@ -9,6 +9,7 @@
 const ApiError = require("../../utils/ApiError");
 const crypto = require("crypto");
 const mainPrisma = require("../../config/prisma");
+const loyaltyService = require("../../web/tenant/loyalty/loyalty.service");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         notes: order.notes,
         customerName: user?.name || user?.phone || "App Customer",
         branchName: branch?.name || "Unknown",
+        feeRate: order.feeRate || 0.0,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       },
@@ -49,6 +51,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         status: order.status,
         total: order.total,
         notes: order.notes,
+        feeRate: order.feeRate || 0.0,
         updatedAt: order.updatedAt,
       },
     });
@@ -60,7 +63,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
 // ─── placeOrder ───────────────────────────────────────────────────────────────
 
 const placeOrder = async (db, userId, body, tenantId) => {
-  const { branchId, tableId, type = "DINE_IN", items, notes, total } = body;
+  const { branchId, tableId, type = "DINE_IN", items, notes, total, paymentMethod } = body;
 
   if (!branchId) throw new ApiError(400, "branchId is required");
   if (!items || !Array.isArray(items) || items.length === 0) {
@@ -101,15 +104,56 @@ const placeOrder = async (db, userId, body, tenantId) => {
     );
   }
 
+  const orderNumber = generateOrderNumber();
+  let finalNotes = notes || null;
+
+  if (paymentMethod === "points") {
+    const pointsCost = Math.round(subtotal * 100);
+    const wallet = await loyaltyService.getWallet(db, userId);
+    if (!wallet || wallet.points < pointsCost) {
+      throw new ApiError(400, "Insufficient points to complete this order");
+    }
+    await loyaltyService.redeemPoints(
+      db,
+      userId,
+      pointsCost,
+      `Paid by Loyalty Points for Order #${orderNumber}`,
+      tenantId
+    );
+    finalNotes = finalNotes ? `${finalNotes} | Paid by Loyalty Points` : "Paid by Loyalty Points";
+  }
+
+  // Look up fee percentage from main database
+  let feeRate = 0.0;
+  if (tenantId) {
+    try {
+      const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+      if (tenant) {
+        if (tableId) {
+          feeRate = tenant.feeQrTable ?? 0.0;
+        } else if (type === "TAKEAWAY" || type === "DELIVER_TO_CAR") {
+          feeRate = tenant.feeQrCashier ?? 0.0;
+        } else if (type === "DELIVERY") {
+          feeRate = tenant.feeAppBrand ?? 0.0;
+        } else {
+          feeRate = tenant.feeAppServi ?? 0.0;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to query tenant fee settings:", e.message);
+    }
+  }
+
   const order = await db.order.create({
     data: {
-      orderNumber: generateOrderNumber(),
+      orderNumber,
       customerId: userId,
       branchId,
       tableId: tableId || null,
       type,
-      notes: notes || null,
+      notes: finalNotes,
       total: subtotal,
+      feeRate,
       items: { create: orderItems },
     },
     include: {
@@ -121,6 +165,29 @@ const placeOrder = async (db, userId, body, tenantId) => {
 
   const user = await mainPrisma.appUser.findUnique({ where: { id: userId } });
   order.user = user;
+
+  // Create order in main database
+  try {
+    await mainPrisma.order.create({
+      data: {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        type: order.type,
+        total: order.total,
+        notes: order.notes,
+        feeRate: order.feeRate,
+        tenantId: tenantId,
+        branchId: order.branchId,
+        tableId: order.tableId,
+        appUserId: userId,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+      }
+    });
+  } catch (err) {
+    console.error("[APP ORDER] Failed to create order in main database:", err.message);
+  }
 
   // Fire-and-forget — non-blocking side effects
   syncToAggregatedOrder(db, tenantId, order).catch(console.error);
