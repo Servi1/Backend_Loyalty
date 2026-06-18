@@ -120,6 +120,10 @@ const superAdminLogin = async (email, password) => {
   const admin = await mainPrisma.superAdmin.findUnique({ where: { email } });
   if (!admin) throw new ApiError(401, "Invalid credentials");
 
+  if (admin.status === "inactive") {
+    throw new ApiError(403, "This account has been deactivated.");
+  }
+
   const valid = await bcrypt.compare(password, admin.password);
   if (!valid) throw new ApiError(401, "Invalid credentials");
 

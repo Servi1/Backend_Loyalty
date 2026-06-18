@@ -90,6 +90,11 @@ model Branch {
   lng       Float?
   isOpen    Boolean @default(true)
   ordersEnabled Boolean @default(true)
+  menuEnabled   Boolean @default(true)
+  tablesEnabled Boolean @default(true)
+  staffEnabled  Boolean @default(true)
+  qrEnabled     Boolean @default(true)
+  posEnabled    Boolean @default(true)
   hours     String? @default("10am - 11pm")
   rating    Float?  @default(4.8)
   imageUrl  String?
@@ -98,7 +103,6 @@ model Branch {
   staff     User[]
   inventory InventoryItem[]
   posDevices PosDevice[]
-  qrCashiers qrCashier[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

@@ -64,8 +64,43 @@ const removeStaff = async (db, id) => {
   return db.user.delete({ where: { id } });
 };
 
+const updateStaff = async (db, id, data) => {
+  const user = await db.user.findUnique({ where: { id } });
+  if (!user) throw new ApiError(404, "User not found");
+
+  if (data.email && data.email !== user.email) {
+    const existing = await db.user.findUnique({ where: { email: data.email } });
+    if (existing) throw new ApiError(400, "Email already registered for this brand");
+  }
+
+  const updateData = {
+    name: data.name,
+    role: data.role,
+    customRole: data.customRole || null,
+    branchId: data.branchId || null,
+    pinCode: data.pinCode || user.pinCode,
+  };
+
+  if (data.email !== undefined) {
+    updateData.email = data.email;
+  }
+
+  if (data.password) {
+    updateData.password = await bcrypt.hash(data.password, 10);
+  }
+
+  return db.user.update({
+    where: { id },
+    data: updateData,
+    include: {
+      branch: true
+    }
+  });
+};
+
 module.exports = {
   getAllStaff,
   createStaff,
   removeStaff,
+  updateStaff,
 };
