@@ -98,6 +98,7 @@ model Branch {
   staff     User[]
   inventory InventoryItem[]
   posDevices PosDevice[]
+  qrCashiers qrCashier[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -163,6 +164,7 @@ model Order {
   userId     String?
   user       User?   @relation(fields: [userId], references: [id])
   customerId String? // Global customer ID from main database
+  customerPhone String?
   branchId   String
   branch   Branch @relation(fields: [branchId], references: [id])
   tableId  String?
