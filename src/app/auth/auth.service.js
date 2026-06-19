@@ -77,6 +77,9 @@ const verifyOtp = async (db, rawPhone, code, tenantId) => {
     where: { phone },
     include: { wallet: { include: { transactions: { orderBy: { createdAt: "desc" }, take: 10 } } } },
   });
+  if (user && user.isDelete) {
+    throw new ApiError(400, "user already exists, please contact the admin.");
+  }
   const isNewUser = !user || !user.name;
 
   if (!user) {

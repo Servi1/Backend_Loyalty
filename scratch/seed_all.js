@@ -331,12 +331,16 @@ async function seed() {
     const branches = [];
     const branchNames = ["Downtown Flagship", "City Mall Outlet", "Airport Terminal"];
     for (const bName of branchNames) {
+      const randomLat = 24.7136 + (Math.random() - 0.5) * 0.08;
+      const randomLng = 46.6753 + (Math.random() - 0.5) * 0.08;
       const branch = await tenantPrisma.branch.create({
         data: {
           name: bName,
           address: `123 ${bName} Road`,
           city: "Riyadh",
           phone: "+966110000000",
+          lat: randomLat,
+          lng: randomLng,
           isOpen: true,
         }
       });

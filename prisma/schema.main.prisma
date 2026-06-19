@@ -151,6 +151,7 @@ model AppUser {
   addresses      Json?    @default("[]")
   paymentMethods Json?    @default("[]")
   favoriteBrands Json?    @default("[]")
+  isDelete       Boolean  @default(false)
   // Relations
   orders        Order[]
   wallet        Wallet?
