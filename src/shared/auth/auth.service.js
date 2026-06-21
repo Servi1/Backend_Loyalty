@@ -90,6 +90,37 @@ const verifyOtp = async (db, phone, code, tenantId) => {
  * B2B portal login (email + password).
  */
 const loginWithEmail = async (db, email, password) => {
+  // Check if the email field holds a valid POS Device Key
+  const posDevice = await db.posDevice.findUnique({ where: { deviceKey: email } });
+  if (posDevice) {
+    // If a POS device key is matched, search for a CASHIER user with this pinCode in the device's branch
+    const user = await db.user.findFirst({
+      where: {
+        branchId: posDevice.branchId,
+        role: "CASHIER",
+        pinCode: password,
+      },
+      include: { branch: true },
+    });
+
+    if (!user) throw new ApiError(401, "Invalid PIN code for this POS terminal");
+
+    if (user.branch && !user.branch.isOpen) {
+      throw new ApiError(403, "This branch is currently deactivated.");
+    }
+
+    const token = signToken(user.id, "user");
+    return { 
+      token, 
+      user, 
+      posDevice: { 
+        id: posDevice.id, 
+        name: posDevice.name, 
+        deviceKey: posDevice.deviceKey 
+      } 
+    };
+  }
+
   const user = await db.user.findUnique({ where: { email }, include: { branch: true } });
   if (!user) throw new ApiError(401, "Invalid credentials");
 
@@ -97,7 +128,7 @@ const loginWithEmail = async (db, email, password) => {
     throw new ApiError(403, "This branch is currently deactivated.");
   }
 
-  // Check if PIN code is provided as password for cashier/waiter
+  // Check if PIN code is provided as password for cashier/waiter (direct login fallback)
   if (user.pinCode && password === user.pinCode) {
     const token = signToken(user.id, "user");
     return { token, user };

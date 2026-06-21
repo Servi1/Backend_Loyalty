@@ -72,6 +72,15 @@ const placeOrder = async (db, userId, body, tenantId) => {
   if (!branch) throw new ApiError(404, "Branch not found");
   if (!branch.isOpen) throw new ApiError(400, "Branch is currently closed");
 
+  // Validate branch features are enabled for app ordering
+  const isDineIn = (type && type.toUpperCase() === "DINE_IN") || !!tableId;
+  if (isDineIn && branch.tablesEnabled === false) {
+    throw new ApiError(403, "Table ordering is currently disabled for this branch.");
+  }
+  if (!isDineIn && branch.qrEnabled === false) {
+    throw new ApiError(403, "Mobile ordering is currently disabled for this branch.");
+  }
+
   // Validate and price items from the database (never trust client prices)
   const menuItemIds = items.map((i) => i.menuItemId);
   const menuItems = await db.menuItem.findMany({

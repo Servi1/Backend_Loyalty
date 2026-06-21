@@ -832,6 +832,36 @@ const getAllSystemUsers = async (filters = {}) => {
   return mergedUsers;
 };
 
+const getSuperAdminOrderDetail = async (tenantId, orderId) => {
+  const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) throw new ApiError(404, "Tenant not found");
+
+  const tenantPrisma = getTenantClient(tenant.dbUrl);
+  const order = await tenantPrisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      items: {
+        include: {
+          menuItem: true
+        }
+      },
+      branch: true,
+      user: true
+    }
+  });
+
+  if (!order) throw new ApiError(404, "Order not found");
+
+  return {
+    ...order,
+    tenant: {
+      id: tenant.id,
+      name: tenant.name,
+      slug: tenant.slug
+    }
+  };
+};
+
 module.exports = {
   getAll,
   getById,
@@ -843,6 +873,7 @@ module.exports = {
   getLoyaltyOverview,
   getInvoices,
   getSuperAdminOrders,
+  getSuperAdminOrderDetail,
   syncAllTenantOrders,
   getSuperAdminCustomers,
   getSuperAdminCustomerDetails,

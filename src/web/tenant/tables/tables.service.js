@@ -20,6 +20,10 @@ const create = async (db, data) => {
   const branch = await db.branch.findUnique({ where: { id: data.branchId } });
   if (!branch) throw new ApiError(404, "Branch not found");
 
+  if (branch.tablesEnabled === false) {
+    throw new ApiError(400, "Table feature is deactivated for this branch");
+  }
+
   // Auto generate unique qrCode string if not provided
   const qrCode = data.qrCode || `tbl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
