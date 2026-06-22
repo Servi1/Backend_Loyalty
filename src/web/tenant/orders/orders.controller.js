@@ -1,7 +1,12 @@
 const catchAsync = require("../../../utils/catchAsync");
 const ordersService = require("./orders.service");
+const ApiError = require("../../../utils/ApiError");
 
 const create = catchAsync(async (req, res) => {
+  if (req.user && req.user.role === "CASHIER" && req.user.branch && req.user.branch.posEnabled === false) {
+    throw new ApiError(403, "POS terminal access is currently disabled for this branch.");
+  }
+
   const isCustomer = req.user.role === "CUSTOMER";
   const userId = isCustomer ? null : req.user.id;
   const customerId = isCustomer ? req.user.id : req.body.customerId;
@@ -34,6 +39,10 @@ const getMyOrders = catchAsync(async (req, res) => {
 });
 
 const updateStatus = catchAsync(async (req, res) => {
+  if (req.user && req.user.role === "CASHIER" && req.user.branch && req.user.branch.posEnabled === false) {
+    throw new ApiError(403, "POS terminal access is currently disabled for this branch.");
+  }
+
   const order = await ordersService.updateStatus(
     req.tenantDb,
     req.params.id,

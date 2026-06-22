@@ -10,6 +10,7 @@ const { errorHandler } = require("./src/middlewares/errorHandler");
 // ─── Feature Routes ──────────────────────────────────
 const authRoutes = require("./src/shared/auth/auth.routes");
 const tenantsRoutes = require("./src/web/admin/tenants/tenants.routes");
+const adminUsersRoutes = require("./src/web/admin/users/adminUsers.routes");
 const branchesRoutes = require("./src/web/tenant/branches/branches.routes");
 const menusRoutes = require("./src/web/tenant/menus/menus.routes");
 const ordersRoutes = require("./src/web/tenant/orders/orders.routes");
@@ -46,6 +47,7 @@ const { extractTenant } = require("./src/middlewares/tenantMiddleware");
 
 // 1. Super Admin API
 app.use("/api/admin/tenants", tenantsRoutes);
+app.use("/api/admin/users", adminUsersRoutes);
 app.use("/api/auth", authRoutes); // auth handles both super admin and tenant logins
 
 // 2. Tenant API (requires tenantId)

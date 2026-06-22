@@ -105,6 +105,12 @@ const getAllSystemUsers = catchAsync(async (req, res) => {
   res.json({ success: true, data: users });
 });
 
+const getSuperAdminOrderDetail = catchAsync(async (req, res) => {
+  const { tenantId, orderId } = req.params;
+  const result = await tenantsService.getSuperAdminOrderDetail(tenantId, orderId);
+  res.json({ success: true, data: result });
+});
+
 module.exports = {
   getAll,
   getById,
@@ -118,6 +124,7 @@ module.exports = {
   getLoyaltyOverview,
   getInvoices,
   getSuperAdminOrders,
+  getSuperAdminOrderDetail,
   getSuperAdminCustomers,
   getSuperAdminCustomerDetails,
   addSuperAdminCustomer,

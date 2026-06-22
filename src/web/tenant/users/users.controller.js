@@ -17,8 +17,14 @@ const remove = catchAsync(async (req, res) => {
   res.status(204).send();
 });
 
+const update = catchAsync(async (req, res) => {
+  const staff = await usersService.updateStaff(req.tenantDb, req.params.id, req.body);
+  res.json({ success: true, data: staff });
+});
+
 module.exports = {
   getAll,
   create,
   remove,
+  update,
 };

@@ -43,6 +43,8 @@ model SuperAdmin {
   email     String   @unique
   password  String
   name      String?
+  role      String   @default("super_admin")
+  status    String   @default("active")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

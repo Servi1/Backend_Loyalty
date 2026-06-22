@@ -90,6 +90,11 @@ model Branch {
   lng       Float?
   isOpen    Boolean @default(true)
   ordersEnabled Boolean @default(true)
+  menuEnabled   Boolean @default(true)
+  tablesEnabled Boolean @default(true)
+  staffEnabled  Boolean @default(true)
+  qrEnabled     Boolean @default(true)
+  posEnabled    Boolean @default(true)
   hours     String? @default("10am - 11pm")
   rating    Float?  @default(4.8)
   imageUrl  String?
@@ -163,6 +168,7 @@ model Order {
   userId     String?
   user       User?   @relation(fields: [userId], references: [id])
   customerId String? // Global customer ID from main database
+  customerPhone String?
   branchId   String
   branch   Branch @relation(fields: [branchId], references: [id])
   tableId  String?

@@ -33,6 +33,19 @@ const createStaff = async (db, data) => {
     if (existing) throw new ApiError(400, "Email already registered for this brand");
   }
 
+  // Check Cashier limit vs POS Devices count for this branch
+  if (data.role === "CASHIER" && data.branchId) {
+    const posCount = await db.posDevice.count({
+      where: { branchId: data.branchId }
+    });
+    const cashierCount = await db.user.count({
+      where: { branchId: data.branchId, role: "CASHIER" }
+    });
+    if (cashierCount >= posCount) {
+      throw new ApiError(400, `Cannot add Cashier. This branch has reached the limit of cashiers based on the number of POS machines (${posCount}).`);
+    }
+  }
+
   // Hash password if provided
   let hashedPassword = null;
   if (data.password) {
@@ -64,8 +77,61 @@ const removeStaff = async (db, id) => {
   return db.user.delete({ where: { id } });
 };
 
+const updateStaff = async (db, id, data) => {
+  const user = await db.user.findUnique({ where: { id } });
+  if (!user) throw new ApiError(404, "User not found");
+
+  if (data.email && data.email !== user.email) {
+    const existing = await db.user.findUnique({ where: { email: data.email } });
+    if (existing) throw new ApiError(400, "Email already registered for this brand");
+  }
+
+  const targetRole = data.role || user.role;
+  const targetBranchId = data.branchId !== undefined ? data.branchId : user.branchId;
+
+  if (targetRole === "CASHIER" && targetBranchId) {
+    const isSameBranchCashier = user.role === "CASHIER" && user.branchId === targetBranchId;
+    if (!isSameBranchCashier) {
+      const posCount = await db.posDevice.count({
+        where: { branchId: targetBranchId }
+      });
+      const cashierCount = await db.user.count({
+        where: { branchId: targetBranchId, role: "CASHIER" }
+      });
+      if (cashierCount >= posCount) {
+        throw new ApiError(400, `Cannot update staff. This branch has reached the limit of cashiers based on the number of POS machines (${posCount}).`);
+      }
+    }
+  }
+
+  const updateData = {
+    name: data.name,
+    role: data.role,
+    customRole: data.customRole || null,
+    branchId: data.branchId || null,
+    pinCode: data.pinCode || user.pinCode,
+  };
+
+  if (data.email !== undefined) {
+    updateData.email = data.email;
+  }
+
+  if (data.password) {
+    updateData.password = await bcrypt.hash(data.password, 10);
+  }
+
+  return db.user.update({
+    where: { id },
+    data: updateData,
+    include: {
+      branch: true
+    }
+  });
+};
+
 module.exports = {
   getAllStaff,
   createStaff,
   removeStaff,
+  updateStaff,
 };

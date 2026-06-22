@@ -13,6 +13,7 @@ router.put("/profile/me", extractTenant, authenticate, ctrl.updateProfile);
 router.use(authenticate);
 router.get("/overview", authorize("SUPER_ADMIN"), ctrl.getOverview);
 router.get("/orders", authorize("SUPER_ADMIN"), ctrl.getSuperAdminOrders);
+router.get("/orders/:tenantId/:orderId", authorize("SUPER_ADMIN"), ctrl.getSuperAdminOrderDetail);
 router.get("/subscriptions", authorize("SUPER_ADMIN"), ctrl.getSubscriptions);
 router.get("/loyalty", authorize("SUPER_ADMIN"), ctrl.getLoyaltyOverview);
 router.get("/loyalty/customers", authorize("SUPER_ADMIN"), ctrl.getSuperAdminCustomers);
