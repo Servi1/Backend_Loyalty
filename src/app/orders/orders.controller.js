@@ -20,6 +20,21 @@ const place = catchAsync(async (req, res) => {
   res.status(201).json({ success: true, data: order });
 });
 
+const placePublic = catchAsync(async (req, res) => {
+  const order = await ordersService.placeOrder(
+    req.tenantDb,
+    null, // guest order
+    req.body,
+    req.tenantId,
+  );
+  // Emit to Socket.io so cashier POS receives instantly
+  const io = req.app.get("io");
+  if (io) {
+    io.to(`branch:${order.branchId}`).emit("order:new", order);
+  }
+  res.status(201).json({ success: true, data: order });
+});
+
 // ─── GET /orders ──────────────────────────────────────────────────────────────
 const myOrders = catchAsync(async (req, res) => {
   const page = parseInt(req.query.page) || 1;
@@ -34,4 +49,4 @@ const getOne = catchAsync(async (req, res) => {
   res.json({ success: true, data: order });
 });
 
-module.exports = { place, myOrders, getOne };
+module.exports = { place, placePublic, myOrders, getOne };

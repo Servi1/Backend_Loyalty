@@ -128,7 +128,10 @@ const placeOrder = async (db, userId, body, tenantId) => {
     },
   });
 
-  const user = await mainPrisma.appUser.findUnique({ where: { id: userId } });
+  let user = null;
+  if (userId) {
+    user = await mainPrisma.appUser.findUnique({ where: { id: userId } });
+  }
   order.user = user;
 
   // Fire-and-forget — non-blocking side effects

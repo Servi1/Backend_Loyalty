@@ -15,6 +15,9 @@ const { requireCustomer } = require("../middlewares/appAuth.middleware");
 
 const router = Router();
 
+// Public checkout for guest ordering via QR code
+router.post("/public", ctrl.placePublic);
+
 router.use(authenticate, requireCustomer);
 
 router.post("/", ctrl.place);
