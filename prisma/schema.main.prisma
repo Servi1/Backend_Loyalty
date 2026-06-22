@@ -18,6 +18,23 @@ enum SubscriptionTier {
   PROFESSIONAL
   ENTERPRISE
 }
+
+enum OrderStatus {
+  PENDING
+  ACCEPTED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum OrderType {
+  DINE_IN
+  TAKEAWAY
+  DELIVERY
+  DELIVER_TO_CAR
+  SCHEDULED
+}
  
 // ─── Super Admins ────────────────────────────────────
  
@@ -136,6 +153,7 @@ model AppUser {
   addresses      Json?    @default("[]")
   paymentMethods Json?    @default("[]")
   favoriteBrands Json?    @default("[]")
+  isDelete       Boolean  @default(false)
   // Relations
   orders        Order[]
   wallet        Wallet?
@@ -167,11 +185,25 @@ model CartItem {
   @@unique([appUserId, cartLineId])
 }
 model Order {
-  id        String   @id @default(uuid())
-  appUserId String
-  appUser   AppUser  @relation(fields: [appUserId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String      @id @default(uuid())
+  orderNumber String      @unique
+  status      OrderStatus @default(PENDING)
+  type        OrderType   @default(DINE_IN)
+  total       Float       @default(0)
+  notes       String?
+  feeRate     Float       @default(0.0)
+
+  // Relations
+  appUserId   String?
+  appUser     AppUser?    @relation(fields: [appUserId], references: [id], onDelete: Cascade)
+  
+  tenantId    String
+  branchId    String
+  tableId     String?
+  posUnit     String?
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 }
 
 // ─── Global Loyalty Wallets ──────────────────────────

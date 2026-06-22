@@ -65,19 +65,40 @@ const updateProfile = async (db, userId, { name, email, avatarUrl, cars, address
 // ─── Delete / anonymise account ───────────────────────────────────────────────
 
 const deleteAccount = async (db, userId) => {
-  const user = await mainPrisma.appUser.findUnique({ where: { id: userId } });
+  const user = await mainPrisma.appUser.findUnique({
+    where: { id: userId },
+    include: { wallet: true }
+  });
   if (!user) throw new ApiError(404, "User not found");
 
-  // Anonymise instead of hard-delete — preserves order history integrity
+  // Soft-delete: clear all personal details but keep phone so they can be blocked on future logins
   await mainPrisma.appUser.update({
     where: { id: userId },
     data: {
+      isDelete: true,
       name: "Deleted User",
-      phone: null,
+      lastName: null,
       email: null,
+      gender: null,
+      dob: null,
       avatarUrl: null,
+      cars: [],
+      addresses: [],
+      paymentMethods: [],
+      favoriteBrands: [],
     },
   });
+
+  // Reset loyalty points
+  if (user.wallet) {
+    await mainPrisma.wallet.update({
+      where: { id: user.wallet.id },
+      data: {
+        points: 0,
+        lifetimeEarn: 0,
+      },
+    });
+  }
 
   return { message: "Account deleted successfully" };
 };
