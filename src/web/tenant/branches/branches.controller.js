@@ -1,5 +1,6 @@
 const catchAsync = require("../../../utils/catchAsync");
 const branchesService = require("./branches.service");
+const ApiError = require("../../../utils/ApiError");
 
 const getAll = catchAsync(async (req, res) => {
   const branches = await branchesService.getAll(req.tenantDb);
@@ -12,6 +13,12 @@ const getById = catchAsync(async (req, res) => {
 });
 
 const create = catchAsync(async (req, res) => {
+  const limit = req.tenant.branchLimit || 5;
+  const currentCount = await req.tenantDb.branch.count();
+  if (currentCount >= limit) {
+    throw new ApiError(400, `You have reached the maximum limit of ${limit} branch(es) for your subscription.`);
+  }
+
   const branch = await branchesService.create(req.tenantDb, req.body);
   res.status(201).json({ success: true, data: branch });
 });
