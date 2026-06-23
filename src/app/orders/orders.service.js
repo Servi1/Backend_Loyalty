@@ -80,6 +80,13 @@ const placeOrder = async (db, userId, body, tenantId) => {
   if (isDineIn && branch.tablesEnabled === false) {
     throw new ApiError(403, "Table ordering is currently disabled for this branch.");
   }
+  if (tableId) {
+    const table = await db.table.findUnique({ where: { id: tableId } });
+    if (!table) throw new ApiError(404, "Table not found");
+    if (table.expiresAt && new Date(table.expiresAt) < new Date()) {
+      throw new ApiError(403, "Table ordering subscription is expired. Please contact restaurant staff.");
+    }
+  }
   if (!isDineIn && branch.qrEnabled === false) {
     throw new ApiError(403, "Mobile ordering is currently disabled for this branch.");
   }

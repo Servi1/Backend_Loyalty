@@ -93,6 +93,9 @@ const loginWithEmail = async (db, email, password) => {
   // Check if the email field holds a valid POS Device Key
   const posDevice = await db.posDevice.findUnique({ where: { deviceKey: email } });
   if (posDevice) {
+    if (posDevice.expiresAt && new Date(posDevice.expiresAt) < new Date()) {
+      throw new ApiError(403, "This POS terminal subscription has expired. Please contact administration.");
+    }
     // If a POS device key is matched, search for a CASHIER user with this pinCode in the device's branch
     const user = await db.user.findFirst({
       where: {

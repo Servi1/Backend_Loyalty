@@ -255,7 +255,36 @@ const getSubscriptions = async () => {
           name: true,
           city: true,
           isOpen: true,
-          createdAt: true
+          createdAt: true,
+          ordersEnabled: true,
+          menuEnabled: true,
+          tablesEnabled: true,
+          staffEnabled: true,
+          qrEnabled: true,
+          posEnabled: true,
+          tables: {
+            select: {
+              id: true,
+              label: true,
+              createdAt: true,
+              expiresAt: true
+            }
+          },
+          posDevices: {
+            select: {
+              id: true,
+              name: true,
+              createdAt: true,
+              expiresAt: true
+            }
+          },
+          _count: {
+            select: {
+              tables: true,
+              posDevices: true,
+              staff: true
+            }
+          }
         }
       });
       branchesList = dbBranches.map(b => ({
@@ -264,7 +293,18 @@ const getSubscriptions = async () => {
         city: b.city || "Unknown",
         startedAt: b.createdAt,
         endsAt: endsAt,
-        status: b.isOpen ? "open" : "closed"
+        status: b.isOpen ? "open" : "closed",
+        ordersEnabled: b.ordersEnabled,
+        menuEnabled: b.menuEnabled,
+        tablesEnabled: b.tablesEnabled,
+        staffEnabled: b.staffEnabled,
+        qrEnabled: b.qrEnabled,
+        posEnabled: b.posEnabled,
+        tablesCount: b._count?.tables || 0,
+        posDevicesCount: b._count?.posDevices || 0,
+        staffCount: b._count?.staff || 0,
+        tables: b.tables,
+        posDevices: b.posDevices
       }));
     } catch (err) {
       console.error(`Failed to fetch branches for tenant ${tenant.slug} sub:`, err.message);

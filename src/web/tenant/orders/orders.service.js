@@ -64,6 +64,20 @@ const generateOrderNumber = () => {
 };
 
 const create = async (db, { userId, customerId, branchId, tableId, type, items, notes, total, posUnit }, tenantId) => {
+  if (tableId) {
+    const table = await db.table.findUnique({ where: { id: tableId } });
+    if (table && table.expiresAt && new Date(table.expiresAt) < new Date()) {
+      throw new ApiError(400, "Table ordering subscription is expired. Please renew.");
+    }
+  }
+
+  if (posUnit) {
+    const pos = await db.posDevice.findUnique({ where: { deviceKey: posUnit } });
+    if (pos && pos.expiresAt && new Date(pos.expiresAt) < new Date()) {
+      throw new ApiError(400, "POS terminal subscription is expired. Please renew.");
+    }
+  }
+
   // Calculate total from items
   const menuItemIds = items.map((i) => i.menuItemId);
   const menuItems = await db.menuItem.findMany({ where: { id: { in: menuItemIds } } });

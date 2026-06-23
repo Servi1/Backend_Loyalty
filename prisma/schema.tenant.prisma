@@ -122,6 +122,7 @@ model Table {
  
   orders   Order[]
  
+  expiresAt DateTime?
   createdAt DateTime @default(now())
 }
  
@@ -216,8 +217,8 @@ model PosDevice {
 
   branchId  String
   branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
-
+ 
+  expiresAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-

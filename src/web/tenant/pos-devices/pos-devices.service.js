@@ -1,5 +1,18 @@
 const ApiError = require("../../../utils/ApiError");
 
+const getExpirationDate = (cycle, currentExpiresAt) => {
+  const baseDate = (currentExpiresAt && new Date(currentExpiresAt) > new Date())
+    ? new Date(currentExpiresAt)
+    : new Date();
+  
+  if (cycle === "yearly") {
+    baseDate.setFullYear(baseDate.getFullYear() + 1);
+  } else {
+    baseDate.setDate(baseDate.getDate() + 30);
+  }
+  return baseDate;
+};
+
 const getAll = async (db, branchId) => {
   const where = {};
   if (branchId && branchId !== "all") {
@@ -16,7 +29,7 @@ const getAll = async (db, branchId) => {
   });
 };
 
-const create = async (db, data) => {
+const create = async (db, data, cycle) => {
   const branch = await db.branch.findUnique({ where: { id: data.branchId } });
   if (!branch) throw new ApiError(404, "Branch not found");
 
@@ -31,12 +44,33 @@ const create = async (db, data) => {
     }
   }
 
+  const expiresAt = getExpirationDate(cycle);
+
   return db.posDevice.create({
     data: {
       name: data.name,
       deviceKey,
       isActive: data.isActive !== undefined ? data.isActive : true,
-      branchId: data.branchId
+      branchId: data.branchId,
+      expiresAt
+    },
+    include: {
+      branch: true
+    }
+  });
+};
+
+const renew = async (db, id, cycle) => {
+  const device = await db.posDevice.findUnique({ where: { id } });
+  if (!device) throw new ApiError(404, "POS Device not found");
+
+  const expiresAt = getExpirationDate(cycle, device.expiresAt);
+
+  return db.posDevice.update({
+    where: { id },
+    data: {
+      expiresAt,
+      isActive: true
     },
     include: {
       branch: true
@@ -53,5 +87,6 @@ const remove = async (db, id) => {
 module.exports = {
   getAll,
   create,
+  renew,
   remove,
 };
