@@ -50,8 +50,9 @@ const earnPoints = async (db, customerId, points, description, tenantId) => {
 
 /**
  * Redeem points from a user's wallet.
+ * @param {object} opts  - Optional { orderId, orderNumber } to link transaction to an order
  */
-const redeemPoints = async (db, customerId, points, description, tenantId) => {
+const redeemPoints = async (db, customerId, points, description, tenantId, opts = {}) => {
   const customer = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
   if (!customer) throw new ApiError(404, "Customer not found");
 
@@ -65,12 +66,20 @@ const redeemPoints = async (db, customerId, points, description, tenantId) => {
       data: { points: { decrement: points } },
     }),
     mainPrisma.walletTransaction.create({
-      data: { walletId: wallet.id, points: -points, description: description || "Points redeemed", tenantId },
+      data: {
+        walletId: wallet.id,
+        points: -points,
+        description: description || "Points redeemed",
+        tenantId,
+        orderId: opts.orderId || null,
+        orderNumber: opts.orderNumber || null,
+      },
     }),
   ]);
 
   return updatedWallet;
 };
+
 
 const searchCustomers = async (db, search) => {
   const query = search ? search.trim() : "";

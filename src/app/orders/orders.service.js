@@ -44,6 +44,8 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerName: user?.name || user?.phone || "App Customer",
         branchName: branch?.name || "Unknown",
         feeRate: order.feeRate || 0.0,
+        paymentMethod: order.paymentMethod || "cash",
+        pointsRedeemed: order.pointsRedeemed || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       },
@@ -52,6 +54,8 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         total: order.total,
         notes: order.notes,
         feeRate: order.feeRate || 0.0,
+        paymentMethod: order.paymentMethod || "cash",
+        pointsRedeemed: order.pointsRedeemed || null,
         updatedAt: order.updatedAt,
       },
     });
@@ -115,6 +119,7 @@ const placeOrder = async (db, userId, body, tenantId) => {
 
   const orderNumber = generateOrderNumber();
   let finalNotes = notes || null;
+  let pointsRedeemed = null;
 
   if (paymentMethod === "points") {
     const pointsCost = Math.round(subtotal * 100);
@@ -122,14 +127,17 @@ const placeOrder = async (db, userId, body, tenantId) => {
     if (!wallet || wallet.points < pointsCost) {
       throw new ApiError(400, "Insufficient points to complete this order");
     }
+    pointsRedeemed = pointsCost;
+    // Redeem points — link transaction to this order so the wallet history shows the order number
     await loyaltyService.redeemPoints(
       db,
       userId,
       pointsCost,
-      `Paid by Loyalty Points for Order #${orderNumber}`,
-      tenantId
+      `Points redeemed for Order #${orderNumber}`,
+      tenantId,
+      { orderId: null, orderNumber } // orderId filled after order creation below
     );
-    finalNotes = finalNotes ? `${finalNotes} | Paid by Loyalty Points` : "Paid by Loyalty Points";
+    finalNotes = finalNotes ? `${finalNotes} | Points Payment` : "Points Payment";
   }
 
   // Look up fee percentage from main database
@@ -163,6 +171,8 @@ const placeOrder = async (db, userId, body, tenantId) => {
       notes: finalNotes,
       total: subtotal,
       feeRate,
+      paymentMethod: paymentMethod || "cash",
+      pointsRedeemed: pointsRedeemed,
       items: { create: orderItems },
     },
     include: {
@@ -171,6 +181,18 @@ const placeOrder = async (db, userId, body, tenantId) => {
       table: true,
     },
   });
+
+  // Now back-fill orderId on the wallet transaction we created above
+  if (paymentMethod === "points" && userId) {
+    try {
+      await require("../../config/prisma").walletTransaction.updateMany({
+        where: { orderNumber, walletId: { not: undefined } },
+        data: { orderId: order.id },
+      });
+    } catch (err) {
+      console.warn("[APP ORDER] Could not back-fill orderId on wallet transaction:", err.message);
+    }
+  }
 
   let user = null;
   if (userId) {
@@ -189,6 +211,8 @@ const placeOrder = async (db, userId, body, tenantId) => {
         total: order.total,
         notes: order.notes,
         feeRate: order.feeRate,
+        paymentMethod: paymentMethod || "cash",
+        pointsRedeemed: pointsRedeemed,
         tenantId: tenantId,
         branchId: order.branchId,
         tableId: order.tableId,

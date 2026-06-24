@@ -131,6 +131,8 @@ model AggregatedOrder {
   customerName   String?
   branchName     String?
   feeRate        Float    @default(0.0)
+  paymentMethod  String?  // cash | card | apple_pay | google_pay | split | points
+  pointsRedeemed Int?     // points deducted (set when paymentMethod = "points")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
  
@@ -202,6 +204,8 @@ model Order {
   branchId    String
   tableId     String?
   posUnit     String?
+  paymentMethod  String? @default("cash") // cash | card | apple_pay | google_pay | split | points
+  pointsRedeemed Int?   // points deducted (set when paymentMethod = "points")
 
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
@@ -225,6 +229,8 @@ model WalletTransaction {
   points      Int      // positive = earn, negative = redeem
   description String?
   tenantId    String?  // The tenant brand where this happened
+  orderId     String?  // The order this redemption is linked to (soft ref)
+  orderNumber String?  // Human-readable order reference
   walletId    String
   wallet      Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
