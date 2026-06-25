@@ -32,9 +32,15 @@ const remove = catchAsync(async (req, res) => {
   res.status(204).send();
 });
 
+const update = catchAsync(async (req, res) => {
+  const device = await posDevicesService.update(req.tenantDb, req.params.id, req.body);
+  res.json({ success: true, data: device });
+});
+
 module.exports = {
   getAll,
   create,
   renewPos,
   remove,
+  update,
 };

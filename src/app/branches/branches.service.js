@@ -37,7 +37,7 @@ const getBranch = async (db, branchId) => {
     include: {
       tables: {
         where: { isActive: true },
-        select: { id: true, label: true, seats: true, zone: true, qrCode: true },
+        select: { id: true, label: true, seats: true, zone: true, qrCode: true, isActive: true, expiresAt: true },
       },
     },
   });

@@ -267,7 +267,8 @@ const getSubscriptions = async () => {
               id: true,
               label: true,
               createdAt: true,
-              expiresAt: true
+              expiresAt: true,
+              isActive: true
             }
           },
           posDevices: {
@@ -275,7 +276,8 @@ const getSubscriptions = async () => {
               id: true,
               name: true,
               createdAt: true,
-              expiresAt: true
+              expiresAt: true,
+              isActive: true
             }
           },
           _count: {
@@ -287,6 +289,30 @@ const getSubscriptions = async () => {
           }
         }
       });
+
+      // Auto-inactivate tables and POS devices that expired more than 7 days ago
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      for (const branch of dbBranches) {
+        for (const t of branch.tables) {
+          if (t.isActive && t.expiresAt && new Date(t.expiresAt) < sevenDaysAgo) {
+            await tenantPrisma.table.update({
+              where: { id: t.id },
+              data: { isActive: false }
+            });
+            t.isActive = false;
+          }
+        }
+        for (const p of branch.posDevices) {
+          if (p.isActive && p.expiresAt && new Date(p.expiresAt) < sevenDaysAgo) {
+            await tenantPrisma.posDevice.update({
+              where: { id: p.id },
+              data: { isActive: false }
+            });
+            p.isActive = false;
+          }
+        }
+      }
+
       branchesList = dbBranches.map(b => ({
         id: b.id,
         name: b.name,

@@ -18,6 +18,31 @@ const getAll = async (db, branchId) => {
   if (branchId) {
     where.branchId = branchId;
   }
+
+  // Auto-inactivate tables that expired > 7 days ago
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const expiredActiveTables = await db.table.findMany({
+    where: {
+      isActive: true,
+      expiresAt: {
+        lt: sevenDaysAgo
+      }
+    }
+  });
+
+  if (expiredActiveTables.length > 0) {
+    await db.table.updateMany({
+      where: {
+        id: {
+          in: expiredActiveTables.map(t => t.id)
+        }
+      },
+      data: {
+        isActive: false
+      }
+    });
+  }
+
   return db.table.findMany({
     where,
     include: {
@@ -75,6 +100,19 @@ const renew = async (db, id, cycle) => {
   });
 };
 
+const update = async (db, id, data) => {
+  const table = await db.table.findUnique({ where: { id } });
+  if (!table) throw new ApiError(404, "Table not found");
+
+  return db.table.update({
+    where: { id },
+    data,
+    include: {
+      branch: true
+    }
+  });
+};
+
 const remove = async (db, id) => {
   const table = await db.table.findUnique({ where: { id } });
   if (!table) throw new ApiError(404, "Table not found");
@@ -85,5 +123,6 @@ module.exports = {
   getAll,
   create,
   renew,
+  update,
   remove,
 };

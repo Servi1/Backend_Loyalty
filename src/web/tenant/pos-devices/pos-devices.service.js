@@ -18,6 +18,31 @@ const getAll = async (db, branchId) => {
   if (branchId && branchId !== "all") {
     where.branchId = branchId;
   }
+
+  // Auto-inactivate POS devices that expired > 7 days ago
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const expiredActiveDevices = await db.posDevice.findMany({
+    where: {
+      isActive: true,
+      expiresAt: {
+        lt: sevenDaysAgo
+      }
+    }
+  });
+
+  if (expiredActiveDevices.length > 0) {
+    await db.posDevice.updateMany({
+      where: {
+        id: {
+          in: expiredActiveDevices.map(p => p.id)
+        }
+      },
+      data: {
+        isActive: false
+      }
+    });
+  }
+
   return db.posDevice.findMany({
     where,
     include: {
@@ -78,6 +103,19 @@ const renew = async (db, id, cycle) => {
   });
 };
 
+const update = async (db, id, data) => {
+  const device = await db.posDevice.findUnique({ where: { id } });
+  if (!device) throw new ApiError(404, "POS Device not found");
+
+  return db.posDevice.update({
+    where: { id },
+    data,
+    include: {
+      branch: true
+    }
+  });
+};
+
 const remove = async (db, id) => {
   const device = await db.posDevice.findUnique({ where: { id } });
   if (!device) throw new ApiError(404, "POS Device not found");
@@ -88,5 +126,6 @@ module.exports = {
   getAll,
   create,
   renew,
+  update,
   remove,
 };
