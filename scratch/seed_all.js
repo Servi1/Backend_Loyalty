@@ -341,7 +341,7 @@ async function seed() {
           phone: "+966110000000",
           lat: randomLat,
           lng: randomLng,
-          isOpen: true,
+          isOpen: bName !== "Airport Terminal",
         }
       });
       branches.push(branch);
@@ -394,7 +394,7 @@ async function seed() {
         name: cData.name,
         phone: cData.phone,
         email: cData.email,
-        favoriteBrands: registeredTenants.map(t => t.id) // all brands favorited by default
+        favoriteBrands: registeredTenants.slice(0, 2).map(t => t.id) // only first 2 brands favorited by default
       }
     });
 
