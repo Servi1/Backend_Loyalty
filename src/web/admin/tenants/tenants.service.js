@@ -255,16 +255,82 @@ const getSubscriptions = async () => {
           name: true,
           city: true,
           isOpen: true,
-          createdAt: true
+          createdAt: true,
+          ordersEnabled: true,
+          menuEnabled: true,
+          tablesEnabled: true,
+          staffEnabled: true,
+          qrEnabled: true,
+          posEnabled: true,
+          tables: {
+            select: {
+              id: true,
+              label: true,
+              createdAt: true,
+              expiresAt: true,
+              isActive: true
+            }
+          },
+          posDevices: {
+            select: {
+              id: true,
+              name: true,
+              createdAt: true,
+              expiresAt: true,
+              isActive: true
+            }
+          },
+          _count: {
+            select: {
+              tables: true,
+              posDevices: true,
+              staff: true
+            }
+          }
         }
       });
+
+      // Auto-inactivate tables and POS devices that expired more than 7 days ago
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      for (const branch of dbBranches) {
+        for (const t of branch.tables) {
+          if (t.isActive && t.expiresAt && new Date(t.expiresAt) < sevenDaysAgo) {
+            await tenantPrisma.table.update({
+              where: { id: t.id },
+              data: { isActive: false }
+            });
+            t.isActive = false;
+          }
+        }
+        for (const p of branch.posDevices) {
+          if (p.isActive && p.expiresAt && new Date(p.expiresAt) < sevenDaysAgo) {
+            await tenantPrisma.posDevice.update({
+              where: { id: p.id },
+              data: { isActive: false }
+            });
+            p.isActive = false;
+          }
+        }
+      }
+
       branchesList = dbBranches.map(b => ({
         id: b.id,
         name: b.name,
         city: b.city || "Unknown",
         startedAt: b.createdAt,
         endsAt: endsAt,
-        status: b.isOpen ? "open" : "closed"
+        status: b.isOpen ? "open" : "closed",
+        ordersEnabled: b.ordersEnabled,
+        menuEnabled: b.menuEnabled,
+        tablesEnabled: b.tablesEnabled,
+        staffEnabled: b.staffEnabled,
+        qrEnabled: b.qrEnabled,
+        posEnabled: b.posEnabled,
+        tablesCount: b._count?.tables || 0,
+        posDevicesCount: b._count?.posDevices || 0,
+        staffCount: b._count?.staff || 0,
+        tables: b.tables,
+        posDevices: b.posDevices
       }));
     } catch (err) {
       console.error(`Failed to fetch branches for tenant ${tenant.slug} sub:`, err.message);

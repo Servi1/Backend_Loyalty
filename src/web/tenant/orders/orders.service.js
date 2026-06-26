@@ -64,6 +64,38 @@ const generateOrderNumber = () => {
 };
 
 const create = async (db, { userId, customerId, branchId, tableId, type, items, notes, total, posUnit }, tenantId) => {
+  if (tableId) {
+    const table = await db.table.findUnique({ where: { id: tableId } });
+    if (table) {
+      if (!table.isActive) {
+        throw new ApiError(400, "This table is currently inactive.");
+      }
+      if (table.expiresAt && new Date(table.expiresAt) < new Date()) {
+        throw new ApiError(400, "Table ordering subscription is expired. Please renew.");
+      }
+    }
+  }
+
+  if (posUnit) {
+    let pos = await db.posDevice.findUnique({ where: { deviceKey: posUnit } });
+    if (!pos) {
+      pos = await db.posDevice.findFirst({
+        where: {
+          name: posUnit,
+          branchId: branchId
+        }
+      });
+    }
+    if (pos) {
+      if (!pos.isActive) {
+        throw new ApiError(400, "This POS device is currently inactive.");
+      }
+      if (pos.expiresAt && new Date(pos.expiresAt) < new Date()) {
+        throw new ApiError(400, "POS terminal subscription is expired. Please renew.");
+      }
+    }
+  }
+
   // Calculate total from items
   const menuItemIds = items.map((i) => i.menuItemId);
   const menuItems = await db.menuItem.findMany({ where: { id: { in: menuItemIds } } });
@@ -72,9 +104,29 @@ const create = async (db, { userId, customerId, branchId, tableId, type, items, 
   const orderItems = items.map((item) => {
     const menuItem = menuItems.find((m) => m.id === item.menuItemId);
     if (!menuItem) throw new ApiError(400, `Menu item ${item.menuItemId} not found`);
-    const lineTotal = menuItem.price * (item.quantity || 1);
+    
+    let modifiersPrice = 0;
+    if (item.selectedModifiers && Array.isArray(item.selectedModifiers)) {
+      item.selectedModifiers.forEach((mod) => {
+        if (mod.options && Array.isArray(mod.options)) {
+          mod.options.forEach((opt) => {
+            modifiersPrice += Number(opt.priceModifier || 0);
+          });
+        }
+      });
+    }
+
+    const itemPrice = menuItem.price + modifiersPrice;
+    const lineTotal = itemPrice * (item.quantity || 1);
     subtotal += lineTotal;
-    return { menuItemId: item.menuItemId, quantity: item.quantity || 1, price: menuItem.price, notes: item.notes };
+    
+    return {
+      menuItemId: item.menuItemId,
+      quantity: item.quantity || 1,
+      price: itemPrice,
+      notes: item.notes || null,
+      selectedModifiers: item.selectedModifiers || [],
+    };
   });
 
   // Use the passed total if provided; otherwise fall back to subtotal

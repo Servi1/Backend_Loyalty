@@ -84,6 +84,16 @@ const placeOrder = async (db, userId, body, tenantId) => {
   if (isDineIn && branch.tablesEnabled === false) {
     throw new ApiError(403, "Table ordering is currently disabled for this branch.");
   }
+  if (tableId) {
+    const table = await db.table.findUnique({ where: { id: tableId } });
+    if (!table) throw new ApiError(404, "Table not found");
+    if (!table.isActive) {
+      throw new ApiError(403, "This table is currently inactive. Please contact restaurant staff.");
+    }
+    if (table.expiresAt && new Date(table.expiresAt) < new Date()) {
+      throw new ApiError(403, "Table ordering subscription is expired. Please contact restaurant staff.");
+    }
+  }
   if (!isDineIn && branch.qrEnabled === false) {
     throw new ApiError(403, "Mobile ordering is currently disabled for this branch.");
   }
@@ -101,13 +111,28 @@ const placeOrder = async (db, userId, body, tenantId) => {
   let subtotal = 0;
   const orderItems = items.map((item) => {
     const menuItem = menuItems.find((m) => m.id === item.menuItemId);
-    const lineTotal = menuItem.price * (item.quantity || 1);
+    
+    let modifiersPrice = 0;
+    if (item.selectedModifiers && Array.isArray(item.selectedModifiers)) {
+      item.selectedModifiers.forEach((mod) => {
+        if (mod.options && Array.isArray(mod.options)) {
+          mod.options.forEach((opt) => {
+            modifiersPrice += Number(opt.priceModifier || 0);
+          });
+        }
+      });
+    }
+
+    const itemPrice = menuItem.price + modifiersPrice;
+    const lineTotal = itemPrice * (item.quantity || 1);
     subtotal += lineTotal;
+    
     return {
       menuItemId: item.menuItemId,
       quantity: item.quantity || 1,
-      price: menuItem.price,
+      price: itemPrice,
       notes: item.notes || null,
+      selectedModifiers: item.selectedModifiers || [],
     };
   });
 

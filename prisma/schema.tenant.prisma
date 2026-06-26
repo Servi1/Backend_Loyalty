@@ -122,6 +122,7 @@ model Table {
  
   orders   Order[]
  
+  expiresAt DateTime?
   createdAt DateTime @default(now())
 }
  
@@ -144,6 +145,7 @@ model MenuItem {
   isAvailable Boolean @default(true)
   isChefPick  Boolean @default(false)
   rating      Float?  @default(4.8)
+  modifiers   Json?   @default("[]")
  
   categoryId String
   category   MenuCategory @relation(fields: [categoryId], references: [id])
@@ -183,10 +185,11 @@ model Order {
 }
  
 model OrderItem {
-  id       String @id @default(uuid())
-  quantity Int    @default(1)
-  price    Float
-  notes    String?
+  id                String  @id @default(uuid())
+  quantity          Int     @default(1)
+  price             Float
+  notes             String?
+  selectedModifiers Json?   @default("[]")
  
   orderId    String
   order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -218,8 +221,8 @@ model PosDevice {
 
   branchId  String
   branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
-
+ 
+  expiresAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-

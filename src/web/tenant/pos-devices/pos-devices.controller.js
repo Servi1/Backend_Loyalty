@@ -18,8 +18,13 @@ const create = catchAsync(async (req, res) => {
     throw new ApiError(400, `You have reached the limit of ${limit} POS terminals for this branch.`);
   }
 
-  const device = await posDevicesService.create(req.tenantDb, req.body);
+  const device = await posDevicesService.create(req.tenantDb, req.body, req.tenant.cyclePos);
   res.status(201).json({ success: true, data: device });
+});
+
+const renewPos = catchAsync(async (req, res) => {
+  const device = await posDevicesService.renew(req.tenantDb, req.params.id, req.tenant.cyclePos);
+  res.json({ success: true, data: device });
 });
 
 const remove = catchAsync(async (req, res) => {
@@ -27,8 +32,15 @@ const remove = catchAsync(async (req, res) => {
   res.status(204).send();
 });
 
+const update = catchAsync(async (req, res) => {
+  const device = await posDevicesService.update(req.tenantDb, req.params.id, req.body);
+  res.json({ success: true, data: device });
+});
+
 module.exports = {
   getAll,
   create,
+  renewPos,
   remove,
+  update,
 };

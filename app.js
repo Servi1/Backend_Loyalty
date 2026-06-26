@@ -53,11 +53,59 @@ app.use("/api/admin/tenants", tenantsRoutes);
 app.use("/api/admin/users", adminUsersRoutes);
 app.use("/api/auth", authRoutes); // auth handles both super admin and tenant logins
 
+const mainPrisma = require("./src/config/prisma");
+
 // 2. Tenant API (requires tenantId)
 const tenantRouter = express.Router({ mergeParams: true });
 tenantRouter.use(extractTenant);
-tenantRouter.get("/info", (req, res) => {
-  res.json({ success: true, data: req.tenant });
+tenantRouter.get("/info", async (req, res, next) => {
+  try {
+    const tableCount = await req.tenantDb.table.count();
+    const posCount = await req.tenantDb.posDevice.count();
+    const branchCount = await req.tenantDb.branch.count();
+    res.json({
+      success: true,
+      data: {
+        ...req.tenant,
+        activeTablesCount: tableCount,
+        activePosCount: posCount,
+        activeBranchesCount: branchCount
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+tenantRouter.post("/market/buy", async (req, res, next) => {
+  try {
+    const { addPosCount, addTableCount, addBranchCount } = req.body;
+    const tenantId = req.tenantId;
+
+    const updated = await mainPrisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        posQuantity: { increment: Number(addPosCount) || 0 },
+        qrTableQuantity: { increment: Number(addTableCount) || 0 },
+        branchLimit: { increment: Number(addBranchCount) || 0 }
+      }
+    });
+
+    const tableCount = await req.tenantDb.table.count();
+    const posCount = await req.tenantDb.posDevice.count();
+    const branchCount = await req.tenantDb.branch.count();
+
+    res.json({
+      success: true,
+      data: {
+        ...updated,
+        activeTablesCount: tableCount,
+        activePosCount: posCount,
+        activeBranchesCount: branchCount
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 tenantRouter.use("/branches", branchesRoutes);
 tenantRouter.use("/users", usersRoutes);
