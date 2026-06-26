@@ -65,19 +65,6 @@ model User {
   @@index([email])
 }
  
-// ─── OTP (for phone-based auth) ─────────────────────
- 
-model Otp {
-  id        String   @id @default(uuid())
-  phone     String
-  code      String
-  expiresAt DateTime
-  verified  Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  @@index([phone])
-}
- 
 // ─── Branches (Individual Locations) ─────────────────
  
 model Branch {

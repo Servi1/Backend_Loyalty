@@ -30,11 +30,11 @@ const normalisePhone = (raw) => {
 
 // ─── sendOtp ─────────────────────────────────────────────────────────────────
 
-const sendOtp = async (db, rawPhone) => {
+const sendOtp = async (rawPhone) => {
   const phone = normalisePhone(rawPhone);
 
   // Invalidate any previous unused OTPs for this phone
-  await db.otp.updateMany({
+  await mainPrisma.otp.updateMany({
     where: { phone, verified: false },
     data: { verified: true },
   });
@@ -42,7 +42,7 @@ const sendOtp = async (db, rawPhone) => {
   const code = process.env.NODE_ENV !== "production" ? DEV_OTP : _generateSecureOtp();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-  await db.otp.create({ data: { phone, code, expiresAt } });
+  await mainPrisma.otp.create({ data: { phone, code, expiresAt } });
 
   if (process.env.NODE_ENV !== "production") {
     console.log(`[APP-AUTH] OTP for ${phone}: ${code}  (static dev code)`);
@@ -53,11 +53,11 @@ const sendOtp = async (db, rawPhone) => {
 
 // ─── verifyOtp ───────────────────────────────────────────────────────────────
 
-const verifyOtp = async (db, rawPhone, code, tenantId) => {
+const verifyOtp = async (rawPhone, code, tenantId = null) => {
   const phone = normalisePhone(rawPhone);
 
   // Find the latest unverified, non-expired OTP
-  const otp = await db.otp.findFirst({
+  const otp = await mainPrisma.otp.findFirst({
     where: {
       phone,
       code,
@@ -70,7 +70,7 @@ const verifyOtp = async (db, rawPhone, code, tenantId) => {
   if (!otp) throw new ApiError(400, "Invalid or expired OTP");
 
   // Mark as consumed
-  await db.otp.update({ where: { id: otp.id }, data: { verified: true } });
+  await mainPrisma.otp.update({ where: { id: otp.id }, data: { verified: true } });
 
   // ── Find or create user globally ──────────────────────────────────────────
   let user = await mainPrisma.appUser.findUnique({
@@ -103,7 +103,28 @@ const verifyOtp = async (db, rawPhone, code, tenantId) => {
   }
 
   const token = signToken(user.id);
-  const stats = await _getUserStats(db, user.id);
+  
+  // Optionally fetch brand-specific stats if tenantId is provided
+  let stats = { ordersCount: 0, totalSpent: 0 };
+  if (tenantId) {
+    try {
+      const tenant = await mainPrisma.tenant.findFirst({
+        where: {
+          OR: [
+            { id: tenantId },
+            { slug: tenantId }
+          ]
+        }
+      });
+      if (tenant) {
+        const { getTenantClient } = require("../../config/tenantManager");
+        const tenantDb = getTenantClient(tenant.dbUrl);
+        stats = await _getUserStats(tenantDb, user.id);
+      }
+    } catch (err) {
+      console.error("Failed to load tenant stats during verifyOtp:", err.message);
+    }
+  }
 
   return {
     token,
@@ -133,7 +154,7 @@ const getMe = async (db, userId) => {
   });
   if (!user) throw new ApiError(404, "User not found");
 
-  const stats = await _getUserStats(db, userId);
+  const stats = db ? await _getUserStats(db, userId) : { ordersCount: 0, totalSpent: 0 };
 
   return {
     ...(await _formatUser(user)),
