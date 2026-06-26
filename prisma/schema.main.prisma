@@ -87,6 +87,10 @@ model Tenant {
   branchLimit      Int              @default(5)
   subQrTable       Boolean          @default(false)
   subQrCashier     Boolean          @default(false)
+  subKds           Boolean          @default(false)
+  kdsQuantity      Int              @default(1)
+  subCds           Boolean          @default(false)
+  cdsQuantity      Int              @default(1)
 
   priceAppServi    Float            @default(29.0)
   cycleAppServi    String           @default("monthly")
@@ -103,6 +107,12 @@ model Tenant {
   priceQrCashier   Float            @default(9.0)
   cycleQrCashier   String           @default("monthly")
   feeQrCashier     Float            @default(0.0)
+  priceKds         Float            @default(19.0)
+  cycleKds         String           @default("monthly")
+  feeKds           Float            @default(0.0)
+  priceCds         Float            @default(9.0)
+  cycleCds         String           @default("monthly")
+  feeCds           Float            @default(0.0)
   // ─── Feature Flags
   notificationsEnabled Boolean @default(true)
   autoPayouts          Boolean @default(true)

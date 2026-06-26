@@ -66,7 +66,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
 
 // ─── placeOrder ───────────────────────────────────────────────────────────────
 
-const placeOrder = async (db, userId, body, tenantId) => {
+const placeOrder = async (db, userId, body, tenantId, tenant) => {
   const { branchId, tableId, type = "DINE_IN", items, notes, total, paymentMethod } = body;
 
   if (!branchId) throw new ApiError(400, "branchId is required");
@@ -81,6 +81,17 @@ const placeOrder = async (db, userId, body, tenantId) => {
 
   // Validate branch features are enabled for app ordering
   const isDineIn = (type && type.toUpperCase() === "DINE_IN") || !!tableId;
+
+  // Verify tenant subscription active feature flags
+  if (tenant) {
+    if (isDineIn && tenant.subQrTable === false) {
+      throw new ApiError(403, "QR Table Dining ordering is currently deactivated for this brand. Please contact restaurant staff.");
+    }
+    if (!isDineIn && tenant.subQrCashier === false) {
+      throw new ApiError(403, "QR Cashier takeaway ordering is currently deactivated for this brand. Please contact restaurant staff.");
+    }
+  }
+
   if (isDineIn && branch.tablesEnabled === false) {
     throw new ApiError(403, "Table ordering is currently disabled for this branch.");
   }

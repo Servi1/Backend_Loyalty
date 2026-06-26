@@ -226,6 +226,8 @@ const getSubscriptions = async () => {
     if (tenant.subPos) { amount += tenant.pricePos !== undefined ? tenant.pricePos : 49.0; activeFeatures.push("POS"); }
     if (tenant.subQrTable) { amount += tenant.priceQrTable !== undefined ? tenant.priceQrTable : 19.0; activeFeatures.push("QR Table"); }
     if (tenant.subQrCashier) { amount += tenant.priceQrCashier !== undefined ? tenant.priceQrCashier : 9.0; activeFeatures.push("QR Cashier"); }
+    if (tenant.subKds) { amount += tenant.priceKds !== undefined ? tenant.priceKds : 19.0; activeFeatures.push("KDS"); }
+    if (tenant.subCds) { amount += tenant.priceCds !== undefined ? tenant.priceCds : 9.0; activeFeatures.push("CDS"); }
 
     const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
 
@@ -352,6 +354,10 @@ const getSubscriptions = async () => {
       subPos: tenant.subPos,
       subQrTable: tenant.subQrTable,
       subQrCashier: tenant.subQrCashier,
+      subKds: tenant.subKds,
+      subCds: tenant.subCds,
+      kdsQuantity: tenant.kdsQuantity,
+      cdsQuantity: tenant.cdsQuantity,
     });
   }
 
@@ -459,6 +465,8 @@ const getInvoices = async (filters = {}) => {
     if (tenant.subPos) { amount += tenant.pricePos !== undefined ? tenant.pricePos : 49.0; activeFeatures.push("POS"); }
     if (tenant.subQrTable) { amount += tenant.priceQrTable !== undefined ? tenant.priceQrTable : 19.0; activeFeatures.push("QR Table"); }
     if (tenant.subQrCashier) { amount += tenant.priceQrCashier !== undefined ? tenant.priceQrCashier : 9.0; activeFeatures.push("QR Cashier"); }
+    if (tenant.subKds) { amount += tenant.priceKds !== undefined ? tenant.priceKds : 19.0; activeFeatures.push("KDS"); }
+    if (tenant.subCds) { amount += tenant.priceCds !== undefined ? tenant.priceCds : 9.0; activeFeatures.push("CDS"); }
 
     const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
 
