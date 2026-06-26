@@ -77,7 +77,15 @@ const create = async (db, { userId, customerId, branchId, tableId, type, items, 
   }
 
   if (posUnit) {
-    const pos = await db.posDevice.findUnique({ where: { deviceKey: posUnit } });
+    let pos = await db.posDevice.findUnique({ where: { deviceKey: posUnit } });
+    if (!pos) {
+      pos = await db.posDevice.findFirst({
+        where: {
+          name: posUnit,
+          branchId: branchId
+        }
+      });
+    }
     if (pos) {
       if (!pos.isActive) {
         throw new ApiError(400, "This POS device is currently inactive.");
