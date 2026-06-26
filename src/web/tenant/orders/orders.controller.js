@@ -3,6 +3,10 @@ const ordersService = require("./orders.service");
 const ApiError = require("../../../utils/ApiError");
 
 const create = catchAsync(async (req, res) => {
+  if (req.tenant.subPos === false && req.user && req.user.role === "CASHIER") {
+    throw new ApiError(403, "POS terminal ordering features are currently deactivated for this brand. Transactions are disabled.");
+  }
+
   if (req.user && req.user.role === "CASHIER" && req.user.branch && req.user.branch.posEnabled === false) {
     throw new ApiError(403, "POS terminal access is currently disabled for this branch.");
   }
@@ -39,6 +43,13 @@ const getMyOrders = catchAsync(async (req, res) => {
 });
 
 const updateStatus = catchAsync(async (req, res) => {
+  if (req.tenant.subPos === false && req.user && req.user.role === "CASHIER") {
+    throw new ApiError(403, "POS terminal ordering features are currently deactivated for this brand. Transactions are disabled.");
+  }
+  if (req.tenant.subKds === false && req.user && req.user.role === "KITCHEN") {
+    throw new ApiError(403, "KDS (Kitchen Display System) features are currently deactivated for this brand. Order status updates are disabled.");
+  }
+
   if (req.user && req.user.role === "CASHIER" && req.user.branch && req.user.branch.posEnabled === false) {
     throw new ApiError(403, "POS terminal access is currently disabled for this branch.");
   }

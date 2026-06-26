@@ -16,6 +16,7 @@ const place = catchAsync(async (req, res) => {
     req.user.id,
     req.body,
     req.tenantId,
+    req.tenant
   );
   res.status(201).json({ success: true, data: order });
 });
@@ -26,6 +27,7 @@ const placePublic = catchAsync(async (req, res) => {
     null, // guest order
     req.body,
     req.tenantId,
+    req.tenant
   );
   // Emit to Socket.io so cashier POS receives instantly
   const io = req.app.get("io");

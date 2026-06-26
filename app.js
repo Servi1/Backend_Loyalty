@@ -63,13 +63,17 @@ tenantRouter.get("/info", async (req, res, next) => {
     const tableCount = await req.tenantDb.table.count();
     const posCount = await req.tenantDb.posDevice.count();
     const branchCount = await req.tenantDb.branch.count();
+    const kdsCount = await req.tenantDb.user.count({ where: { role: "KITCHEN" } });
+    const cdsCount = 0; // CDS doesn't map to a specific database entity yet
     res.json({
       success: true,
       data: {
         ...req.tenant,
         activeTablesCount: tableCount,
         activePosCount: posCount,
-        activeBranchesCount: branchCount
+        activeBranchesCount: branchCount,
+        activeKdsCount: kdsCount,
+        activeCdsCount: cdsCount
       }
     });
   } catch (err) {
@@ -78,7 +82,7 @@ tenantRouter.get("/info", async (req, res, next) => {
 });
 tenantRouter.post("/market/buy", async (req, res, next) => {
   try {
-    const { addPosCount, addTableCount, addBranchCount } = req.body;
+    const { addPosCount, addTableCount, addBranchCount, addKdsCount, addCdsCount } = req.body;
     const tenantId = req.tenantId;
 
     const updated = await mainPrisma.tenant.update({
@@ -86,13 +90,17 @@ tenantRouter.post("/market/buy", async (req, res, next) => {
       data: {
         posQuantity: { increment: Number(addPosCount) || 0 },
         qrTableQuantity: { increment: Number(addTableCount) || 0 },
-        branchLimit: { increment: Number(addBranchCount) || 0 }
+        branchLimit: { increment: Number(addBranchCount) || 0 },
+        kdsQuantity: { increment: Number(addKdsCount) || 0 },
+        cdsQuantity: { increment: Number(addCdsCount) || 0 }
       }
     });
 
     const tableCount = await req.tenantDb.table.count();
     const posCount = await req.tenantDb.posDevice.count();
     const branchCount = await req.tenantDb.branch.count();
+    const kdsCount = await req.tenantDb.user.count({ where: { role: "KITCHEN" } });
+    const cdsCount = 0;
 
     res.json({
       success: true,
@@ -100,7 +108,9 @@ tenantRouter.post("/market/buy", async (req, res, next) => {
         ...updated,
         activeTablesCount: tableCount,
         activePosCount: posCount,
-        activeBranchesCount: branchCount
+        activeBranchesCount: branchCount,
+        activeKdsCount: kdsCount,
+        activeCdsCount: cdsCount
       }
     });
   } catch (error) {
