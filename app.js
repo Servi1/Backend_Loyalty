@@ -119,7 +119,11 @@ tenantRouter.use("/uploads", uploadsRoutes);
 
 app.use("/api/tenant/:tenantId", tenantRouter);
 
-// 3. Mobile App API (/api/app/:tenantId/...)
+// 3. Mobile App API
+// Global app auth router (tenant-independent)
+const globalAuthRouter = require("./src/app/auth/globalAuth.routes");
+app.use("/api/app/auth", globalAuthRouter);
+
 // Separate router so app endpoints never collide with dashboard routes.
 const { extractAppTenant } = require("./src/app/middlewares/appTenant.middleware");
 const appTenantRouter = express.Router({ mergeParams: true });

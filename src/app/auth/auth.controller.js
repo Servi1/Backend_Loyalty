@@ -17,23 +17,24 @@ const sendOtp = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: "A valid phone number is required" });
   }
 
-  const result = await authService.sendOtp(req.tenantDb, phone.trim());
+  const result = await authService.sendOtp(phone.trim());
   res.status(200).json({ success: true, ...result });
 });
 
 // ─── POST /auth/otp/verify ────────────────────────────────────────────────────
 const verifyOtp = catchAsync(async (req, res) => {
-  const { phone, code } = req.body;
+  const { phone, code, tenantId } = req.body;
 
   if (!phone || !code) {
     return res.status(400).json({ success: false, message: "Phone and OTP code are required" });
   }
 
+  const resolvedTenantId = tenantId || req.params.tenantId || req.headers["x-tenant-id"] || req.query.tenantId;
+
   const result = await authService.verifyOtp(
-    req.tenantDb,
     phone.trim(),
     String(code).trim(),
-    req.tenantId,
+    resolvedTenantId,
   );
 
   res.status(200).json({ success: true, ...result });

@@ -252,3 +252,15 @@ model Gift {
   @@index([recipientId])
   @@index([senderId])
 }
+
+// ─── Global OTP (for phone-based customer auth) ────────
+model Otp {
+  id        String   @id @default(uuid())
+  phone     String
+  code      String
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([phone])
+}
