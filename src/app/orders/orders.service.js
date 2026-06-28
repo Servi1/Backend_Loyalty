@@ -272,22 +272,76 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
 const getMyOrders = async (db, userId, { page = 1, limit = 20 } = {}) => {
   const skip = (page - 1) * limit;
 
-  const [orders, total] = await db.$transaction([
-    db.order.findMany({
-      where: { customerId: userId },
-      include: {
-        items: { include: { menuItem: { select: { name: true, price: true } } } },
-        branch: { select: { id: true, name: true, address: true } },
+  if (db) {
+    const [orders, total] = await db.$transaction([
+      db.order.findMany({
+        where: { customerId: userId },
+        include: {
+          items: { include: { menuItem: { select: { name: true, price: true } } } },
+          branch: { select: { id: true, name: true, address: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      db.order.count({ where: { customerId: userId } }),
+    ]);
+
+    return {
+      orders,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: skip + limit < total,
       },
-      orderBy: { createdAt: "desc" },
-      skip,
-      take: limit,
-    }),
-    db.order.count({ where: { customerId: userId } }),
-  ]);
+    };
+  }
+
+  // Global query across all tenants
+  const total = await mainPrisma.order.count({ where: { appUserId: userId } });
+  const mainOrders = await mainPrisma.order.findMany({
+    where: { appUserId: userId },
+    orderBy: { createdAt: "desc" },
+    skip,
+    take: limit,
+  });
+
+  const { getTenantClient } = require("../../config/tenantManager");
+  const enrichedOrders = [];
+
+  for (const mainOrder of mainOrders) {
+    try {
+      const tenant = await mainPrisma.tenant.findUnique({ where: { id: mainOrder.tenantId } });
+      if (tenant) {
+        const tenantDb = getTenantClient(tenant.dbUrl);
+        const detailedOrder = await tenantDb.order.findUnique({
+          where: { id: mainOrder.id },
+          include: {
+            items: { include: { menuItem: { select: { name: true, price: true } } } },
+            branch: { select: { id: true, name: true, address: true } },
+          },
+        });
+        if (detailedOrder) {
+          enrichedOrders.push(detailedOrder);
+          continue;
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to enrich order ${mainOrder.id} for user ${userId}:`, err.message);
+    }
+
+    // Fallback if tenant DB lookup fails
+    enrichedOrders.push({
+      ...mainOrder,
+      items: [],
+      branch: { id: mainOrder.branchId, name: "Unknown Branch", address: null }
+    });
+  }
 
   return {
-    orders,
+    orders: enrichedOrders,
     pagination: {
       total,
       page,
@@ -301,16 +355,40 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20 } = {}) => {
 // ─── getOrder ─────────────────────────────────────────────────────────────────
 
 const getOrder = async (db, orderId, userId) => {
-  const order = await db.order.findFirst({
-    where: { id: orderId, customerId: userId }, // ensure customer can only see their own orders
+  if (db) {
+    const order = await db.order.findFirst({
+      where: { id: orderId, customerId: userId }, // ensure customer can only see their own orders
+      include: {
+        items: { include: { menuItem: true } },
+        branch: true,
+        table: true,
+      },
+    });
+    if (!order) throw new ApiError(404, "Order not found");
+    return order;
+  }
+
+  const mainOrder = await mainPrisma.order.findFirst({
+    where: { id: orderId, appUserId: userId }
+  });
+  if (!mainOrder) throw new ApiError(404, "Order not found");
+
+  const tenant = await mainPrisma.tenant.findUnique({ where: { id: mainOrder.tenantId } });
+  if (!tenant) throw new ApiError(404, "Brand not found");
+
+  const { getTenantClient } = require("../../config/tenantManager");
+  const tenantDb = getTenantClient(tenant.dbUrl);
+  const detailedOrder = await tenantDb.order.findUnique({
+    where: { id: orderId },
     include: {
       items: { include: { menuItem: true } },
       branch: true,
       table: true,
     },
   });
-  if (!order) throw new ApiError(404, "Order not found");
-  return order;
+
+  if (!detailedOrder) throw new ApiError(404, "Order not found in tenant database");
+  return detailedOrder;
 };
 
 module.exports = { placeOrder, getMyOrders, getOrder };

@@ -23,6 +23,7 @@ const inventoryRoutes = require("./src/web/tenant/inventory/inventory.routes");
 const posDevicesRoutes = require("./src/web/tenant/pos-devices/pos-devices.routes");
 
 // ─── Mobile App Routes ────────────────────────────────
+// ─── Mobile App Routes ────────────────────────────────
 const appRouter = require("./src/app/index");
 
 const app = express();
@@ -153,8 +154,12 @@ app.use("/api/tenant/:tenantId", tenantRouter);
 const globalAuthRouter = require("./src/app/auth/globalAuth.routes");
 app.use("/api/app/auth", globalAuthRouter);
 
-// Separate router so app endpoints never collide with dashboard routes.
 const { optionalAppTenant } = require("./src/app/middlewares/appTenant.middleware");
+
+// Global app router for tenant-independent requests (e.g. wallet, profile, brands, cart)
+app.use("/api/app", optionalAppTenant, appRouter);
+
+// Separate router so app endpoints never collide with dashboard routes.
 const appTenantRouter = express.Router({ mergeParams: true });
 appTenantRouter.use(optionalAppTenant);
 appTenantRouter.use("/", appRouter);
