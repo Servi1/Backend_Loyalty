@@ -1,4 +1,4 @@
-const { syncAllTenantOrders } = require("./src/features/tenants/tenants.service");
+const { syncAllTenantOrders } = require("./src/web/admin/tenants/tenants.service");
 const mainPrisma = require("./src/config/prisma");
 
 const run = async () => {

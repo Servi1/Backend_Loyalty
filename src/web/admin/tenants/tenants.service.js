@@ -84,7 +84,7 @@ const create = async (data) => {
   try {
     console.log(`Pushing schema to ${dbName}...`);
     // Run prisma db push using the specific schema and injecting the URL
-    await execPromise(`npx prisma db push --schema=prisma/schema.tenant.prisma --accept-data-loss`, {
+    await execPromise(`npx prisma db push --schema=prisma/schema.tenant.prisma --accept-data-loss --skip-generate`, {
       env: { ...process.env, TENANT_DATABASE_URL: tenantDbUrl },
     });
   } catch (err) {
