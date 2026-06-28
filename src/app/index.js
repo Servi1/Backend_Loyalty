@@ -48,7 +48,7 @@ router.use("/auth",     authRoutes);
 router.use("/profile",  profileRoutes);
 router.use("/menu",     requireAppTenant, menuRoutes);
 router.use("/branches", requireAppTenant, branchRoutes);
-router.use("/orders",   requireAppTenant, orderRoutes);
+router.use("/orders",   orderRoutes);
 router.use("/wallet",   walletRoutes);
 router.use("/brands",   brandsRoutes);
 router.use("/cart",     cartRoutes);
