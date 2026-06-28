@@ -11,6 +11,7 @@ const { errorHandler } = require("./src/middlewares/errorHandler");
 const authRoutes = require("./src/shared/auth/auth.routes");
 const tenantsRoutes = require("./src/web/admin/tenants/tenants.routes");
 const adminUsersRoutes = require("./src/web/admin/users/adminUsers.routes");
+const settingsRoutes = require("./src/web/admin/settings/settings.routes");
 const branchesRoutes = require("./src/web/tenant/branches/branches.routes");
 const menusRoutes = require("./src/web/tenant/menus/menus.routes");
 const ordersRoutes = require("./src/web/tenant/orders/orders.routes");
@@ -51,9 +52,12 @@ const { extractTenant } = require("./src/middlewares/tenantMiddleware");
 // 1. Super Admin API
 app.use("/api/admin/tenants", tenantsRoutes);
 app.use("/api/admin/users", adminUsersRoutes);
+app.use("/api/admin/settings", settingsRoutes);
 app.use("/api/auth", authRoutes); // auth handles both super admin and tenant logins
 
 const mainPrisma = require("./src/config/prisma");
+
+const ApiError = require("./src/utils/ApiError");
 
 // 2. Tenant API (requires tenantId)
 const tenantRouter = express.Router({ mergeParams: true });
@@ -65,10 +69,17 @@ tenantRouter.get("/info", async (req, res, next) => {
     const branchCount = await req.tenantDb.branch.count();
     const kdsCount = await req.tenantDb.user.count({ where: { role: "KITCHEN" } });
     const cdsCount = 0; // CDS doesn't map to a specific database entity yet
+
+    const marketSetting = await mainPrisma.systemSetting.findUnique({
+      where: { key: "marketEnabled" }
+    });
+    const globalMarketEnabled = marketSetting ? marketSetting.value !== "false" : true;
+
     res.json({
       success: true,
       data: {
         ...req.tenant,
+        marketEnabled: globalMarketEnabled,
         activeTablesCount: tableCount,
         activePosCount: posCount,
         activeBranchesCount: branchCount,
@@ -82,6 +93,13 @@ tenantRouter.get("/info", async (req, res, next) => {
 });
 tenantRouter.post("/market/buy", async (req, res, next) => {
   try {
+    const marketSetting = await mainPrisma.systemSetting.findUnique({
+      where: { key: "marketEnabled" }
+    });
+    const globalMarketEnabled = marketSetting ? marketSetting.value !== "false" : true;
+    if (globalMarketEnabled === false) {
+      return next(new ApiError(403, "Market purchases are deactivated globally. Please contact system support."));
+    }
     const { addPosCount, addTableCount, addBranchCount, addKdsCount, addCdsCount } = req.body;
     const tenantId = req.tenantId;
 
@@ -106,6 +124,7 @@ tenantRouter.post("/market/buy", async (req, res, next) => {
       success: true,
       data: {
         ...updated,
+        marketEnabled: globalMarketEnabled,
         activeTablesCount: tableCount,
         activePosCount: posCount,
         activeBranchesCount: branchCount,
