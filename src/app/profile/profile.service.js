@@ -40,20 +40,25 @@ const updateProfile = async (db, userId, { name, email, avatarUrl, cars, address
     include: { wallet: true },
   });
 
-  const ordersCount = await db.order.count({
-    where: { customerId: userId },
-  });
+  const ordersCount = db
+    ? await db.order.count({
+        where: { customerId: userId },
+      })
+    : 0;
 
-  const totalSpentResult = await db.order.aggregate({
-    where: {
-      customerId: userId,
-      status: "COMPLETED",
-    },
-    _sum: {
-      total: true,
-    },
-  });
-  const totalSpent = totalSpentResult._sum.total || 0.0;
+  let totalSpent = 0.0;
+  if (db) {
+    const totalSpentResult = await db.order.aggregate({
+      where: {
+        customerId: userId,
+        status: "COMPLETED",
+      },
+      _sum: {
+        total: true,
+      },
+    });
+    totalSpent = totalSpentResult._sum.total || 0.0;
+  }
 
   return {
     ...(await _formatProfile(updated)),

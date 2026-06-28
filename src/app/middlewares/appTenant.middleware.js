@@ -7,10 +7,23 @@ const { getTenantClient } = require("../../config/tenantManager");
  * in the main database, and attach their specific PrismaClient to req.tenantDb.
  */
 const extractAppTenant = async (req, _res, next) => {
+  const isGlobalRoute =
+    req.path.includes("/profile") ||
+    req.path.includes("/wallet") ||
+    req.path.includes("/brands") ||
+    req.path.includes("/cart") ||
+    req.path.includes("/auth");
+
   try {
     const tenantId = req.params.tenantId || req.headers["x-tenant-id"] || req.query.tenantId;
 
     if (!tenantId) {
+      if (isGlobalRoute) {
+        req.tenantId = null;
+        req.tenant = null;
+        req.tenantDb = null;
+        return next();
+      }
       return next(new ApiError(400, "Tenant ID is required"));
     }
 
@@ -25,6 +38,12 @@ const extractAppTenant = async (req, _res, next) => {
     });
 
     if (!tenant || !tenant.isActive) {
+      if (isGlobalRoute) {
+        req.tenantId = null;
+        req.tenant = null;
+        req.tenantDb = null;
+        return next();
+      }
       return next(new ApiError(404, "Tenant not found or inactive"));
     }
 
@@ -34,6 +53,12 @@ const extractAppTenant = async (req, _res, next) => {
     req.tenantDb = getTenantClient(tenant.dbUrl);
     next();
   } catch (error) {
+    if (isGlobalRoute) {
+      req.tenantId = null;
+      req.tenant = null;
+      req.tenantDb = null;
+      return next();
+    }
     next(new ApiError(500, "Error connecting to tenant database"));
   }
 };
