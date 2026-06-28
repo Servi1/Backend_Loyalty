@@ -24,7 +24,7 @@ async function main() {
       console.log(`\nPushing schema to tenant ${tenant.slug} (${dbName})...`);
 
       try {
-        execSync(`npx prisma db push --schema=prisma/schema.tenant.prisma --accept-data-loss`, {
+        execSync(`npx prisma db push --schema=prisma/schema.tenant.prisma --accept-data-loss --skip-generate`, {
           cwd: process.cwd(),
           env: { ...process.env, TENANT_DATABASE_URL: tenantDbUrl },
           stdio: "inherit",
