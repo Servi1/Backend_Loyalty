@@ -10,12 +10,11 @@
 
 const { Router } = require("express");
 const ctrl = require("./brands.controller");
-const { authenticate } = require("../../middlewares/authMiddleware");
-const { requireCustomer } = require("../middlewares/appAuth.middleware");
+const { authenticateAppUser } = require("../middlewares/appAuth.middleware");
 
 const router = Router();
 
-router.use(authenticate, requireCustomer);
+router.use(authenticateAppUser);
 
 router.get("/", ctrl.getBrands);
 router.post("/:brandId/favorite", ctrl.addFavorite);

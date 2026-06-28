@@ -40,13 +40,15 @@ const walletRoutes   = require("./wallet/wallet.routes");
 const brandsRoutes   = require("./brands/brands.routes");
 const cartRoutes     = require("./cart/cart.routes");
 
+const { requireAppTenant } = require("./middlewares/appTenant.middleware");
+
 const router = Router({ mergeParams: true });
 
 router.use("/auth",     authRoutes);
 router.use("/profile",  profileRoutes);
-router.use("/menu",     menuRoutes);
-router.use("/branches", branchRoutes);
-router.use("/orders",   orderRoutes);
+router.use("/menu",     requireAppTenant, menuRoutes);
+router.use("/branches", requireAppTenant, branchRoutes);
+router.use("/orders",   requireAppTenant, orderRoutes);
 router.use("/wallet",   walletRoutes);
 router.use("/brands",   brandsRoutes);
 router.use("/cart",     cartRoutes);

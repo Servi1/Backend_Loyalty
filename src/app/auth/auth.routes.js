@@ -14,8 +14,7 @@
 
 const { Router } = require("express");
 const ctrl = require("./auth.controller");
-const { authenticate } = require("../../middlewares/authMiddleware");
-const { requireCustomer } = require("../middlewares/appAuth.middleware");
+const { authenticateAppUser } = require("../middlewares/appAuth.middleware");
 
 const router = Router();
 
@@ -24,6 +23,6 @@ router.post("/otp/send", ctrl.sendOtp);
 router.post("/otp/verify", ctrl.verifyOtp);
 
 // ── Authenticated ─────────────────────────────────────────────────────────────
-router.get("/me", authenticate, requireCustomer, ctrl.getMe);
+router.get("/me", authenticateAppUser, ctrl.getMe);
 
 module.exports = router;

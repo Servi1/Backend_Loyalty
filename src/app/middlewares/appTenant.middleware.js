@@ -3,28 +3,18 @@ const mainPrisma = require("../../config/prisma");
 const { getTenantClient } = require("../../config/tenantManager");
 
 /**
- * Extract tenantId from route path parameter (e.g., /api/app/:tenantId), look up the tenant 
- * in the main database, and attach their specific PrismaClient to req.tenantDb.
+ * Tries to extract tenantId, looks up the tenant, and attaches req.tenantDb.
+ * Proceed peacefully without throwing error if tenant is missing or inactive.
  */
-const extractAppTenant = async (req, _res, next) => {
-  const isGlobalRoute =
-    req.path.includes("/profile") ||
-    req.path.includes("/wallet") ||
-    req.path.includes("/brands") ||
-    req.path.includes("/cart") ||
-    req.path.includes("/auth");
-
+const optionalAppTenant = async (req, _res, next) => {
   try {
     const tenantId = req.params.tenantId || req.headers["x-tenant-id"] || req.query.tenantId;
 
     if (!tenantId) {
-      if (isGlobalRoute) {
-        req.tenantId = null;
-        req.tenant = null;
-        req.tenantDb = null;
-        return next();
-      }
-      return next(new ApiError(400, "Tenant ID is required"));
+      req.tenantId = null;
+      req.tenant = null;
+      req.tenantDb = null;
+      return next();
     }
 
     // Lookup the tenant in the main registry by either ID or Slug
@@ -38,13 +28,10 @@ const extractAppTenant = async (req, _res, next) => {
     });
 
     if (!tenant || !tenant.isActive) {
-      if (isGlobalRoute) {
-        req.tenantId = null;
-        req.tenant = null;
-        req.tenantDb = null;
-        return next();
-      }
-      return next(new ApiError(404, "Tenant not found or inactive"));
+      req.tenantId = null;
+      req.tenant = null;
+      req.tenantDb = null;
+      return next();
     }
 
     // Attach the tenant ID and the specific database client to the request
@@ -53,14 +40,22 @@ const extractAppTenant = async (req, _res, next) => {
     req.tenantDb = getTenantClient(tenant.dbUrl);
     next();
   } catch (error) {
-    if (isGlobalRoute) {
-      req.tenantId = null;
-      req.tenant = null;
-      req.tenantDb = null;
-      return next();
-    }
-    next(new ApiError(500, "Error connecting to tenant database"));
+    req.tenantId = null;
+    req.tenant = null;
+    req.tenantDb = null;
+    next();
   }
 };
 
-module.exports = { extractAppTenant };
+/**
+ * Enforces that a valid, active tenant database context is present.
+ * Applied to brand-scoped routers (menu, branches, orders).
+ */
+const requireAppTenant = (req, _res, next) => {
+  if (!req.tenantDb) {
+    return next(new ApiError(404, "Tenant not found or inactive"));
+  }
+  next();
+};
+
+module.exports = { optionalAppTenant, requireAppTenant };

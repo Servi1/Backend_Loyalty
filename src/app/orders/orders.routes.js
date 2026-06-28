@@ -10,15 +10,14 @@
 
 const { Router } = require("express");
 const ctrl = require("./orders.controller");
-const { authenticate } = require("../../middlewares/authMiddleware");
-const { requireCustomer } = require("../middlewares/appAuth.middleware");
+const { authenticateAppUser } = require("../middlewares/appAuth.middleware");
 
 const router = Router();
 
 // Public checkout for guest ordering via QR code
 router.post("/public", ctrl.placePublic);
 
-router.use(authenticate, requireCustomer);
+router.use(authenticateAppUser);
 
 router.post("/", ctrl.place);
 router.get("/", ctrl.myOrders);

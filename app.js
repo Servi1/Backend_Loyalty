@@ -135,9 +135,9 @@ const globalAuthRouter = require("./src/app/auth/globalAuth.routes");
 app.use("/api/app/auth", globalAuthRouter);
 
 // Separate router so app endpoints never collide with dashboard routes.
-const { extractAppTenant } = require("./src/app/middlewares/appTenant.middleware");
+const { optionalAppTenant } = require("./src/app/middlewares/appTenant.middleware");
 const appTenantRouter = express.Router({ mergeParams: true });
-appTenantRouter.use(extractAppTenant);
+appTenantRouter.use(optionalAppTenant);
 appTenantRouter.use("/", appRouter);
 
 app.use("/api/app/:tenantId", appTenantRouter);
