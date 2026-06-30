@@ -152,6 +152,7 @@ model AggregatedOrder {
   customerName   String?
   branchName     String?
   feeRate        Float    @default(0.0)
+  source         String   @default("pos") // pos | app | qr_cashier | qr_table
   paymentMethod  String?  // cash | card | apple_pay | google_pay | split | points
   pointsRedeemed Int?     // points deducted (set when paymentMethod = "points")
   createdAt      DateTime @default(now())
@@ -225,6 +226,8 @@ model Order {
   branchId    String
   tableId     String?
   posUnit     String?
+  source      String      @default("pos") // pos | app | qr_cashier | qr_table
+  qrCashierId String?
   paymentMethod  String? @default("cash") // cash | card | apple_pay | google_pay | split | points
   pointsRedeemed Int?   // points deducted (set when paymentMethod = "points")
 

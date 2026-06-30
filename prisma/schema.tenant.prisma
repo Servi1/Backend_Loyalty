@@ -105,6 +105,7 @@ model QrCashier {
   isActive  Boolean  @default(true)
   branchId  String
   branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  orders    Order[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -178,6 +179,9 @@ model Order {
   tableId  String?
   table    Table? @relation(fields: [tableId], references: [id])
   posUnit       String?
+  source        String      @default("pos") // pos | app | qr_cashier | qr_table
+  qrCashierId   String?
+  qrCashier     QrCashier?  @relation(fields: [qrCashierId], references: [id])
   paymentMethod String?  @default("cash") // cash | card | apple_pay | google_pay | split | points
   pointsRedeemed Int?   // points deducted from wallet (only when paymentMethod = "points")
   items    OrderItem[]
