@@ -82,6 +82,9 @@ model Branch {
   staffEnabled  Boolean @default(true)
   qrEnabled     Boolean @default(true)
   posEnabled    Boolean @default(true)
+  kdsEnabled    Boolean @default(false)
+  cdsEnabled    Boolean @default(false)
+  appServiEnabled Boolean @default(true)
   hours     String? @default("10am - 11pm")
   rating    Float?  @default(4.8)
   imageUrl  String?

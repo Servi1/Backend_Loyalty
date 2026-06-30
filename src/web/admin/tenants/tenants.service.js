@@ -264,6 +264,9 @@ const getSubscriptions = async () => {
           staffEnabled: true,
           qrEnabled: true,
           posEnabled: true,
+          kdsEnabled: true,
+          cdsEnabled: true,
+          appServiEnabled: true,
           tables: {
             select: {
               id: true,
@@ -328,6 +331,9 @@ const getSubscriptions = async () => {
         staffEnabled: b.staffEnabled,
         qrEnabled: b.qrEnabled,
         posEnabled: b.posEnabled,
+        kdsEnabled: b.kdsEnabled,
+        cdsEnabled: b.cdsEnabled,
+        appServiEnabled: b.appServiEnabled,
         tablesCount: b._count?.tables || 0,
         posDevicesCount: b._count?.posDevices || 0,
         staffCount: b._count?.staff || 0,
