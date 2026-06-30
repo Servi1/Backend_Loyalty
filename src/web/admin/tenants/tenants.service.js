@@ -264,6 +264,9 @@ const getSubscriptions = async () => {
           staffEnabled: true,
           qrEnabled: true,
           posEnabled: true,
+          kdsEnabled: true,
+          cdsEnabled: true,
+          appServiEnabled: true,
           tables: {
             select: {
               id: true,
@@ -282,11 +285,20 @@ const getSubscriptions = async () => {
               isActive: true
             }
           },
+          qrCashiers: {
+            select: {
+              id: true,
+              name: true,
+              createdAt: true,
+              isActive: true
+            }
+          },
           _count: {
             select: {
               tables: true,
               posDevices: true,
-              staff: true
+              staff: true,
+              qrCashiers: true
             }
           }
         }
@@ -328,11 +340,16 @@ const getSubscriptions = async () => {
         staffEnabled: b.staffEnabled,
         qrEnabled: b.qrEnabled,
         posEnabled: b.posEnabled,
+        kdsEnabled: b.kdsEnabled,
+        cdsEnabled: b.cdsEnabled,
+        appServiEnabled: b.appServiEnabled,
         tablesCount: b._count?.tables || 0,
         posDevicesCount: b._count?.posDevices || 0,
         staffCount: b._count?.staff || 0,
+        qrCashiersCount: b._count?.qrCashiers || 0,
         tables: b.tables,
-        posDevices: b.posDevices
+        posDevices: b.posDevices,
+        qrCashiers: b.qrCashiers
       }));
     } catch (err) {
       console.error(`Failed to fetch branches for tenant ${tenant.slug} sub:`, err.message);

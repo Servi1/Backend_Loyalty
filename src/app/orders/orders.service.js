@@ -44,6 +44,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerName: user?.name || user?.phone || "App Customer",
         branchName: branch?.name || "Unknown",
         feeRate: order.feeRate || 0.0,
+        source: order.source || "app",
         paymentMethod: order.paymentMethod || "cash",
         pointsRedeemed: order.pointsRedeemed || null,
         createdAt: order.createdAt,
@@ -54,6 +55,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         total: order.total,
         notes: order.notes,
         feeRate: order.feeRate || 0.0,
+        source: order.source || "app",
         paymentMethod: order.paymentMethod || "cash",
         pointsRedeemed: order.pointsRedeemed || null,
         updatedAt: order.updatedAt,
@@ -67,7 +69,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
 // ─── placeOrder ───────────────────────────────────────────────────────────────
 
 const placeOrder = async (db, userId, body, tenantId, tenant) => {
-  const { branchId, tableId, type = "DINE_IN", items, notes, total, paymentMethod } = body;
+  const { branchId, tableId, qrCashierId, cashierId, type = "DINE_IN", items, notes, total, paymentMethod, source } = body;
 
   if (!branchId) throw new ApiError(400, "branchId is required");
   if (!items || !Array.isArray(items) || items.length === 0) {
@@ -197,16 +199,21 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     }
   }
 
+  const finalQrCashierId = qrCashierId || cashierId || null;
+  const orderSource = source || (tableId ? "qr_table" : (finalQrCashierId ? "qr_cashier" : "app"));
+
   const order = await db.order.create({
     data: {
       orderNumber,
       customerId: userId,
       branchId,
       tableId: tableId || null,
+      qrCashierId: finalQrCashierId,
       type,
       notes: finalNotes,
       total: subtotal,
       feeRate,
+      source: orderSource,
       paymentMethod: paymentMethod || "cash",
       pointsRedeemed: pointsRedeemed,
       items: { create: orderItems },
@@ -252,6 +259,8 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
         tenantId: tenantId,
         branchId: order.branchId,
         tableId: order.tableId,
+        qrCashierId: order.qrCashierId,
+        source: order.source,
         appUserId: userId,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,

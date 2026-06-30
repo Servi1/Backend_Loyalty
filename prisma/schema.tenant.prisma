@@ -82,6 +82,9 @@ model Branch {
   staffEnabled  Boolean @default(true)
   qrEnabled     Boolean @default(true)
   posEnabled    Boolean @default(true)
+  kdsEnabled    Boolean @default(false)
+  cdsEnabled    Boolean @default(false)
+  appServiEnabled Boolean @default(true)
   hours     String? @default("10am - 11pm")
   rating    Float?  @default(4.8)
   imageUrl  String?
@@ -90,6 +93,19 @@ model Branch {
   staff     User[]
   inventory InventoryItem[]
   posDevices PosDevice[]
+  qrCashiers QrCashier[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model QrCashier {
+  id        String   @id @default(uuid())
+  name      String   // e.g. "Cashier 1"
+  qrCode    String?  @unique
+  isActive  Boolean  @default(true)
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  orders    Order[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -163,6 +179,9 @@ model Order {
   tableId  String?
   table    Table? @relation(fields: [tableId], references: [id])
   posUnit       String?
+  source        String      @default("pos") // pos | app | qr_cashier | qr_table
+  qrCashierId   String?
+  qrCashier     QrCashier?  @relation(fields: [qrCashierId], references: [id])
   paymentMethod String?  @default("cash") // cash | card | apple_pay | google_pay | split | points
   pointsRedeemed Int?   // points deducted from wallet (only when paymentMethod = "points")
   items    OrderItem[]

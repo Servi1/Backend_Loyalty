@@ -16,12 +16,9 @@ async function main() {
     if (!mainDbUrl) {
       throw new Error("DATABASE_URL is not defined in the environment variables.");
     }
-    const baseUrl = mainDbUrl.substring(0, mainDbUrl.lastIndexOf("/"));
-
     for (const tenant of tenants) {
-      const dbName = `tenant_${tenant.slug.replace(/[^a-zA-Z0-9]/g, "_")}_db`;
-      const tenantDbUrl = `${baseUrl}/${dbName}?schema=public`;
-      console.log(`\nPushing schema to tenant ${tenant.slug} (${dbName})...`);
+      const tenantDbUrl = tenant.dbUrl;
+      console.log(`\nPushing schema to tenant ${tenant.slug}...`);
 
       try {
         execSync(`npx prisma db push --schema=prisma/schema.tenant.prisma --accept-data-loss --skip-generate`, {
@@ -29,9 +26,9 @@ async function main() {
           env: { ...process.env, TENANT_DATABASE_URL: tenantDbUrl },
           stdio: "inherit",
         });
-        console.log(`Successfully pushed schema to ${dbName}.`);
+        console.log(`Successfully pushed schema to ${tenant.slug}.`);
       } catch (err) {
-        console.error(`Failed to push schema to ${dbName}:`, err.message);
+        console.error(`Failed to push schema to ${tenant.slug}:`, err.message);
       }
     }
   } catch (err) {

@@ -21,6 +21,6 @@ jobs:
             git pull origin main
             npm install --omit=dev
             npm run prisma:generate
-            npx prisma db push --schema=prisma/schema.main.prisma
-            npx prisma db push --schema=prisma/schema.tenant.prisma
+            npx prisma db push --schema=prisma/schema.main.prisma --accept-data-loss
+            node sync_tenant_schemas.js
             pm2 restart server || pm2 start server.js

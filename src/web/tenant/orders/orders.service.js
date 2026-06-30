@@ -37,6 +37,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerName,
         branchName: branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
+        source: order.source || "pos",
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       },
@@ -47,6 +48,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerName,
         branchName: branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
+        source: order.source || "pos",
         updatedAt: order.updatedAt,
       }
     });
@@ -63,7 +65,7 @@ const generateOrderNumber = () => {
   return `SRV-${hex}`;
 };
 
-const create = async (db, { userId, customerId, branchId, tableId, type, items, notes, total, posUnit }, tenantId) => {
+const create = async (db, { userId, customerId, branchId, tableId, qrCashierId, type, items, notes, total, posUnit, source }, tenantId) => {
   if (tableId) {
     const table = await db.table.findUnique({ where: { id: tableId } });
     if (table) {
@@ -155,6 +157,8 @@ const create = async (db, { userId, customerId, branchId, tableId, type, items, 
     }
   }
 
+  const orderSource = source || (tableId ? "qr_table" : (qrCashierId ? "qr_cashier" : "pos"));
+
   const order = await db.order.create({
     data: {
       orderNumber: generateOrderNumber(),
@@ -162,11 +166,13 @@ const create = async (db, { userId, customerId, branchId, tableId, type, items, 
       customerId: customerId || null,
       branchId,
       tableId: tableId || null,
+      qrCashierId: qrCashierId || null,
       type: type || "DINE_IN",
       notes,
       total: finalTotal,
       feeRate,
       posUnit: posUnit || null,
+      source: orderSource,
       items: { create: orderItems },
     },
     include: { items: { include: { menuItem: true } }, branch: true },
@@ -191,7 +197,9 @@ const create = async (db, { userId, customerId, branchId, tableId, type, items, 
         tenantId: tenantId,
         branchId: order.branchId,
         tableId: order.tableId,
+        qrCashierId: order.qrCashierId,
         posUnit: order.posUnit,
+        source: order.source,
         appUserId: order.customerId || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,

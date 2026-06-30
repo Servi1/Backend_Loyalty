@@ -58,10 +58,16 @@ model Tenant {
   dbUrl            String           // The database connection string for this tenant
   // ─── Visual Settings
   logoUrl          String?
+  bannerUrl        String?
   primaryColor     String?          @default("#6366f1")
   accentColor      String?          @default("#f59e0b")
   fontFamily       String?          @default("Inter")
   layoutStyle      String?          @default("modern")
+  showHero         Boolean          @default(true)
+  heroTitle        String?
+  heroSubtitle     String?
+  showCategories   Boolean          @default(true)
+  showSearch       Boolean          @default(true)
  
   // ─── Contact Info
   contactEmail     String?
@@ -84,6 +90,7 @@ model Tenant {
   subPos           Boolean          @default(false)
   posQuantity      Int              @default(1)
   qrTableQuantity  Int              @default(10)
+  qrCashierQuantity Int             @default(10)
   branchLimit      Int              @default(5)
   subQrTable       Boolean          @default(false)
   subQrCashier     Boolean          @default(false)
@@ -91,6 +98,7 @@ model Tenant {
   kdsQuantity      Int              @default(1)
   subCds           Boolean          @default(false)
   cdsQuantity      Int              @default(1)
+  subBranch        Boolean          @default(false)
 
   priceAppServi    Float            @default(29.0)
   cycleAppServi    String           @default("monthly")
@@ -113,6 +121,9 @@ model Tenant {
   priceCds         Float            @default(9.0)
   cycleCds         String           @default("monthly")
   feeCds           Float            @default(0.0)
+  priceBranch      Float            @default(19.0)
+  cycleBranch      String           @default("monthly")
+  feeBranch        Float            @default(0.0)
   // ─── Feature Flags
   notificationsEnabled Boolean @default(true)
   autoPayouts          Boolean @default(true)
@@ -141,6 +152,7 @@ model AggregatedOrder {
   customerName   String?
   branchName     String?
   feeRate        Float    @default(0.0)
+  source         String   @default("pos") // pos | app | qr_cashier | qr_table
   paymentMethod  String?  // cash | card | apple_pay | google_pay | split | points
   pointsRedeemed Int?     // points deducted (set when paymentMethod = "points")
   createdAt      DateTime @default(now())
@@ -214,6 +226,8 @@ model Order {
   branchId    String
   tableId     String?
   posUnit     String?
+  source      String      @default("pos") // pos | app | qr_cashier | qr_table
+  qrCashierId String?
   paymentMethod  String? @default("cash") // cash | card | apple_pay | google_pay | split | points
   pointsRedeemed Int?   // points deducted (set when paymentMethod = "points")
 
