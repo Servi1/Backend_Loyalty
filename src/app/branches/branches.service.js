@@ -24,6 +24,8 @@ const getBranches = async (db) => {
       hours: true,
       rating: true,
       imageUrl: true,
+      tablesEnabled: true,
+      qrEnabled: true,
     },
   });
   return branches;

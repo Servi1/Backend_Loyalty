@@ -289,6 +289,8 @@ async function seed() {
         loyaltyEarnRate: tConfig.loyaltyEarnRate,
         loyaltyRedeemRate: tConfig.loyaltyRedeemRate,
         isActive: true,
+        subQrTable: true,
+        subQrCashier: true,
       }
     });
     registeredTenants.push(tenant);
