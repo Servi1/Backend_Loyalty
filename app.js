@@ -21,6 +21,7 @@ const usersRoutes = require("./src/web/tenant/users/users.routes");
 const tablesRoutes = require("./src/web/tenant/tables/tables.routes");
 const inventoryRoutes = require("./src/web/tenant/inventory/inventory.routes");
 const posDevicesRoutes = require("./src/web/tenant/pos-devices/pos-devices.routes");
+const qrCashiersRoutes = require("./src/web/tenant/qr-cashiers/qr-cashiers.routes");
 
 // ─── Mobile App Routes ────────────────────────────────
 // ─── Mobile App Routes ────────────────────────────────
@@ -69,6 +70,7 @@ tenantRouter.get("/info", async (req, res, next) => {
     const posCount = await req.tenantDb.posDevice.count();
     const branchCount = await req.tenantDb.branch.count();
     const kdsCount = await req.tenantDb.user.count({ where: { role: "KITCHEN" } });
+    const qrCashierCount = await req.tenantDb.qrCashier.count();
     const cdsCount = 0; // CDS doesn't map to a specific database entity yet
 
     const marketSetting = await mainPrisma.systemSetting.findUnique({
@@ -85,7 +87,8 @@ tenantRouter.get("/info", async (req, res, next) => {
         activePosCount: posCount,
         activeBranchesCount: branchCount,
         activeKdsCount: kdsCount,
-        activeCdsCount: cdsCount
+        activeCdsCount: cdsCount,
+        activeQrCashiersCount: qrCashierCount
       }
     });
   } catch (err) {
@@ -142,6 +145,7 @@ tenantRouter.use("/users", usersRoutes);
 tenantRouter.use("/tables", tablesRoutes);
 tenantRouter.use("/inventory", inventoryRoutes);
 tenantRouter.use("/pos-devices", posDevicesRoutes);
+tenantRouter.use("/qr-cashiers", qrCashiersRoutes);
 tenantRouter.use("/menus", menusRoutes);
 tenantRouter.use("/orders", ordersRoutes);
 tenantRouter.use("/loyalty", loyaltyRoutes);

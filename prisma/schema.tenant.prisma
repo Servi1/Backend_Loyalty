@@ -93,6 +93,18 @@ model Branch {
   staff     User[]
   inventory InventoryItem[]
   posDevices PosDevice[]
+  qrCashiers QrCashier[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model QrCashier {
+  id        String   @id @default(uuid())
+  name      String   // e.g. "Cashier 1"
+  qrCode    String?  @unique
+  isActive  Boolean  @default(true)
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

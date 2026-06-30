@@ -90,6 +90,7 @@ model Tenant {
   subPos           Boolean          @default(false)
   posQuantity      Int              @default(1)
   qrTableQuantity  Int              @default(10)
+  qrCashierQuantity Int             @default(10)
   branchLimit      Int              @default(5)
   subQrTable       Boolean          @default(false)
   subQrCashier     Boolean          @default(false)
