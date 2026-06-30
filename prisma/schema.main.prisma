@@ -58,10 +58,16 @@ model Tenant {
   dbUrl            String           // The database connection string for this tenant
   // ─── Visual Settings
   logoUrl          String?
+  bannerUrl        String?
   primaryColor     String?          @default("#6366f1")
   accentColor      String?          @default("#f59e0b")
   fontFamily       String?          @default("Inter")
   layoutStyle      String?          @default("modern")
+  showHero         Boolean          @default(true)
+  heroTitle        String?
+  heroSubtitle     String?
+  showCategories   Boolean          @default(true)
+  showSearch       Boolean          @default(true)
  
   // ─── Contact Info
   contactEmail     String?
