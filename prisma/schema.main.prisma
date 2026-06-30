@@ -97,6 +97,7 @@ model Tenant {
   kdsQuantity      Int              @default(1)
   subCds           Boolean          @default(false)
   cdsQuantity      Int              @default(1)
+  subBranch        Boolean          @default(false)
 
   priceAppServi    Float            @default(29.0)
   cycleAppServi    String           @default("monthly")
@@ -119,6 +120,9 @@ model Tenant {
   priceCds         Float            @default(9.0)
   cycleCds         String           @default("monthly")
   feeCds           Float            @default(0.0)
+  priceBranch      Float            @default(19.0)
+  cycleBranch      String           @default("monthly")
+  feeBranch        Float            @default(0.0)
   // ─── Feature Flags
   notificationsEnabled Boolean @default(true)
   autoPayouts          Boolean @default(true)
