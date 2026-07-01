@@ -242,3 +242,49 @@ model PosDevice {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model Discount {
+  id                 String   @id @default(uuid())
+  nameEn             String
+  nameAr             String?
+  type               String   // "percentage" | "amount"
+  value              Float
+  maxAmount          Float?
+  applyInstantly     Boolean  @default(true)
+  appliedOn          String   @default("orders") // "orders" | "items"
+  locations          Json     // Array of branch IDs: ["uuid-1", "uuid-2"]
+  hasDateRange       Boolean  @default(false)
+  startDate          DateTime?
+  endDate            DateTime?
+  hasWeeklySchedule  Boolean  @default(false)
+  weeklySchedule     Json?    // Array of day schedules
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model Coupon {
+  id                 String    @id @default(uuid())
+  title              String
+  code               String    @unique
+  quantity           Int       @default(0) // 0 means unlimited
+  usedCount          Int       @default(0)
+  locations          Json      // Array of branch IDs: ["uuid-1", "uuid-2"]
+  type               String    // "items" | "orders"
+  
+  // If type == "items"
+  itemsDeductionType String?   // "fixed" (Fixed Items)
+  itemsList          Json?     // Array of items: [{"itemId": "x", "name": "Black Tea", "quantity": 2}]
+
+  // If type == "orders"
+  discountType       String?   // "percentage" | "amount"
+  discountValue      Float?
+  priceCap           Float?    // Price Cap for percentage
+  minOrderAmount     Float?    @default(0)
+
+  startDate          DateTime
+  endDate            DateTime
+  isActive           Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}

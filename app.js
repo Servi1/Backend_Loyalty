@@ -22,6 +22,8 @@ const tablesRoutes = require("./src/web/tenant/tables/tables.routes");
 const inventoryRoutes = require("./src/web/tenant/inventory/inventory.routes");
 const posDevicesRoutes = require("./src/web/tenant/pos-devices/pos-devices.routes");
 const qrCashiersRoutes = require("./src/web/tenant/qr-cashiers/qr-cashiers.routes");
+const discountsRoutes = require("./src/web/tenant/discounts/discounts.routes");
+const couponsRoutes = require("./src/web/tenant/coupons/coupons.routes");
 
 // ─── Mobile App Routes ────────────────────────────────
 // ─── Mobile App Routes ────────────────────────────────
@@ -150,6 +152,8 @@ tenantRouter.use("/menus", menusRoutes);
 tenantRouter.use("/orders", ordersRoutes);
 tenantRouter.use("/loyalty", loyaltyRoutes);
 tenantRouter.use("/uploads", uploadsRoutes);
+tenantRouter.use("/discounts", discountsRoutes);
+tenantRouter.use("/coupons", couponsRoutes);
 
 app.use("/api/tenant/:tenantId", tenantRouter);
 
