@@ -474,85 +474,245 @@ const getInvoices = async (filters = {}) => {
 
   const invoices = [];
 
+  const getDaysActiveInMonth = (startDate, endDate, year, month) => {
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
+    const totalDays = new Date(year, month + 1, 0).getDate();
+
+    const activeStart = new Date(Math.max(monthStart.getTime(), startDate.getTime()));
+    const activeEnd = new Date(Math.min(monthEnd.getTime(), endDate.getTime()));
+
+    if (activeStart > activeEnd) {
+      return { daysActive: 0, totalDays, period: "" };
+    }
+
+    const diffTime = activeEnd.getTime() - activeStart.getTime();
+    const daysActive = Math.max(1, Math.round(diffTime / (24 * 60 * 60 * 1000)) + 1);
+
+    const startStr = activeStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const endStr = activeEnd.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+    return {
+      daysActive: Math.min(daysActive, totalDays),
+      totalDays,
+      period: `${startStr} - ${endStr}`
+    };
+  };
+
   for (const tenant of tenants) {
-    let amount = 0;
-    const activeFeatures = [];
-    if (tenant.subAppServi) { amount += tenant.priceAppServi !== undefined ? tenant.priceAppServi : 29.0; activeFeatures.push("APP servi"); }
-    if (tenant.subAppBrand) { amount += tenant.priceAppBrand !== undefined ? tenant.priceAppBrand : 99.0; activeFeatures.push("APP brand"); }
-    if (tenant.subPos) { amount += tenant.pricePos !== undefined ? tenant.pricePos : 49.0; activeFeatures.push("POS"); }
-    if (tenant.subQrTable) { amount += tenant.priceQrTable !== undefined ? tenant.priceQrTable : 19.0; activeFeatures.push("QR Table"); }
-    if (tenant.subQrCashier) { amount += tenant.priceQrCashier !== undefined ? tenant.priceQrCashier : 9.0; activeFeatures.push("QR Cashier"); }
-    if (tenant.subKds) { amount += tenant.priceKds !== undefined ? tenant.priceKds : 19.0; activeFeatures.push("KDS"); }
-    if (tenant.subCds) { amount += tenant.priceCds !== undefined ? tenant.priceCds : 9.0; activeFeatures.push("CDS"); }
+    // 1. Fetch branches from tenant DB
+    let dbBranches = [];
+    try {
+      const tenantPrisma = getTenantClient(tenant.dbUrl);
+      dbBranches = await tenantPrisma.branch.findMany({
+        select: {
+          id: true,
+          name: true,
+          createdAt: true,
+          tablesEnabled: true,
+          posEnabled: true,
+          qrEnabled: true,
+          kdsEnabled: true,
+          cdsEnabled: true,
+          appServiEnabled: true,
+          tablesSubscribedAt: true,
+          posSubscribedAt: true,
+          qrSubscribedAt: true,
+          kdsSubscribedAt: true,
+          cdsSubscribedAt: true,
+          appServiSubscribedAt: true
+        }
+      });
+    } catch (err) {
+      console.error(`Failed to fetch branches for tenant ${tenant.slug} in getInvoices:`, err.message);
+    }
 
-    const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
-
+    // 2. Loop through calendar months since signup
     const startedAt = tenant.createdAt;
-    const isYearly = tenant.billingCycle === "yearly";
-    const intervalMs = isYearly ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
+    const now = new Date();
 
-    const now = Date.now();
-    let cycleStart = startedAt.getTime();
-    let periodIndex = 1;
+    let currentYear = startedAt.getFullYear();
+    let currentMonth = startedAt.getMonth();
 
-    // Generate invoices for all cycles from signup until now
-    while (cycleStart < now) {
-      const cycleEnd = cycleStart + intervalMs;
-      const startStr = new Date(cycleStart).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-      const endStr = new Date(cycleEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const targetYear = now.getFullYear();
+    const targetMonth = now.getMonth();
 
-      let status = "paid";
-      // If it is the current active cycle
-      if (now >= cycleStart && now < cycleEnd) {
-        if (!tenant.isActive) {
-          status = "overdue";
-        } else {
-          status = "paid";
+    while (currentYear < targetYear || (currentYear === targetYear && currentMonth <= targetMonth)) {
+      const monthStart = new Date(currentYear, currentMonth, 1);
+      const monthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999);
+
+      let invoiceAmount = 0;
+      const globalServices = [];
+      const branchBreakdowns = [];
+
+      // A. Global services
+      if (tenant.subAppBrand) {
+        const { daysActive, totalDays, period } = getDaysActiveInMonth(tenant.createdAt, monthEnd, currentYear, currentMonth);
+        if (daysActive > 0) {
+          const price = tenant.priceAppBrand !== undefined ? tenant.priceAppBrand : 99.0;
+          const cost = price * (daysActive / totalDays);
+          invoiceAmount += cost;
+          globalServices.push({
+            name: "App Brand License",
+            price,
+            amount: parseFloat(cost.toFixed(2)),
+            daysActive,
+            totalDays,
+            period,
+            prorated: daysActive < totalDays
+          });
         }
       }
 
-      const invoiceDate = new Date(cycleStart);
+      // B. Branch-level services
+      for (const branch of dbBranches) {
+        if (new Date(branch.createdAt) > monthEnd) continue;
+
+        const servicesList = [];
+        let branchTotal = 0;
+
+        // I. Branch Base Fee (if subBranch is enabled on tenant level)
+        if (tenant.subBranch) {
+          const { daysActive, totalDays, period } = getDaysActiveInMonth(branch.createdAt, monthEnd, currentYear, currentMonth);
+          if (daysActive > 0) {
+            const price = tenant.priceBranch !== undefined ? tenant.priceBranch : 19.0;
+            const cost = price * (daysActive / totalDays);
+            branchTotal += cost;
+            servicesList.push({
+              name: "Branch Base Fee",
+              price,
+              amount: parseFloat(cost.toFixed(2)),
+              daysActive,
+              totalDays,
+              period,
+              prorated: daysActive < totalDays
+            });
+          }
+        }
+
+        // II. Individual branch services
+        const serviceConfigs = [
+          {
+            enabledField: "tablesEnabled",
+            subField: "tablesSubscribedAt",
+            tenantFlag: "subQrTable",
+            priceField: "priceQrTable",
+            defaultPrice: 19.0,
+            name: "QR Table Dining"
+          },
+          {
+            enabledField: "posEnabled",
+            subField: "posSubscribedAt",
+            tenantFlag: "subPos",
+            priceField: "pricePos",
+            defaultPrice: 49.0,
+            name: "POS Integration"
+          },
+          {
+            enabledField: "qrEnabled",
+            subField: "qrSubscribedAt",
+            tenantFlag: "subQrCashier",
+            priceField: "priceQrCashier",
+            defaultPrice: 9.0,
+            name: "QR Cashier"
+          },
+          {
+            enabledField: "kdsEnabled",
+            subField: "kdsSubscribedAt",
+            tenantFlag: "subKds",
+            priceField: "priceKds",
+            defaultPrice: 19.0,
+            name: "KDS Screen"
+          },
+          {
+            enabledField: "cdsEnabled",
+            subField: "cdsSubscribedAt",
+            tenantFlag: "subCds",
+            priceField: "priceCds",
+            defaultPrice: 9.0,
+            name: "CDS Screen"
+          },
+          {
+            enabledField: "appServiEnabled",
+            subField: "appServiSubscribedAt",
+            tenantFlag: "subAppServi",
+            priceField: "priceAppServi",
+            defaultPrice: 29.0,
+            name: "App Servi"
+          }
+        ];
+
+        for (const svc of serviceConfigs) {
+          if (tenant[svc.tenantFlag] && branch[svc.enabledField]) {
+            const subscribedAt = branch[svc.subField] || branch.createdAt;
+            const { daysActive, totalDays, period } = getDaysActiveInMonth(subscribedAt, monthEnd, currentYear, currentMonth);
+            if (daysActive > 0) {
+              const price = tenant[svc.priceField] !== undefined ? tenant[svc.priceField] : svc.defaultPrice;
+              const cost = price * (daysActive / totalDays);
+              branchTotal += cost;
+              servicesList.push({
+                name: svc.name,
+                price,
+                amount: parseFloat(cost.toFixed(2)),
+                daysActive,
+                totalDays,
+                period,
+                prorated: daysActive < totalDays
+              });
+            }
+          }
+        }
+
+        if (servicesList.length > 0) {
+          invoiceAmount += branchTotal;
+          branchBreakdowns.push({
+            branchId: branch.id,
+            branchName: branch.name,
+            total: parseFloat(branchTotal.toFixed(2)),
+            services: servicesList
+          });
+        }
+      }
+
+      // Only generate invoice if there are active features/services
+      const activeFeatures = [];
+      if (tenant.subAppServi) activeFeatures.push("APP servi");
+      if (tenant.subAppBrand) activeFeatures.push("APP brand");
+      if (tenant.subPos) activeFeatures.push("POS");
+      if (tenant.subQrTable) activeFeatures.push("QR Table");
+      if (tenant.subQrCashier) activeFeatures.push("QR Cashier");
+      if (tenant.subKds) activeFeatures.push("KDS");
+      if (tenant.subCds) activeFeatures.push("CDS");
+      const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
+
+      const startPeriodStr = new Date(Math.max(monthStart.getTime(), startedAt.getTime())).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const endPeriodStr = monthEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+      const invoiceDate = new Date(currentYear, currentMonth, 1);
       let match = true;
       if (filters.startDate && invoiceDate < new Date(filters.startDate)) match = false;
       if (filters.endDate && invoiceDate > new Date(filters.endDate)) match = false;
 
       if (match) {
         invoices.push({
-          id: `INV-${tenant.slug.toUpperCase()}-${1000 + periodIndex}`,
+          id: `INV-${tenant.slug.toUpperCase()}-${currentYear}${String(currentMonth + 1).padStart(2, "0")}`,
           tenantName: tenant.name,
           plan: planName,
-          period: `${startStr} - ${endStr}`,
-          amount: amount,
-          status: status,
-          createdAt: new Date(cycleStart)
+          period: `${startPeriodStr} - ${endPeriodStr}`,
+          amount: parseFloat(invoiceAmount.toFixed(2)),
+          status: tenant.isActive ? "paid" : "overdue",
+          createdAt: new Date(currentYear, currentMonth, 1),
+          breakdown: {
+            globalServices,
+            branches: branchBreakdowns
+          }
         });
       }
 
-      cycleStart = cycleEnd;
-      periodIndex++;
-    }
-
-    // If no invoices were generated (registered in future/edge cases)
-    if (invoices.length === 0) {
-      const cycleEnd = cycleStart + intervalMs;
-      const startStr = new Date(cycleStart).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-      const endStr = new Date(cycleEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-
-      const invoiceDate = startedAt;
-      let match = true;
-      if (filters.startDate && invoiceDate < new Date(filters.startDate)) match = false;
-      if (filters.endDate && invoiceDate > new Date(filters.endDate)) match = false;
-
-      if (match) {
-        invoices.push({
-          id: `INV-${tenant.slug.toUpperCase()}-1001`,
-          tenantName: tenant.name,
-          plan: planName,
-          period: `${startStr} - ${endStr}`,
-          amount: amount,
-          status: tenant.isActive ? "paid" : "overdue",
-          createdAt: startedAt
-        });
+      currentMonth++;
+      if (currentMonth > 11) {
+        currentMonth = 0;
+        currentYear++;
       }
     }
   }

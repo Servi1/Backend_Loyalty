@@ -85,6 +85,12 @@ model Branch {
   kdsEnabled    Boolean @default(false)
   cdsEnabled    Boolean @default(false)
   appServiEnabled Boolean @default(true)
+  tablesSubscribedAt DateTime? @default(now())
+  posSubscribedAt    DateTime? @default(now())
+  qrSubscribedAt     DateTime? @default(now())
+  kdsSubscribedAt    DateTime?
+  cdsSubscribedAt    DateTime?
+  appServiSubscribedAt DateTime? @default(now())
   hours     String? @default("10am - 11pm")
   rating    Float?  @default(4.8)
   imageUrl  String?

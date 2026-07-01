@@ -9,11 +9,49 @@ const getById = async (db, id) => {
   return branch;
 };
 
-const create = async (db, data) => db.branch.create({ data });
+const create = async (db, data) => {
+  const insertData = { ...data };
+  
+  const initSub = (field, subField) => {
+    if (insertData[field] === true) {
+      insertData[subField] = new Date();
+    } else if (insertData[field] === false) {
+      insertData[subField] = null;
+    }
+  };
+
+  initSub("tablesEnabled", "tablesSubscribedAt");
+  initSub("posEnabled", "posSubscribedAt");
+  initSub("qrEnabled", "qrSubscribedAt");
+  initSub("kdsEnabled", "kdsSubscribedAt");
+  initSub("cdsEnabled", "cdsSubscribedAt");
+  initSub("appServiEnabled", "appServiSubscribedAt");
+
+  return db.branch.create({ data: insertData });
+};
 
 const update = async (db, id, data) => {
-  await getById(db, id);
-  return db.branch.update({ where: { id }, data });
+  const current = await getById(db, id);
+  const updatedData = { ...data };
+
+  const checkToggle = (field, subField) => {
+    if (data[field] !== undefined && data[field] !== current[field]) {
+      if (data[field] === true) {
+        updatedData[subField] = new Date();
+      } else {
+        updatedData[subField] = null;
+      }
+    }
+  };
+
+  checkToggle("tablesEnabled", "tablesSubscribedAt");
+  checkToggle("posEnabled", "posSubscribedAt");
+  checkToggle("qrEnabled", "qrSubscribedAt");
+  checkToggle("kdsEnabled", "kdsSubscribedAt");
+  checkToggle("cdsEnabled", "cdsSubscribedAt");
+  checkToggle("appServiEnabled", "appServiSubscribedAt");
+
+  return db.branch.update({ where: { id }, data: updatedData });
 };
 
 const remove = async (db, id) => {
