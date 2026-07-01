@@ -73,6 +73,10 @@ model Branch {
   address   String?
   city      String?
   phone     String?
+  vatId                 String?
+  receiptLogoUrl        String?
+  receiptWebsite        String?
+  receiptAdditionalText String?
   lat       Float?
   lng       Float?
   isOpen    Boolean @default(true)
