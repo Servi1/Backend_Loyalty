@@ -11,6 +11,20 @@ const getAll = catchAsync(async (req, res) => {
       subPos: req.tenant.subPos,
       subKds: req.tenant.subKds,
       subCds: req.tenant.subCds
+    },
+    tenantSettings: {
+      logoUrl: req.tenant.logoUrl,
+      bannerUrl: req.tenant.bannerUrl,
+      bannerUrl2: req.tenant.bannerUrl2,
+      bannerUrl3: req.tenant.bannerUrl3,
+      menuBannerUrl: req.tenant.menuBannerUrl,
+      primaryColor: req.tenant.primaryColor,
+      accentColor: req.tenant.accentColor,
+      fontFamily: req.tenant.fontFamily,
+      layoutStyle: req.tenant.layoutStyle,
+      showHero: req.tenant.showHero,
+      heroTitle: req.tenant.heroTitle,
+      heroSubtitle: req.tenant.heroSubtitle,
     }
   }));
   res.json({ success: true, data });
@@ -28,6 +42,20 @@ const getOne = catchAsync(async (req, res) => {
         subPos: req.tenant.subPos,
         subKds: req.tenant.subKds,
         subCds: req.tenant.subCds
+      },
+      tenantSettings: {
+        logoUrl: req.tenant.logoUrl,
+        bannerUrl: req.tenant.bannerUrl,
+        bannerUrl2: req.tenant.bannerUrl2,
+        bannerUrl3: req.tenant.bannerUrl3,
+        menuBannerUrl: req.tenant.menuBannerUrl,
+        primaryColor: req.tenant.primaryColor,
+        accentColor: req.tenant.accentColor,
+        fontFamily: req.tenant.fontFamily,
+        layoutStyle: req.tenant.layoutStyle,
+        showHero: req.tenant.showHero,
+        heroTitle: req.tenant.heroTitle,
+        heroSubtitle: req.tenant.heroSubtitle,
       }
     } 
   });
