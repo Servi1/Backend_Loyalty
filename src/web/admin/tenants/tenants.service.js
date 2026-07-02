@@ -540,6 +540,7 @@ const getInvoices = async (filters = {}) => {
     while (currentYear < targetYear || (currentYear === targetYear && currentMonth <= targetMonth)) {
       const monthStart = new Date(currentYear, currentMonth, 1);
       const monthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999);
+      const currentMonthEnd = (currentYear === targetYear && currentMonth === targetMonth) ? now : monthEnd;
 
       let invoiceAmount = 0;
       const globalServices = [];
@@ -547,7 +548,7 @@ const getInvoices = async (filters = {}) => {
 
       // A. Global services
       if (tenant.subAppBrand) {
-        const { daysActive, totalDays, period } = getDaysActiveInMonth(tenant.createdAt, monthEnd, currentYear, currentMonth);
+        const { daysActive, totalDays, period } = getDaysActiveInMonth(tenant.createdAt, currentMonthEnd, currentYear, currentMonth);
         if (daysActive > 0) {
           const price = tenant.priceAppBrand !== undefined ? tenant.priceAppBrand : 99.0;
           const cost = price * (daysActive / totalDays);
@@ -566,14 +567,14 @@ const getInvoices = async (filters = {}) => {
 
       // B. Branch-level services
       for (const branch of dbBranches) {
-        if (new Date(branch.createdAt) > monthEnd) continue;
+        if (new Date(branch.createdAt) > currentMonthEnd) continue;
 
         const servicesList = [];
         let branchTotal = 0;
 
         // I. Branch Base Fee (if subBranch is enabled on tenant level)
         if (tenant.subBranch) {
-          const { daysActive, totalDays, period } = getDaysActiveInMonth(branch.createdAt, monthEnd, currentYear, currentMonth);
+          const { daysActive, totalDays, period } = getDaysActiveInMonth(branch.createdAt, currentMonthEnd, currentYear, currentMonth);
           if (daysActive > 0) {
             const price = tenant.priceBranch !== undefined ? tenant.priceBranch : 19.0;
             const cost = price * (daysActive / totalDays);
@@ -645,7 +646,7 @@ const getInvoices = async (filters = {}) => {
         for (const svc of serviceConfigs) {
           if (tenant[svc.tenantFlag] && branch[svc.enabledField]) {
             const subscribedAt = branch[svc.subField] || branch.createdAt;
-            const { daysActive, totalDays, period } = getDaysActiveInMonth(subscribedAt, monthEnd, currentYear, currentMonth);
+            const { daysActive, totalDays, period } = getDaysActiveInMonth(subscribedAt, currentMonthEnd, currentYear, currentMonth);
             if (daysActive > 0) {
               const price = tenant[svc.priceField] !== undefined ? tenant[svc.priceField] : svc.defaultPrice;
               const cost = price * (daysActive / totalDays);
@@ -686,7 +687,7 @@ const getInvoices = async (filters = {}) => {
       const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
 
       const startPeriodStr = new Date(Math.max(monthStart.getTime(), startedAt.getTime())).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-      const endPeriodStr = monthEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const endPeriodStr = currentMonthEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
       const invoiceDate = new Date(currentYear, currentMonth, 1);
       let match = true;
