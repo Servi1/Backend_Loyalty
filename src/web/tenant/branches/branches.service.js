@@ -59,4 +59,8 @@ const remove = async (db, id) => {
   return db.branch.delete({ where: { id } });
 };
 
-module.exports = { getAll, getById, create, update, remove };
+const bulkUpdate = async (db, ids, data) => {
+  return db.branch.updateMany({ where: { id: { in: ids } }, data });
+};
+
+module.exports = { getAll, getById, create, update, remove, bulkUpdate };

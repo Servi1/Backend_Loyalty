@@ -98,6 +98,7 @@ model Branch {
   hours     String? @default("10am - 11pm")
   rating    Float?  @default(4.8)
   imageUrl  String?
+  menuBannerUrl String?
   tables    Table[]
   orders    Order[]
   staff     User[]
