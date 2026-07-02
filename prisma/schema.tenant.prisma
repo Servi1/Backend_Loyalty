@@ -290,3 +290,34 @@ model Coupon {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 }
+
+// ─── Custom Payment Types ────────────────────────────
+
+model CustomPaymentType {
+  id        String   @id @default(uuid())
+  name      String
+  imageUrl  String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Location Groups ─────────────────────────────────
+
+model LocationGroup {
+  id        String   @id @default(uuid())
+  name      String
+  locations Json     // Array of branch IDs: ["uuid-1", "uuid-2"]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Custom Order Types ──────────────────────────────
+
+model CustomOrderType {
+  id        String   @id @default(uuid())
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
