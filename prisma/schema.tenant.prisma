@@ -260,6 +260,7 @@ model Discount {
   hasWeeklySchedule  Boolean  @default(false)
   weeklySchedule     Json?    // Array of day schedules
   isActive           Boolean  @default(true)
+  itemsList          Json?    // Array of selected items
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }

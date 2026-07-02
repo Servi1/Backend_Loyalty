@@ -25,6 +25,7 @@ const create = async (db, data) => {
       hasWeeklySchedule: Boolean(data.hasWeeklySchedule),
       weeklySchedule: data.weeklySchedule || null,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
+      itemsList: data.itemsList || null,
     }
   });
 };
@@ -50,6 +51,7 @@ const update = async (db, id, data) => {
       hasWeeklySchedule: data.hasWeeklySchedule !== undefined ? Boolean(data.hasWeeklySchedule) : discount.hasWeeklySchedule,
       weeklySchedule: data.weeklySchedule !== undefined ? data.weeklySchedule : discount.weeklySchedule,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : discount.isActive,
+      itemsList: data.itemsList !== undefined ? data.itemsList : discount.itemsList,
     }
   });
 };
