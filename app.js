@@ -22,6 +22,7 @@ const tablesRoutes = require("./src/web/tenant/tables/tables.routes");
 const inventoryRoutes = require("./src/web/tenant/inventory/inventory.routes");
 const posDevicesRoutes = require("./src/web/tenant/pos-devices/pos-devices.routes");
 const qrCashiersRoutes = require("./src/web/tenant/qr-cashiers/qr-cashiers.routes");
+const posRoutes = require("./src/pos/pos.routes");
 
 // ─── Mobile App Routes ────────────────────────────────
 // ─── Mobile App Routes ────────────────────────────────
@@ -50,12 +51,14 @@ app.get("/api/health", (_req, res) => {
 
 // ─── API Routes ──────────────────────────────────────
 const { extractTenant } = require("./src/middlewares/tenantMiddleware");
+const { authenticatePos } = require("./src/middlewares/posMiddleware");
 
 // 1. Super Admin API
 app.use("/api/admin/tenants", tenantsRoutes);
 app.use("/api/admin/users", adminUsersRoutes);
 app.use("/api/admin/settings", settingsRoutes);
 app.use("/api/auth", authRoutes); // auth handles both super admin and tenant logins
+app.use("/api/pos", authenticatePos, posRoutes);
 
 const mainPrisma = require("./src/config/prisma");
 
