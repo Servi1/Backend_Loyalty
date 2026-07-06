@@ -71,7 +71,7 @@ const createOrder = async (db, branchId, userId, orderData) => {
   return await db.order.create({
     data: {
       orderNumber,
-      status: "PENDING",
+      status: "ACCEPTED",
       type: type || "DINE_IN",
       total: Number(total) || 0,
       notes,
@@ -79,6 +79,8 @@ const createOrder = async (db, branchId, userId, orderData) => {
       userId,
       tableId,
       paymentMethod: paymentMethod || "cash",
+      // optional mobile number from POS client
+      customerPhone: orderData.customerPhone || undefined,
       items: {
         create: items.map(item => ({
           quantity: Number(item.quantity) || 1,

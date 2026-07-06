@@ -11,6 +11,8 @@ const extractTenant = async (req, _res, next) => {
     const tenantId =
       req.headers["x-tenant-id"] || req.params.tenantId || req.query.tenantId;
 
+    console.log(`[DEBUG extractTenant] tenantId: "${tenantId}"`);
+
     if (!tenantId) {
       return next(new ApiError(400, "Tenant ID is required"));
     }
