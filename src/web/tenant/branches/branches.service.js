@@ -1,10 +1,26 @@
 const ApiError = require("../../../utils/ApiError");
 
 const getAll = async (db) =>
-  db.branch.findMany({ include: { _count: { select: { tables: true, orders: true, staff: true } } } });
+  db.branch.findMany({
+    include: {
+      locationGroup: true,
+      customPaymentType: true,
+      customOrderType: true,
+      _count: { select: { tables: true, orders: true, staff: true } }
+    }
+  });
 
 const getById = async (db, id) => {
-  const branch = await db.branch.findUnique({ where: { id }, include: { tables: true, staff: true } });
+  const branch = await db.branch.findUnique({
+    where: { id },
+    include: {
+      tables: true,
+      staff: true,
+      locationGroup: true,
+      customPaymentType: true,
+      customOrderType: true
+    }
+  });
   if (!branch) throw new ApiError(404, "Branch not found");
   return branch;
 };

@@ -132,6 +132,8 @@ model Tenant {
   autoPayouts          Boolean @default(true)
   ordersEnabled        Boolean @default(true)
   loyaltyEnabled       Boolean @default(false)
+  loyaltyAddPoints     Boolean @default(true)
+  loyaltyRedeemPoints  Boolean @default(true)
   loyaltyEarnRate      Float   @default(1.0)
   loyaltyRedeemRate    Float   @default(100.0)
   isActive             Boolean          @default(true)

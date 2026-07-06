@@ -444,6 +444,8 @@ const getLoyaltyOverview = async (filters = {}) => {
       tenantName: tenant.name,
       slug: tenant.slug,
       enabled: tenant.loyaltyEnabled,
+      loyaltyAddPoints: tenant.loyaltyAddPoints,
+      loyaltyRedeemPoints: tenant.loyaltyRedeemPoints,
       earnRate: tenant.loyaltyEarnRate,
       redeemRate: tenant.loyaltyRedeemRate,
       membersCount,
