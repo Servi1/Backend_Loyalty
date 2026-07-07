@@ -4,8 +4,8 @@ const getAll = async (db) =>
   db.branch.findMany({
     include: {
       locationGroup: true,
-      customPaymentType: true,
-      customOrderType: true,
+      customPaymentTypes: true,
+      customOrderTypes: true,
       _count: { select: { tables: true, orders: true, staff: true } }
     }
   });
@@ -17,8 +17,8 @@ const getById = async (db, id) => {
       tables: true,
       staff: true,
       locationGroup: true,
-      customPaymentType: true,
-      customOrderType: true
+      customPaymentTypes: true,
+      customOrderTypes: true
     }
   });
   if (!branch) throw new ApiError(404, "Branch not found");
@@ -26,7 +26,8 @@ const getById = async (db, id) => {
 };
 
 const create = async (db, data) => {
-  const insertData = { ...data };
+  const { customPaymentTypeIds, customOrderTypeIds, ...rest } = data;
+  const insertData = { ...rest };
   
   const initSub = (field, subField) => {
     if (insertData[field] === true) {
@@ -43,12 +44,35 @@ const create = async (db, data) => {
   initSub("cdsEnabled", "cdsSubscribedAt");
   initSub("appServiEnabled", "appServiSubscribedAt");
 
-  return db.branch.create({ data: insertData });
+  const relations = {};
+  if (Array.isArray(customPaymentTypeIds)) {
+    relations.customPaymentTypes = {
+      connect: customPaymentTypeIds.map(id => ({ id }))
+    };
+  }
+  if (Array.isArray(customOrderTypeIds)) {
+    relations.customOrderTypes = {
+      connect: customOrderTypeIds.map(id => ({ id }))
+    };
+  }
+
+  return db.branch.create({
+    data: {
+      ...insertData,
+      ...relations
+    },
+    include: {
+      locationGroup: true,
+      customPaymentTypes: true,
+      customOrderTypes: true
+    }
+  });
 };
 
 const update = async (db, id, data) => {
   const current = await getById(db, id);
-  const updatedData = { ...data };
+  const { customPaymentTypeIds, customOrderTypeIds, ...rest } = data;
+  const updatedData = { ...rest };
 
   const checkToggle = (field, subField) => {
     if (data[field] !== undefined && data[field] !== current[field]) {
@@ -67,7 +91,32 @@ const update = async (db, id, data) => {
   checkToggle("cdsEnabled", "cdsSubscribedAt");
   checkToggle("appServiEnabled", "appServiSubscribedAt");
 
-  return db.branch.update({ where: { id }, data: updatedData });
+  const relations = {};
+  if (customPaymentTypeIds !== undefined) {
+    relations.customPaymentTypes = {
+      set: Array.isArray(customPaymentTypeIds) ? customPaymentTypeIds.map(id => ({ id })) : []
+    };
+  }
+  if (customOrderTypeIds !== undefined) {
+    relations.customOrderTypes = {
+      set: Array.isArray(customOrderTypeIds) ? customOrderTypeIds.map(id => ({ id })) : []
+    };
+  }
+
+  return db.branch.update({
+    where: { id },
+    data: {
+      ...updatedData,
+      ...relations
+    },
+    include: {
+      tables: true,
+      staff: true,
+      locationGroup: true,
+      customPaymentTypes: true,
+      customOrderTypes: true
+    }
+  });
 };
 
 const remove = async (db, id) => {
