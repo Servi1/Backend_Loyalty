@@ -38,11 +38,17 @@ const authenticatePos = async (req, res, next) => {
 
     // 2. Authentication
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    let token;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    } else if (req.query.token) {
+      token = req.query.token;
+    }
+
+    if (!token) {
       return next(new ApiError(401, "Authentication token required"));
     }
 
-    const token = authHeader.split(" ")[1];
     const decoded = jwt.verify(token, config.jwt.secret);
 
     // 3. User Lookup inside Tenant DB

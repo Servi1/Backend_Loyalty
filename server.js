@@ -25,3 +25,4 @@ server.listen(config.port, () => {
   const tenantsService = require("./src/web/admin/tenants/tenants.service");
   tenantsService.syncAllTenantOrders().catch(err => console.error("Initial order sync failed:", err));
 });
+// Trigger reload

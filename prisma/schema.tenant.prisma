@@ -23,6 +23,7 @@ enum Role {
 }
  
 enum OrderStatus {
+  HALTED
   PENDING
   ACCEPTED
   PREPARING
@@ -57,6 +58,8 @@ model User {
   branch    Branch?  @relation(fields: [branchId], references: [id])
  
   orders    Order[]
+  openedSessions CashDrawerSession[] @relation("OpenedSessions")
+  closedSessions CashDrawerSession[] @relation("ClosedSessions")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -119,6 +122,7 @@ model Branch {
   staff     User[]
   inventory InventoryItem[]
   posDevices PosDevice[]
+  cashDrawerSessions CashDrawerSession[]
   qrCashiers QrCashier[]
   locationGroupId     String?
   locationGroup       LocationGroup?     @relation(fields: [locationGroupId], references: [id])
@@ -344,4 +348,31 @@ model CustomOrderType {
   branches  Branch[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ─── Cash Drawer Sessions ─────────────────────────────
+
+model CashDrawerSession {
+  id                    String    @id @default(uuid())
+  branchId              String
+  branch                Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  openedById            String
+  openedBy              User      @relation("OpenedSessions", fields: [openedById], references: [id])
+  closedById            String?
+  closedBy              User?     @relation("ClosedSessions", fields: [closedById], references: [id])
+  openedAt              DateTime  @default(now())
+  closedAt              DateTime?
+  openingBalance        Float
+  expectedEndingBalance Float?
+  actualEndingBalance   Float?
+  discrepancy           Float?
+  expectedSales         Float?    @default(0.0)
+  status                String    @default("OPEN") // OPEN | CLOSED
+  cashCounts            Json?     // { hundreds: 0, fifties: 0, ... }
+  transactions          Json?     // Array of: { id, type, description, amount, time }
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([branchId])
 }
