@@ -33,4 +33,13 @@ const remove = catchAsync(async (req, res) => {
   res.status(204).send();
 });
 
-module.exports = { getAll, getById, create, update, remove };
+const bulkUpdate = catchAsync(async (req, res) => {
+  const { ids, data } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new ApiError(400, "Branch IDs array 'ids' is required.");
+  }
+  const result = await branchesService.bulkUpdate(req.tenantDb, ids, data);
+  res.json({ success: true, count: result.count });
+});
+
+module.exports = { getAll, getById, create, update, remove, bulkUpdate };
