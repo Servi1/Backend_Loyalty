@@ -96,6 +96,8 @@ const createOrder = async (db, branchId, userId, orderData) => {
       branchId,
       userId,
       tableId,
+      customOrderTypeId: orderData.customOrderTypeId || undefined,
+      customerId: orderData.customerId || undefined,
       paymentMethod: paymentMethod || "cash",
       // optional mobile number from POS client
       customerPhone: orderData.customerPhone || undefined,

@@ -214,6 +214,8 @@ model Order {
   branch   Branch @relation(fields: [branchId], references: [id])
   tableId  String?
   table    Table? @relation(fields: [tableId], references: [id])
+  customOrderTypeId String?
+  customOrderType   CustomOrderType? @relation(fields: [customOrderTypeId], references: [id])
   posUnit       String?
   source        String      @default("pos") // pos | app | qr_cashier | qr_table
   qrCashierId   String?
@@ -346,6 +348,7 @@ model CustomOrderType {
   name      String
   isActive  Boolean  @default(true)
   branches  Branch[]
+  orders    Order[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
