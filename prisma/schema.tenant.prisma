@@ -126,10 +126,8 @@ model Branch {
   qrCashiers QrCashier[]
   locationGroupId     String?
   locationGroup       LocationGroup?     @relation(fields: [locationGroupId], references: [id])
-  customPaymentTypeId String?
-  customPaymentType   CustomPaymentType? @relation(fields: [customPaymentTypeId], references: [id])
-  customOrderTypeId   String?
-  customOrderType     CustomOrderType?   @relation(fields: [customOrderTypeId], references: [id])
+  customPaymentTypes CustomPaymentType[]
+  customOrderTypes   CustomOrderType[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
