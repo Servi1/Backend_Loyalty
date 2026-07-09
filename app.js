@@ -23,6 +23,7 @@ const inventoryRoutes = require("./src/web/tenant/inventory/inventory.routes");
 const posDevicesRoutes = require("./src/web/tenant/pos-devices/pos-devices.routes");
 const qrCashiersRoutes = require("./src/web/tenant/qr-cashiers/qr-cashiers.routes");
 const posRoutes = require("./src/pos/pos.routes");
+const kdsRoutes = require("./src/kds/kds.routes");
 const discountsRoutes = require("./src/web/tenant/discounts/discounts.routes");
 const couponsRoutes = require("./src/web/tenant/coupons/coupons.routes");
 const customPaymentTypesRoutes = require("./src/web/tenant/custom-payment-types/customPaymentTypes.routes");
@@ -54,9 +55,9 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// ─── API Routes ──────────────────────────────────────
 const { extractTenant } = require("./src/middlewares/tenantMiddleware");
 const { authenticatePos } = require("./src/middlewares/posMiddleware");
+const { authenticateKds } = require("./src/middlewares/kdsMiddleware");
 
 // 1. Super Admin API
 app.use("/api/admin/tenants", tenantsRoutes);
@@ -64,6 +65,7 @@ app.use("/api/admin/users", adminUsersRoutes);
 app.use("/api/admin/settings", settingsRoutes);
 app.use("/api/auth", authRoutes); // auth handles both super admin and tenant logins
 app.use("/api/pos", authenticatePos, posRoutes);
+app.use("/api/kds", authenticateKds, kdsRoutes);
 
 const mainPrisma = require("./src/config/prisma");
 
