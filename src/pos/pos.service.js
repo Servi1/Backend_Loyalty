@@ -67,7 +67,7 @@ const getOrders = async (db, branchId, status) => {
 /**
  * Create a new order with multiple items.
  */
-const createOrder = async (db, branchId, userId, orderData) => {
+const createOrder = async (db, branchId, userId, orderData, tenantId) => {
   const { type, total, items, tableId, notes, paymentMethod } = orderData;
   
   if (!items || items.length === 0) {
@@ -86,7 +86,7 @@ const createOrder = async (db, branchId, userId, orderData) => {
     attempts++;
   }
 
-  return await db.order.create({
+  const order = await db.order.create({
     data: {
       orderNumber,
       status: orderData.status || "ACCEPTED",
@@ -118,6 +118,12 @@ const createOrder = async (db, branchId, userId, orderData) => {
       table: true
     }
   });
+
+  if (tenantId) {
+    syncToAggregatedOrder(db, tenantId, order).catch(console.error);
+  }
+
+  return order;
 };
 
 /**
@@ -158,6 +164,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         total: order.total,
         notes: order.notes,
         customerName,
+        customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
         source: order.source || "pos",
@@ -169,6 +176,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         total: order.total,
         notes: order.notes,
         customerName,
+        customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
         source: order.source || "pos",

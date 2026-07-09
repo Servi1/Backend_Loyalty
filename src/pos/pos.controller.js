@@ -26,7 +26,7 @@ const getOrders = catchAsync(async (req, res) => {
 const createOrder = catchAsync(async (req, res) => {
   const branchId = req.user.branchId;
   const userId = req.user.id;
-  const order = await posService.createOrder(req.tenantDb, branchId, userId, req.body);
+  const order = await posService.createOrder(req.tenantDb, branchId, userId, req.body, req.tenantId);
   res.status(201).json({ success: true, data: order });
 });
 

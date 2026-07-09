@@ -156,6 +156,7 @@ model AggregatedOrder {
   total          Float
   notes          String?
   customerName   String?
+  customerPhone  String?
   branchName     String?
   feeRate        Float    @default(0.0)
   source         String   @default("pos") // pos | app | qr_cashier | qr_table
