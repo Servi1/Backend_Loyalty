@@ -122,6 +122,7 @@ model Branch {
   staff     User[]
   inventory InventoryItem[]
   posDevices PosDevice[]
+  kdsDevices KdsDevice[]
   cashDrawerSessions CashDrawerSession[]
   qrCashiers QrCashier[]
   locationGroupId     String?
@@ -258,6 +259,20 @@ model InventoryItem {
 model PosDevice {
   id        String   @id @default(uuid())
   name      String   // e.g., "POS 1", "POS 2", etc.
+  deviceKey String   @unique // 8-digit random number
+  isActive  Boolean  @default(true)
+
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+ 
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model KdsDevice {
+  id        String   @id @default(uuid())
+  name      String   // e.g., "KDS 1", "KDS 2", etc.
   deviceKey String   @unique // 8-digit random number
   isActive  Boolean  @default(true)
 

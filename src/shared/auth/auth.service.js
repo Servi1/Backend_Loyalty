@@ -90,8 +90,15 @@ const verifyOtp = async (db, phone, code, tenantId) => {
  * B2B portal login (email + password).
  */
 const loginWithEmail = async (db, email, password) => {
-  // Check if the email field holds a valid POS Device Key
-  const posDevice = await db.posDevice.findUnique({ where: { deviceKey: email } });
+  // Check if the email field holds a valid POS Device Key (case-insensitive)
+  const posDevice = await db.posDevice.findFirst({
+    where: {
+      deviceKey: {
+        equals: email,
+        mode: "insensitive"
+      }
+    }
+  });
   if (posDevice) {
     if (posDevice.expiresAt && new Date(posDevice.expiresAt) < new Date()) {
       throw new ApiError(403, "This POS terminal subscription has expired. Please contact administration.");
@@ -165,4 +172,54 @@ const superAdminLogin = async (email, password) => {
   return { token, admin };
 };
 
-module.exports = { sendOtp, verifyOtp, loginWithEmail, superAdminLogin };
+/**
+ * KDS login (deviceKey only).
+ */
+const kdsLogin = async (db, deviceKey) => {
+  // Check if the deviceKey field holds a valid KDS Device Key (case-insensitive)
+  const kdsDevice = await db.kdsDevice.findFirst({
+    where: {
+      deviceKey: {
+        equals: deviceKey,
+        mode: "insensitive"
+      }
+    }
+  });
+  if (!kdsDevice) {
+    throw new ApiError(401, "Invalid KDS device key");
+  }
+
+  if (kdsDevice.expiresAt && new Date(kdsDevice.expiresAt) < new Date()) {
+    throw new ApiError(403, "This KDS terminal subscription has expired. Please contact administration.");
+  }
+
+  // Find the KITCHEN user in this branch
+  const user = await db.user.findFirst({
+    where: {
+      branchId: kdsDevice.branchId,
+      role: "KITCHEN",
+    },
+    include: { branch: true },
+  });
+
+  if (!user) {
+    throw new ApiError(401, "No kitchen staff user found for this KDS branch");
+  }
+
+  if (user.branch && !user.branch.isOpen) {
+    throw new ApiError(403, "This branch is currently deactivated.");
+  }
+
+  const token = signToken(user.id, "user");
+  return {
+    token,
+    user,
+    kdsDevice: {
+      id: kdsDevice.id,
+      name: kdsDevice.name,
+      deviceKey: kdsDevice.deviceKey
+    }
+  };
+};
+
+module.exports = { sendOtp, verifyOtp, loginWithEmail, superAdminLogin, kdsLogin };

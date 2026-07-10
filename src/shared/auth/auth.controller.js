@@ -29,9 +29,16 @@ const superAdminLogin = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, ...result });
 });
 
+/** POST /api/auth/kds/login */
+const kdsLogin = catchAsync(async (req, res) => {
+  const { deviceKey } = req.body;
+  const result = await authService.kdsLogin(req.tenantDb, deviceKey);
+  res.status(200).json({ success: true, ...result, tenant: req.tenant });
+});
+
 /** GET /api/auth/me */
 const getMe = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, user: req.user });
 });
 
-module.exports = { sendOtp, verifyOtp, login, superAdminLogin, getMe };
+module.exports = { sendOtp, verifyOtp, login, superAdminLogin, kdsLogin, getMe };
