@@ -11,6 +11,8 @@ router.put("/profile/me", extractTenant, authenticate, ctrl.updateProfile);
 
 // Admin-only endpoints
 router.use(authenticate);
+router.get("/sync-status", authorize("SUPER_ADMIN"), ctrl.getSyncStatus);
+router.post("/:id/sync-orders", authorize("SUPER_ADMIN"), ctrl.syncTenantOrders);
 router.get("/overview", authorize("SUPER_ADMIN"), ctrl.getOverview);
 router.get("/orders", authorize("SUPER_ADMIN"), ctrl.getSuperAdminOrders);
 router.get("/orders/:tenantId/:orderId", authorize("SUPER_ADMIN"), ctrl.getSuperAdminOrderDetail);

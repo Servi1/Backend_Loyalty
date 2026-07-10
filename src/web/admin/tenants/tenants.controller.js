@@ -111,6 +111,16 @@ const getSuperAdminOrderDetail = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+const getSyncStatus = catchAsync(async (req, res) => {
+  const result = await tenantsService.getSyncStatus();
+  res.json({ success: true, data: result });
+});
+
+const syncTenantOrders = catchAsync(async (req, res) => {
+  const result = await tenantsService.syncTenantOrders(req.params.id);
+  res.json({ success: true, data: result });
+});
+
 module.exports = {
   getAll,
   getById,
@@ -131,4 +141,6 @@ module.exports = {
   deleteSuperAdminCustomer,
   getTenantUsers,
   getAllSystemUsers,
+  getSyncStatus,
+  syncTenantOrders,
 };

@@ -1116,6 +1116,120 @@ const getSuperAdminOrderDetail = async (tenantId, orderId) => {
   };
 };
 
+const getSyncStatus = async () => {
+  const tenants = await mainPrisma.tenant.findMany({
+    select: {
+      id: true,
+      name: true,
+      dbUrl: true,
+      lastOrderSyncAt: true
+    }
+  });
+
+  const statusList = [];
+  for (const tenant of tenants) {
+    let tenantOrdersCount = 0;
+    let isOnline = true;
+    try {
+      const tenantPrisma = getTenantClient(tenant.dbUrl);
+      tenantOrdersCount = await tenantPrisma.order.count();
+    } catch (err) {
+      console.error(`Failed to connect or query orders for tenant ${tenant.name}:`, err.message);
+      isOnline = false;
+    }
+
+    const aggregatedOrdersCount = await mainPrisma.aggregatedOrder.count({
+      where: { tenantId: tenant.id }
+    });
+
+    statusList.push({
+      id: tenant.id,
+      name: tenant.name,
+      lastOrderSyncAt: tenant.lastOrderSyncAt,
+      tenantOrdersCount: isOnline ? tenantOrdersCount : null,
+      aggregatedOrdersCount,
+      isOnline
+    });
+  }
+
+  return statusList;
+};
+
+const syncTenantOrders = async (tenantId) => {
+  const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) throw new ApiError(404, "Tenant not found");
+
+  const tenantDb = getTenantClient(tenant.dbUrl);
+  const orders = await tenantDb.order.findMany({
+    include: { user: true, branch: true }
+  });
+
+  const tenantOrderIds = orders.map((o) => o.id);
+
+  // Delete stale aggregated orders in the main DB that do not exist in the tenant DB anymore
+  await mainPrisma.aggregatedOrder.deleteMany({
+    where: {
+      tenantId: tenant.id,
+      orderId: { notIn: tenantOrderIds }
+    }
+  });
+
+  // Also keep the main Order table aligned
+  await mainPrisma.order.deleteMany({
+    where: {
+      tenantId: tenant.id,
+      id: { notIn: tenantOrderIds }
+    }
+  });
+
+  let syncedCount = 0;
+  for (const order of orders) {
+    await mainPrisma.aggregatedOrder.upsert({
+      where: { id: `${tenant.id}_${order.id}` },
+      create: {
+        id: `${tenant.id}_${order.id}`,
+        tenantId: tenant.id,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        type: order.type,
+        total: order.total,
+        notes: order.notes,
+        customerName: order.user?.name || order.user?.phone || "Walk-in Customer",
+        customerPhone: order.customerPhone || null,
+        branchName: order.branch?.name || "Register Terminal",
+        feeRate: order.feeRate || 0.0,
+        source: order.source || "pos",
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+      },
+      update: {
+        status: order.status,
+        total: order.total,
+        notes: order.notes,
+        customerName: order.user?.name || order.user?.phone || "Walk-in Customer",
+        customerPhone: order.customerPhone || null,
+        branchName: order.branch?.name || "Register Terminal",
+        feeRate: order.feeRate || 0.0,
+        source: order.source || "pos",
+        updatedAt: order.updatedAt,
+      }
+    });
+    syncedCount++;
+  }
+
+  const syncDate = new Date();
+  await mainPrisma.tenant.update({
+    where: { id: tenant.id },
+    data: { lastOrderSyncAt: syncDate }
+  });
+
+  return {
+    syncedCount,
+    lastOrderSyncAt: syncDate
+  };
+};
+
 module.exports = {
   getAll,
   getById,
@@ -1135,5 +1249,7 @@ module.exports = {
   deleteSuperAdminCustomer,
   getTenantUsers,
   getAllSystemUsers,
+  getSyncStatus,
+  syncTenantOrders,
 };
 
