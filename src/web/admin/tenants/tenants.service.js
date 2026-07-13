@@ -400,8 +400,15 @@ const getLoyaltyOverview = async (filters = {}) => {
     orderBy: { createdAt: "desc" }
   });
 
+  const appUserWhere = {};
+  if (filters.startDate || filters.endDate) {
+    appUserWhere.createdAt = {};
+    if (filters.startDate) appUserWhere.createdAt.gte = new Date(filters.startDate);
+    if (filters.endDate) appUserWhere.createdAt.lte = new Date(filters.endDate);
+  }
+  const totalMembers = await mainPrisma.appUser.count({ where: appUserWhere });
+
   const programs = [];
-  let totalMembers = 0;
   let totalRedemptions = 0;
 
   for (const tenant of tenants) {
@@ -436,7 +443,6 @@ const getLoyaltyOverview = async (filters = {}) => {
       console.error(`Failed to fetch loyalty stats for tenant ${tenant.slug}:`, err.message);
     }
 
-    totalMembers += membersCount;
     totalRedemptions += redemptionsCount;
 
     programs.push({
