@@ -6,9 +6,10 @@ const getAllStaff = async (db, branchId, startDate, endDate) => {
     role: {
       in: ["BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"]
     },
-    NOT: {
-      customRole: "DELETED"
-    }
+    OR: [
+      { customRole: null },
+      { customRole: { not: "DELETED" } }
+    ]
   };
   if (branchId) {
     where.branchId = branchId;

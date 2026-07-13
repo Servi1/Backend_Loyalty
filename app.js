@@ -11,6 +11,7 @@ const { errorHandler } = require("./src/middlewares/errorHandler");
 const authRoutes = require("./src/shared/auth/auth.routes");
 const tenantsRoutes = require("./src/web/admin/tenants/tenants.routes");
 const adminUsersRoutes = require("./src/web/admin/users/adminUsers.routes");
+const adminRolesRoutes = require("./src/web/admin/roles/adminRoles.routes");
 const settingsRoutes = require("./src/web/admin/settings/settings.routes");
 const branchesRoutes = require("./src/web/tenant/branches/branches.routes");
 const menusRoutes = require("./src/web/tenant/menus/menus.routes");
@@ -18,6 +19,7 @@ const ordersRoutes = require("./src/web/tenant/orders/orders.routes");
 const loyaltyRoutes = require("./src/web/tenant/loyalty/loyalty.routes");
 const uploadsRoutes = require("./src/web/tenant/uploads/uploads.routes");
 const usersRoutes = require("./src/web/tenant/users/users.routes");
+const tenantRolesRoutes = require("./src/web/tenant/roles/tenantRoles.routes");
 const tablesRoutes = require("./src/web/tenant/tables/tables.routes");
 const inventoryRoutes = require("./src/web/tenant/inventory/inventory.routes");
 const posDevicesRoutes = require("./src/web/tenant/pos-devices/pos-devices.routes");
@@ -62,6 +64,7 @@ const { authenticateKds } = require("./src/middlewares/kdsMiddleware");
 // 1. Super Admin API
 app.use("/api/admin/tenants", tenantsRoutes);
 app.use("/api/admin/users", adminUsersRoutes);
+app.use("/api/admin/roles", adminRolesRoutes);
 app.use("/api/admin/settings", settingsRoutes);
 app.use("/api/auth", authRoutes); // auth handles both super admin and tenant logins
 app.use("/api/pos", authenticatePos, posRoutes);
@@ -152,6 +155,7 @@ tenantRouter.post("/market/buy", async (req, res, next) => {
 });
 tenantRouter.use("/branches", branchesRoutes);
 tenantRouter.use("/users", usersRoutes);
+tenantRouter.use("/roles", tenantRolesRoutes);
 tenantRouter.use("/tables", tablesRoutes);
 tenantRouter.use("/inventory", inventoryRoutes);
 tenantRouter.use("/pos-devices", posDevicesRoutes);
