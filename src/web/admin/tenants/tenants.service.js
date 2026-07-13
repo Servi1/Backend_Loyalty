@@ -776,7 +776,10 @@ const syncAllTenantOrders = async () => {
               total: order.total,
               notes: order.notes,
               customerName: order.user?.name || order.user?.phone || "Customer Walk-in",
+              customerPhone: order.customerPhone || null,
               branchName: order.branch?.name || "Register Terminal",
+              feeRate: order.feeRate || 0.0,
+              source: order.source || "pos",
               createdAt: order.createdAt,
               updatedAt: order.updatedAt,
             },
@@ -785,7 +788,10 @@ const syncAllTenantOrders = async () => {
               total: order.total,
               notes: order.notes,
               customerName: order.user?.name || order.user?.phone || "Customer Walk-in",
+              customerPhone: order.customerPhone || null,
               branchName: order.branch?.name || "Register Terminal",
+              feeRate: order.feeRate || 0.0,
+              source: order.source || "pos",
               updatedAt: order.updatedAt,
             }
           });
