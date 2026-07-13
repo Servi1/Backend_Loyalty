@@ -68,6 +68,7 @@ const createStaff = async (db, data) => {
       branchId: data.branchId || null,
       password: hashedPassword,
       pinCode,
+      isActive: data.isActive !== undefined ? data.isActive : true,
     },
     include: {
       branch: true
@@ -151,6 +152,7 @@ const updateStaff = async (db, id, data) => {
     customRole: data.customRole || null,
     branchId: data.branchId || null,
     pinCode: data.pinCode || user.pinCode,
+    isActive: data.isActive !== undefined ? data.isActive : user.isActive,
   };
 
   if (data.email !== undefined) {

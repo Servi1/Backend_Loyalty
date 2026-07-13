@@ -52,6 +52,7 @@ model User {
   customRole String?
   avatarUrl String?
   pinCode   String?
+  isActive  Boolean  @default(true)
  
   // Relations
   branchId  String?

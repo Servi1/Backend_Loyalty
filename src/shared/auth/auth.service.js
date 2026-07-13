@@ -140,6 +140,10 @@ const loginWithEmail = async (db, email, password) => {
 
     if (!user) throw new ApiError(401, "Invalid PIN code for this POS terminal");
 
+    if (user.isActive === false) {
+      throw new ApiError(403, "Your account has been deactivated. Please contact administration.");
+    }
+
     if (user.branch && !user.branch.isOpen) {
       throw new ApiError(403, "This branch is currently deactivated.");
     }
@@ -160,6 +164,10 @@ const loginWithEmail = async (db, email, password) => {
 
   const user = await db.user.findUnique({ where: { email }, include: { branch: true } });
   if (!user) throw new ApiError(401, "Invalid credentials");
+
+  if (user.isActive === false) {
+    throw new ApiError(403, "Your account has been deactivated. Please contact administration.");
+  }
 
   if (user.branch && !user.branch.isOpen && user.role !== "BRAND_MANAGER") {
     throw new ApiError(403, "This branch is currently deactivated.");

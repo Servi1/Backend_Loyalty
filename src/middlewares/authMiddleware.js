@@ -69,6 +69,10 @@ const authenticate = async (req, _res, next) => {
       });
       if (!user) throw new ApiError(401, "User no longer exists");
 
+      if (user.isActive === false) {
+        throw new ApiError(403, "Your account has been deactivated. Please contact administration.");
+      }
+
       if (user.branch && !user.branch.isOpen && user.role !== "BRAND_MANAGER") {
         throw new ApiError(403, "This branch is currently deactivated.");
       }
