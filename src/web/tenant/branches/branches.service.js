@@ -16,6 +16,9 @@ const getById = async (db, id) => {
     include: {
       tables: true,
       staff: true,
+      posDevices: true,
+      kdsDevices: true,
+      qrCashiers: true,
       locationGroup: true,
       customPaymentTypes: true,
       customOrderTypes: true
