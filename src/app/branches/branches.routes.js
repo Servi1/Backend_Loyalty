@@ -14,5 +14,6 @@ const router = Router();
 
 router.get("/", ctrl.getAll);
 router.get("/:branchId", ctrl.getOne);
+router.get("/:branchId/staff", ctrl.getStaff);
 
 module.exports = router;

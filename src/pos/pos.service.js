@@ -123,6 +123,29 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
     syncToAggregatedOrder(db, tenantId, order).catch(console.error);
   }
 
+  // Award loyalty points immediately at order creation if customer is present and not halted
+  if (order.customerId && order.status !== "HALTED" && orderData.paymentMethod !== "points") {
+    try {
+      const mainPrisma = require("../config/prisma");
+      const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+      const earnRate = tenant ? tenant.loyaltyEarnRate : 1.0;
+      const pointsToEarn = Math.floor(order.total * earnRate);
+      
+      if (pointsToEarn > 0) {
+        const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
+        await loyaltyService.earnPoints(
+          db,
+          order.customerId,
+          pointsToEarn,
+          `Earned on Order #${order.orderNumber}`,
+          tenantId
+        );
+      }
+    } catch (err) {
+      console.error("[POS ORDER] Failed to award points on order creation:", err.message);
+    }
+  }
+
   return order;
 };
 
@@ -243,6 +266,43 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
     }
   } catch (err) {
     console.error("[POS ORDER] Failed to update main database order status:", err.message);
+  }
+
+  // If moving from HALTED to ACCEPTED, handle loyalty points award immediately (as it was skipped during createOrder)
+  if (upperStatus === "ACCEPTED" && order.status === "HALTED" && updated.customerId && paymentMethod !== "points" && updated.paymentMethod !== "points") {
+    try {
+      const mainPrisma = require("../config/prisma");
+      const customer = await mainPrisma.appUser.findUnique({
+        where: { id: updated.customerId },
+        include: { wallet: true }
+      });
+      if (customer && customer.wallet) {
+        const description = `Earned on Order #${updated.orderNumber}`;
+        const tx = await mainPrisma.walletTransaction.findFirst({
+          where: {
+            walletId: customer.wallet.id,
+            description,
+          }
+        });
+        if (!tx) {
+          const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+          const earnRate = tenant ? tenant.loyaltyEarnRate : 1.0;
+          const pointsToEarn = Math.floor(updated.total * earnRate);
+          if (pointsToEarn > 0) {
+            const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
+            await loyaltyService.earnPoints(
+              db,
+              updated.customerId,
+              pointsToEarn,
+              description,
+              tenantId
+            );
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[POS ORDER] Failed to award points on halted order accept:", err.message);
+    }
   }
 
   // If completed and customer exists, handle loyalty points auto-award

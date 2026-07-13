@@ -61,4 +61,9 @@ const getOne = catchAsync(async (req, res) => {
   });
 });
 
-module.exports = { getAll, getOne };
+const getStaff = catchAsync(async (req, res) => {
+  const staff = await branchesService.getBranchStaff(req.tenantDb, req.params.branchId);
+  res.json({ success: true, data: staff });
+});
+
+module.exports = { getAll, getOne, getStaff };

@@ -71,7 +71,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
 // ─── placeOrder ───────────────────────────────────────────────────────────────
 
 const placeOrder = async (db, userId, body, tenantId, tenant) => {
-  const { branchId, tableId, qrCashierId, cashierId, type = "DINE_IN", items, notes, total, paymentMethod, source } = body;
+  const { branchId, tableId, qrCashierId, cashierId, type = "DINE_IN", items, notes, total, paymentMethod, source, staffId, earnRate } = body;
 
   if (!branchId) throw new ApiError(400, "branchId is required");
   if (!items || !Array.isArray(items) || items.length === 0) {
@@ -180,6 +180,23 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     finalNotes = finalNotes ? `${finalNotes} | Points Payment` : "Points Payment";
   }
 
+  let orderStaffId = null;
+  if (staffId) {
+    const staffExists = await db.user.findUnique({ where: { id: staffId } });
+    if (staffExists) {
+      orderStaffId = staffId;
+      finalNotes = finalNotes ? `${finalNotes} | Assigned: ${staffExists.name}` : `Assigned: ${staffExists.name}`;
+    } else {
+      const mockNames = {
+        chefAhmed: "Chef Ahmed",
+        chefSarah: "Chef Sarah",
+        chefJohn: "Chef John"
+      };
+      const mockName = mockNames[staffId] || staffId;
+      finalNotes = finalNotes ? `${finalNotes} | Assigned: ${mockName}` : `Assigned: ${mockName}`;
+    }
+  }
+
   // Look up fee percentage from main database
   let feeRate = 0.0;
   if (tenantId) {
@@ -211,6 +228,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       branchId,
       tableId: tableId || null,
       qrCashierId: finalQrCashierId,
+      userId: orderStaffId,
       type,
       notes: finalNotes,
       total: subtotal,
@@ -226,6 +244,27 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       table: true,
     },
   });
+
+  // Award points based on earnRate parameter (except if paid by points)
+  if (userId && earnRate && paymentMethod !== "points") {
+    const rate = parseFloat(earnRate);
+    if (rate > 0) {
+      const pointsEarned = Math.round(subtotal * rate);
+      if (pointsEarned > 0) {
+        try {
+          await loyaltyService.earnPoints(
+            db,
+            userId,
+            pointsEarned,
+            `Points earned for Order #${orderNumber}`,
+            tenantId
+          );
+        } catch (err) {
+          console.error("[APP ORDER] Failed to award loyalty points:", err.message);
+        }
+      }
+    }
+  }
 
   // Now back-fill orderId on the wallet transaction we created above
   if (paymentMethod === "points" && userId) {

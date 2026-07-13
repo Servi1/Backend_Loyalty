@@ -90,7 +90,8 @@ const getBrands = async (userId) => {
       hero: details.hero,
       cuisine: details.cuisine,
       slug: t.slug,
-      isFavorite: favBrands.includes(t.id) || favBrands.includes(t.slug)
+      isFavorite: favBrands.includes(t.id) || favBrands.includes(t.slug),
+      loyaltyEarnRate: Number(t.loyaltyEarnRate || 1.0)
     };
   });
 };
