@@ -52,6 +52,7 @@ model User {
   customRole String?
   avatarUrl String?
   pinCode   String?
+  isActive  Boolean  @default(true)
  
   // Relations
   branchId  String?
@@ -63,9 +64,20 @@ model User {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
- 
+  
   @@index([phone])
   @@index([email])
+}
+
+model CustomRole {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  level       Int      @default(50)
+  description String?
+  color       String   @default("Orange")
+  permissions Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
  
 // ─── Branches (Individual Locations) ─────────────────

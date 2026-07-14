@@ -400,8 +400,15 @@ const getLoyaltyOverview = async (filters = {}) => {
     orderBy: { createdAt: "desc" }
   });
 
+  const appUserWhere = {};
+  if (filters.startDate || filters.endDate) {
+    appUserWhere.createdAt = {};
+    if (filters.startDate) appUserWhere.createdAt.gte = new Date(filters.startDate);
+    if (filters.endDate) appUserWhere.createdAt.lte = new Date(filters.endDate);
+  }
+  const totalMembers = await mainPrisma.appUser.count({ where: appUserWhere });
+
   const programs = [];
-  let totalMembers = 0;
   let totalRedemptions = 0;
 
   for (const tenant of tenants) {
@@ -436,7 +443,6 @@ const getLoyaltyOverview = async (filters = {}) => {
       console.error(`Failed to fetch loyalty stats for tenant ${tenant.slug}:`, err.message);
     }
 
-    totalMembers += membersCount;
     totalRedemptions += redemptionsCount;
 
     programs.push({
@@ -776,7 +782,10 @@ const syncAllTenantOrders = async () => {
               total: order.total,
               notes: order.notes,
               customerName: order.user?.name || order.user?.phone || "Customer Walk-in",
+              customerPhone: order.customerPhone || null,
               branchName: order.branch?.name || "Register Terminal",
+              feeRate: order.feeRate || 0.0,
+              source: order.source || "pos",
               createdAt: order.createdAt,
               updatedAt: order.updatedAt,
             },
@@ -785,7 +794,10 @@ const syncAllTenantOrders = async () => {
               total: order.total,
               notes: order.notes,
               customerName: order.user?.name || order.user?.phone || "Customer Walk-in",
+              customerPhone: order.customerPhone || null,
               branchName: order.branch?.name || "Register Terminal",
+              feeRate: order.feeRate || 0.0,
+              source: order.source || "pos",
               updatedAt: order.updatedAt,
             }
           });
@@ -828,10 +840,20 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
     if (endDate) where.createdAt.lte = new Date(endDate);
   }
 
+  const tenants = await mainPrisma.tenant.findMany({ select: { id: true, name: true } });
+
   const [customers, total] = await Promise.all([
     mainPrisma.appUser.findMany({
       where,
-      include: { wallet: true },
+      include: {
+        wallet: {
+          include: {
+            transactions: {
+              orderBy: { createdAt: "asc" }
+            }
+          }
+        }
+      },
       orderBy: { createdAt: "desc" },
       skip,
       take: limit,
@@ -840,18 +862,32 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
   ]);
 
   return {
-    customers: customers.map((c) => ({
-      id: c.id,
-      customerId: c.id,
-      tenantId: null,
-      name: c.name || "Unnamed",
-      phone: c.phone,
-      email: c.email,
-      tenantName: "Servio Platform",
-      points: c.wallet?.points || 0,
-      tier: getCustomerTier(c.wallet),
-      joinedAt: c.createdAt,
-    })),
+    customers: customers.map((c) => {
+      const firstTxWithTenant = c.wallet?.transactions?.find((t) => t.tenantId);
+      let tenantName = "Servio Platform";
+      let tenantId = null;
+
+      if (firstTxWithTenant) {
+        tenantId = firstTxWithTenant.tenantId;
+        const tenant = tenants.find((t) => t.id === tenantId);
+        if (tenant) {
+          tenantName = tenant.name;
+        }
+      }
+
+      return {
+        id: c.id,
+        customerId: c.id,
+        tenantId,
+        name: c.name || "Unnamed",
+        phone: c.phone,
+        email: c.email,
+        tenantName,
+        points: c.wallet?.points || 0,
+        tier: getCustomerTier(c.wallet),
+        joinedAt: c.createdAt,
+      };
+    }),
     pagination: {
       total,
       page,

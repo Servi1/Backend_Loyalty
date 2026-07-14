@@ -5,7 +5,11 @@ const getAllStaff = async (db, branchId, startDate, endDate) => {
   const where = {
     role: {
       in: ["BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"]
-    }
+    },
+    OR: [
+      { customRole: null },
+      { customRole: { not: "DELETED" } }
+    ]
   };
   if (branchId) {
     where.branchId = branchId;
@@ -64,6 +68,7 @@ const createStaff = async (db, data) => {
       branchId: data.branchId || null,
       password: hashedPassword,
       pinCode,
+      isActive: data.isActive !== undefined ? data.isActive : true,
     },
     include: {
       branch: true
@@ -74,7 +79,44 @@ const createStaff = async (db, data) => {
 const removeStaff = async (db, id) => {
   const user = await db.user.findUnique({ where: { id } });
   if (!user) throw new ApiError(404, "User not found");
-  return db.user.delete({ where: { id } });
+
+  // Check if the user is referenced by any orders or cash drawer sessions
+  const hasOrders = await db.order.count({ where: { userId: id } }) > 0;
+  
+  let hasOpenedSessions = false;
+  let hasClosedSessions = false;
+  try {
+    const openedResult = await db.$queryRaw`SELECT COUNT(*)::int as count FROM "CashDrawerSession" WHERE "openedById" = ${id}`;
+    hasOpenedSessions = (openedResult[0]?.count || 0) > 0;
+  } catch (e) {
+    // Table might not exist in this database version
+  }
+
+  try {
+    const closedResult = await db.$queryRaw`SELECT COUNT(*)::int as count FROM "CashDrawerSession" WHERE "closedById" = ${id}`;
+    hasClosedSessions = (closedResult[0]?.count || 0) > 0;
+  } catch (e) {
+    // Table might not exist in this database version
+  }
+
+  if (hasOrders || hasOpenedSessions || hasClosedSessions) {
+    // Soft delete: nullify login identifiers, disconnect from branch to correct active staff counts, and hide user from lists
+    return db.user.update({
+      where: { id },
+      data: {
+        email: null,
+        phone: null,
+        pinCode: null,
+        password: null,
+        branchId: null,
+        role: "CUSTOM",
+        customRole: "DELETED"
+      }
+    });
+  } else {
+    // Safe to hard delete
+    return db.user.delete({ where: { id } });
+  }
 };
 
 const updateStaff = async (db, id, data) => {
@@ -110,6 +152,7 @@ const updateStaff = async (db, id, data) => {
     customRole: data.customRole || null,
     branchId: data.branchId || null,
     pinCode: data.pinCode || user.pinCode,
+    isActive: data.isActive !== undefined ? data.isActive : user.isActive,
   };
 
   if (data.email !== undefined) {

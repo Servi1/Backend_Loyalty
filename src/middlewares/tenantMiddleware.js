@@ -14,7 +14,7 @@ const extractTenant = async (req, _res, next) => {
     console.log(`[DEBUG extractTenant] tenantId: "${tenantId}"`);
 
     if (!tenantId) {
-      return next(new ApiError(400, "Tenant ID is required"));
+      return next();
     }
 
     // Lookup the tenant in the main registry by either ID or Slug
