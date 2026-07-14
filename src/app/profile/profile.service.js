@@ -127,6 +127,7 @@ const getFavoriteBrandsDetails = async (brandIds) => {
       name: true,
       slug: true,
       logoUrl: true,
+      menuBannerUrl: true,
       primaryColor: true,
       accentColor: true,
     }
@@ -136,7 +137,7 @@ const getFavoriteBrandsDetails = async (brandIds) => {
     id: t.id,
     name: t.name,
     logo: getAppImageURL(t.logoUrl) || 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=100&h=100&fit=crop',
-    hero: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&h=400&fit=crop',
+    hero: getAppImageURL(t.menuBannerUrl) || 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&h=400&fit=crop',
     slug: t.slug,
     isFavorite: true,
     cuisine: 'Restaurant',
