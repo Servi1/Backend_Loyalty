@@ -7,7 +7,7 @@ const getAppImageURL = (imagePath) => {
     if (/^https?:\/\//i.test(imagePath)) {
       return imagePath;
     }
-    const baseUrl = process.env.IMAGE_BASE_URL || "http://test2-api.servi.sa";
+    const baseUrl = process.env.IMAGE_BASE_URL || "https://test2-api.servi.sa";
     const cleanPath = imagePath.startsWith("/") ? imagePath : `/${imagePath}`;
     return `${baseUrl}${cleanPath}`;
   } catch (error) {
