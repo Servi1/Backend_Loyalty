@@ -89,6 +89,9 @@ const getBrands = async (userId) => {
       name: t.name,
       logo: getAppImageURL(t.logoUrl) || "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=100&h=100&fit=crop",
       hero: getAppImageURL(t.menuBannerUrl) || details.hero,
+      bannerUrl: getAppImageURL(t.bannerUrl),
+      bannerUrl2: getAppImageURL(t.bannerUrl2),
+      bannerUrl3: getAppImageURL(t.bannerUrl3),
       cuisine: details.cuisine,
       slug: t.slug,
 
