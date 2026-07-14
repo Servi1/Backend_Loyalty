@@ -86,6 +86,31 @@ const verifyOtp = async (db, phone, code, tenantId) => {
   return { token, user: { ...customer, role: "CUSTOMER" }, isNewUser };
 };
 
+const attachUserPermissions = async (db, user) => {
+  let roleIdToLookup = user.customRole;
+  if (!roleIdToLookup && user.role !== "BRAND_MANAGER") {
+    const roleMap = {
+      BRANCH_MANAGER: "branch-manager",
+      CASHIER: "cashier",
+      WAITER: "waiter",
+      KITCHEN: "kitchen"
+    };
+    roleIdToLookup = roleMap[user.role];
+  }
+
+  if (roleIdToLookup) {
+    try {
+      const roleObj = await db.customRole.findUnique({ where: { id: roleIdToLookup } });
+      if (roleObj) {
+        user.rolePermissions = roleObj.permissions;
+        user.roleName = roleObj.name;
+      }
+    } catch (err) {
+      console.error("Failed to load user role permissions during login:", err.message);
+    }
+  }
+};
+
 /**
  * B2B portal login (email + password).
  */
@@ -115,9 +140,15 @@ const loginWithEmail = async (db, email, password) => {
 
     if (!user) throw new ApiError(401, "Invalid PIN code for this POS terminal");
 
+    if (user.isActive === false) {
+      throw new ApiError(403, "Your account has been deactivated. Please contact administration.");
+    }
+
     if (user.branch && !user.branch.isOpen) {
       throw new ApiError(403, "This branch is currently deactivated.");
     }
+
+    await attachUserPermissions(db, user);
 
     const token = signToken(user.id, "user");
     return { 
@@ -134,12 +165,17 @@ const loginWithEmail = async (db, email, password) => {
   const user = await db.user.findUnique({ where: { email }, include: { branch: true } });
   if (!user) throw new ApiError(401, "Invalid credentials");
 
+  if (user.isActive === false) {
+    throw new ApiError(403, "Your account has been deactivated. Please contact administration.");
+  }
+
   if (user.branch && !user.branch.isOpen && user.role !== "BRAND_MANAGER") {
     throw new ApiError(403, "This branch is currently deactivated.");
   }
 
   // Check if PIN code is provided as password for cashier/waiter (direct login fallback)
   if (user.pinCode && password === user.pinCode) {
+    await attachUserPermissions(db, user);
     const token = signToken(user.id, "user");
     return { token, user };
   }
@@ -151,6 +187,9 @@ const loginWithEmail = async (db, email, password) => {
   if (!valid) throw new ApiError(401, "Invalid credentials");
 
   const token = signToken(user.id, "user");
+
+  await attachUserPermissions(db, user);
+
   return { token, user };
 };
 
@@ -169,6 +208,19 @@ const superAdminLogin = async (email, password) => {
   if (!valid) throw new ApiError(401, "Invalid credentials");
 
   const token = signToken(admin.id, "super_admin");
+
+  if (admin.role && admin.role !== "super_admin") {
+    try {
+      const roleObj = await mainPrisma.superAdminRole.findUnique({ where: { id: admin.role } });
+      if (roleObj) {
+        admin.rolePermissions = roleObj.permissions;
+        admin.roleName = roleObj.name;
+      }
+    } catch (err) {
+      console.error("Failed to load admin role permissions during login:", err.message);
+    }
+  }
+
   return { token, admin };
 };
 

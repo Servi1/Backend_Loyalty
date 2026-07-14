@@ -17,6 +17,6 @@ router.post("/login", extractTenant, authController.login);
 router.post("/kds/login", extractTenant, authController.kdsLogin);
 
 // ─── Current User ────────────────────────────────────
-router.get("/me", authenticate, authController.getMe);
+router.get("/me", extractTenant, authenticate, authController.getMe);
 
 module.exports = router;
