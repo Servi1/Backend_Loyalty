@@ -15,9 +15,12 @@ const create = catchAsync(async (req, res) => {
   const userId = isCustomer ? null : req.user.id;
   const customerId = isCustomer ? req.user.id : req.body.customerId;
 
+  // Destructure out userId/customerId from body so they can't override the above
+  const { userId: _bodyUserId, customerId: _bodyCustomerId, ...restBody } = req.body;
+
   const order = await ordersService.create(
     req.tenantDb,
-    { userId, customerId, ...req.body },
+    { userId, customerId, ...restBody },
     req.tenantId
   );
   // Emit to Socket.io so cashier POS receives instantly
