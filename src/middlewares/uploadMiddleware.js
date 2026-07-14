@@ -10,7 +10,7 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 // Sub-directories for different upload types
-const subDirs = ["menus", "logos", "avatars"];
+const subDirs = ["menus", "logos", "avatars", "branches"];
 subDirs.forEach((dir) => {
   const fullPath = path.join(uploadDir, dir);
   if (!fs.existsSync(fullPath)) {
