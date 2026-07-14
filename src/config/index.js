@@ -1,5 +1,21 @@
 require("dotenv").config();
 
+const getAppImageURL = (imagePath) => {
+  try {
+    if (!imagePath) return imagePath;
+    if (typeof imagePath !== "string") return imagePath;
+    if (/^https?:\/\//i.test(imagePath)) {
+      return imagePath;
+    }
+    const baseUrl = process.env.IMAGE_BASE_URL || "https://test2-api.servi.sa";
+    const cleanPath = imagePath.startsWith("/") ? imagePath : `/${imagePath}`;
+    return `${baseUrl}${cleanPath}`;
+  } catch (error) {
+    console.error("Error resolving app image URL:", error);
+    return imagePath;
+  }
+};
+
 module.exports = {
   port: process.env.PORT || 5000,
   nodeEnv: process.env.NODE_ENV || "development",
@@ -15,4 +31,6 @@ module.exports = {
   cors: {
     origin: "*",
   },
+  getAppImageURL,
 };
+

@@ -5,6 +5,7 @@
 const ApiError = require("../../utils/ApiError");
 const mainPrisma = require("../../config/prisma");
 const { formatProfile } = require("../profile/profile.service");
+const { getAppImageURL } = require("../../config");
 
 // Static brand asset details to keep database schema clean
 const BRAND_DETAILS = {
@@ -86,10 +87,11 @@ const getBrands = async (userId) => {
     return {
       id: t.id,
       name: t.name,
-      logo: t.logoUrl || "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=100&h=100&fit=crop",
+      logo: getAppImageURL(t.logoUrl) || "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=100&h=100&fit=crop",
       hero: details.hero,
       cuisine: details.cuisine,
       slug: t.slug,
+
       isFavorite: favBrands.includes(t.id) || favBrands.includes(t.slug),
       loyaltyEarnRate: Number(t.loyaltyEarnRate || 1.0)
     };

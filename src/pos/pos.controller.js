@@ -1,10 +1,38 @@
 const catchAsync = require("../utils/catchAsync");
 const posService = require("./pos.service");
+const { getAppImageURL } = require("../config");
+
+// Helper to resolve menuItem image URLs in orders
+const resolveOrderImages = (order) => {
+  if (!order) return order;
+  return {
+    ...order,
+    items: order.items ? order.items.map(item => {
+      if (item.menuItem) {
+        return {
+          ...item,
+          menuItem: {
+            ...item.menuItem,
+            imageUrl: getAppImageURL(item.menuItem.imageUrl)
+          }
+        };
+      }
+      return item;
+    }) : []
+  };
+};
 
 /** GET /api/pos/catalog */
 const getCatalog = catchAsync(async (req, res) => {
   const catalog = await posService.getCatalog(req.tenantDb);
-  res.status(200).json({ success: true, data: catalog });
+  const resolvedCatalog = catalog.map(category => ({
+    ...category,
+    items: category.items ? category.items.map(item => ({
+      ...item,
+      imageUrl: getAppImageURL(item.imageUrl)
+    })) : []
+  }));
+  res.status(200).json({ success: true, data: resolvedCatalog });
 });
 
 /** GET /api/pos/tables */
@@ -19,7 +47,8 @@ const getOrders = catchAsync(async (req, res) => {
   const branchId = req.user.branchId;
   const { status } = req.query;
   const orders = await posService.getOrders(req.tenantDb, branchId, status);
-  res.status(200).json({ success: true, data: orders });
+  const resolvedOrders = orders.map(resolveOrderImages);
+  res.status(200).json({ success: true, data: resolvedOrders });
 });
 
 /** POST /api/pos/orders */
@@ -27,7 +56,7 @@ const createOrder = catchAsync(async (req, res) => {
   const branchId = req.user.branchId;
   const userId = req.user.id;
   const order = await posService.createOrder(req.tenantDb, branchId, userId, req.body, req.tenantId);
-  res.status(201).json({ success: true, data: order });
+  res.status(201).json({ success: true, data: resolveOrderImages(order) });
 });
 
 /** PATCH /api/pos/orders/:id/status */
@@ -35,7 +64,7 @@ const updateOrderStatus = catchAsync(async (req, res) => {
   const { id } = req.params;
   const { status, paymentMethod } = req.body;
   const order = await posService.updateOrderStatus(req.tenantDb, id, status, req.tenantId, paymentMethod);
-  res.status(200).json({ success: true, data: order });
+  res.status(200).json({ success: true, data: resolveOrderImages(order) });
 });
 
 const getEODReport = catchAsync(async (req, res) => {

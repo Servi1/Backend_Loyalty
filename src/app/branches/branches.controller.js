@@ -1,10 +1,14 @@
 const catchAsync = require("../../utils/catchAsync");
 const branchesService = require("./branches.service");
+const { getAppImageURL } = require("../../config");
 
 const getAll = catchAsync(async (req, res) => {
   const branches = await branchesService.getBranches(req.tenantDb);
   const data = branches.map(branch => ({
     ...branch,
+    imageUrl: getAppImageURL(branch.imageUrl),
+    menuBannerUrl: getAppImageURL(branch.menuBannerUrl),
+    receiptLogoUrl: getAppImageURL(branch.receiptLogoUrl),
     tenantFeatures: {
       subQrTable: req.tenant.subQrTable,
       subQrCashier: req.tenant.subQrCashier,
@@ -13,11 +17,11 @@ const getAll = catchAsync(async (req, res) => {
       subCds: req.tenant.subCds
     },
     tenantSettings: {
-      logoUrl: req.tenant.logoUrl,
-      bannerUrl: req.tenant.bannerUrl,
-      bannerUrl2: req.tenant.bannerUrl2,
-      bannerUrl3: req.tenant.bannerUrl3,
-      menuBannerUrl: req.tenant.menuBannerUrl,
+      logoUrl: getAppImageURL(req.tenant.logoUrl),
+      bannerUrl: getAppImageURL(req.tenant.bannerUrl),
+      bannerUrl2: getAppImageURL(req.tenant.bannerUrl2),
+      bannerUrl3: getAppImageURL(req.tenant.bannerUrl3),
+      menuBannerUrl: getAppImageURL(req.tenant.menuBannerUrl),
       primaryColor: req.tenant.primaryColor,
       accentColor: req.tenant.accentColor,
       fontFamily: req.tenant.fontFamily,
@@ -36,6 +40,9 @@ const getOne = catchAsync(async (req, res) => {
     success: true, 
     data: {
       ...branch,
+      imageUrl: getAppImageURL(branch.imageUrl),
+      menuBannerUrl: getAppImageURL(branch.menuBannerUrl),
+      receiptLogoUrl: getAppImageURL(branch.receiptLogoUrl),
       tenantFeatures: {
         subQrTable: req.tenant.subQrTable,
         subQrCashier: req.tenant.subQrCashier,
@@ -44,11 +51,11 @@ const getOne = catchAsync(async (req, res) => {
         subCds: req.tenant.subCds
       },
       tenantSettings: {
-        logoUrl: req.tenant.logoUrl,
-        bannerUrl: req.tenant.bannerUrl,
-        bannerUrl2: req.tenant.bannerUrl2,
-        bannerUrl3: req.tenant.bannerUrl3,
-        menuBannerUrl: req.tenant.menuBannerUrl,
+        logoUrl: getAppImageURL(req.tenant.logoUrl),
+        bannerUrl: getAppImageURL(req.tenant.bannerUrl),
+        bannerUrl2: getAppImageURL(req.tenant.bannerUrl2),
+        bannerUrl3: getAppImageURL(req.tenant.bannerUrl3),
+        menuBannerUrl: getAppImageURL(req.tenant.menuBannerUrl),
         primaryColor: req.tenant.primaryColor,
         accentColor: req.tenant.accentColor,
         fontFamily: req.tenant.fontFamily,
@@ -67,3 +74,4 @@ const getStaff = catchAsync(async (req, res) => {
 });
 
 module.exports = { getAll, getOne, getStaff };
+

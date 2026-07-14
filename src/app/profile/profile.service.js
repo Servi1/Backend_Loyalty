@@ -7,6 +7,7 @@
 
 const ApiError = require("../../utils/ApiError");
 const mainPrisma = require("../../config/prisma");
+const { getAppImageURL } = require("../../config");
 
 // ─── Update profile ───────────────────────────────────────────────────────────
 
@@ -134,7 +135,7 @@ const getFavoriteBrandsDetails = async (brandIds) => {
   return tenants.map(t => ({
     id: t.id,
     name: t.name,
-    logo: t.logoUrl || 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=100&h=100&fit=crop',
+    logo: getAppImageURL(t.logoUrl) || 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=100&h=100&fit=crop',
     hero: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&h=400&fit=crop',
     slug: t.slug,
     isFavorite: true,
@@ -152,7 +153,7 @@ const _formatProfile = async (user) => {
     email: user.email,
     gender: user.gender,
     dob: user.dob,
-    avatarUrl: user.avatarUrl,
+    avatarUrl: getAppImageURL(user.avatarUrl),
     role: "CUSTOMER",
     cars: user.cars || [],
     addresses: user.addresses || [],
