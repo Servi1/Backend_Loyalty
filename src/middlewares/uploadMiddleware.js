@@ -5,6 +5,7 @@ const ApiError = require("../utils/ApiError");
 
 // Ensure uploads directory exists
 const uploadDir = path.join(__dirname, "../../uploads");
+console.log("[Upload] Files will be saved to:", uploadDir);
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
