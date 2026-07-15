@@ -88,6 +88,64 @@ const getKdsOrders = async (db, branchId) => {
   };
 };
 
+const syncToAggregatedOrder = async (db, tenantId, order) => {
+  if (!tenantId) return;
+  try {
+    const mainPrisma = require("../config/prisma");
+    let customerName = "Customer Walk-in";
+    if (order.customerId) {
+      const customer = await mainPrisma.appUser.findUnique({ where: { id: order.customerId } });
+      if (customer) {
+        customerName = customer.name || customer.phone || "Customer Walk-in";
+      }
+    } else if (order.userId) {
+      const user = await db.user.findUnique({ where: { id: order.userId } });
+      if (user) {
+        customerName = user.name || user.phone || "Customer Walk-in";
+      }
+    }
+
+    let branch = order.branch;
+    if (!branch && order.branchId) {
+      branch = await db.branch.findUnique({ where: { id: order.branchId } });
+    }
+
+    await mainPrisma.aggregatedOrder.upsert({
+      where: { id: `${tenantId}_${order.id}` },
+      create: {
+        id: `${tenantId}_${order.id}`,
+        tenantId,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        type: order.type,
+        total: order.total,
+        notes: order.notes,
+        customerName,
+        customerPhone: order.customerPhone || null,
+        branchName: branch?.name || "Register Terminal",
+        feeRate: order.feeRate || 0.0,
+        source: order.source || "pos",
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+      },
+      update: {
+        status: order.status,
+        total: order.total,
+        notes: order.notes,
+        customerName,
+        customerPhone: order.customerPhone || null,
+        branchName: branch?.name || "Register Terminal",
+        feeRate: order.feeRate || 0.0,
+        source: order.source || "pos",
+        updatedAt: order.updatedAt,
+      }
+    });
+  } catch (err) {
+    console.error("Failed to sync order to super admin database:", err.message);
+  }
+};
+
 /**
  * Bump an order (status -> READY).
  */
@@ -129,6 +187,9 @@ const bumpOrder = async (db, orderId, tenantId) => {
   } catch (err) {
     console.error("[KDS BUMP] Failed to update main database order status:", err.message);
   }
+
+  // Sync status to main aggregatedOrder
+  syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
 
   return mapDbOrderToKds(updated);
 };
@@ -174,6 +235,9 @@ const recallOrder = async (db, orderId, tenantId) => {
   } catch (err) {
     console.error("[KDS RECALL] Failed to update main database order status:", err.message);
   }
+
+  // Sync status to main aggregatedOrder
+  syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
 
   return mapDbOrderToKds(updated);
 };
