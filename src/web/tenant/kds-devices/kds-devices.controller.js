@@ -28,8 +28,7 @@ const renewKds = catchAsync(async (req, res) => {
 });
 
 const remove = catchAsync(async (req, res) => {
-  await kdsDevicesService.remove(req.tenantDb, req.params.id);
-  res.status(204).send();
+  throw new ApiError(400, "KDS device deletion is disabled to prevent database inconsistency.");
 });
 
 const update = catchAsync(async (req, res) => {

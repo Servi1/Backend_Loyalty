@@ -29,8 +29,7 @@ const update = catchAsync(async (req, res) => {
 });
 
 const remove = catchAsync(async (req, res) => {
-  await branchesService.remove(req.tenantDb, req.params.id);
-  res.status(204).send();
+  throw new ApiError(400, "Branch deletion is disabled to prevent orphaning order records.");
 });
 
 const bulkUpdate = catchAsync(async (req, res) => {
