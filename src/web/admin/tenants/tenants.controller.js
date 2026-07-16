@@ -62,8 +62,17 @@ const getSuperAdminOrders = catchAsync(async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;
   const status = req.query.status;
+  const tenantId = req.query.tenantId;
+  const { startDate, endDate } = req.query;
 
-  const result = await tenantsService.getSuperAdminOrders({ status, page, limit });
+  const result = await tenantsService.getSuperAdminOrders({
+    tenantId,
+    startDate,
+    endDate,
+    status,
+    page,
+    limit,
+  });
   res.json({ success: true, data: result });
 });
 
@@ -112,7 +121,8 @@ const getSuperAdminOrderDetail = catchAsync(async (req, res) => {
 });
 
 const getSyncStatus = catchAsync(async (req, res) => {
-  const result = await tenantsService.getSyncStatus();
+  const { startDate, endDate } = req.query;
+  const result = await tenantsService.getSyncStatus({ startDate, endDate });
   res.json({ success: true, data: result });
 });
 
