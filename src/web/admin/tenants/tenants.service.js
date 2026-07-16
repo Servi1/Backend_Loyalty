@@ -732,9 +732,20 @@ const getInvoices = async (filters = {}) => {
   return invoices;
 };
 
-const getSuperAdminOrders = async ({ status, page = 1, limit = 20 }) => {
+const getSuperAdminOrders = async ({ tenantId, startDate, endDate, status, page = 1, limit = 20 }) => {
   const where = {};
   if (status) where.status = status;
+  if (tenantId) where.tenantId = tenantId;
+
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) where.createdAt.gte = new Date(startDate);
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      where.createdAt.lte = end;
+    }
+  }
 
   const skip = (page - 1) * limit;
   const [total, orders] = await Promise.all([
@@ -1152,7 +1163,7 @@ const getSuperAdminOrderDetail = async (tenantId, orderId) => {
   };
 };
 
-const getSyncStatus = async () => {
+const getSyncStatus = async ({ startDate, endDate } = {}) => {
   const tenants = await mainPrisma.tenant.findMany({
     select: {
       id: true,
@@ -1162,20 +1173,38 @@ const getSyncStatus = async () => {
     }
   });
 
+  const dateFilter = {};
+  if (startDate || endDate) {
+    if (startDate) dateFilter.gte = new Date(startDate);
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      dateFilter.lte = end;
+    }
+  }
+
   const statusList = [];
   for (const tenant of tenants) {
     let tenantOrdersCount = 0;
     let isOnline = true;
     try {
       const tenantPrisma = getTenantClient(tenant.dbUrl);
-      tenantOrdersCount = await tenantPrisma.order.count();
+      const where = {};
+      if (startDate || endDate) {
+        where.createdAt = dateFilter;
+      }
+      tenantOrdersCount = await tenantPrisma.order.count({ where });
     } catch (err) {
       console.error(`Failed to connect or query orders for tenant ${tenant.name}:`, err.message);
       isOnline = false;
     }
 
+    const aggWhere = { tenantId: tenant.id };
+    if (startDate || endDate) {
+      aggWhere.createdAt = dateFilter;
+    }
     const aggregatedOrdersCount = await mainPrisma.aggregatedOrder.count({
-      where: { tenantId: tenant.id }
+      where: aggWhere
     });
 
     statusList.push({
