@@ -137,6 +137,7 @@ model Branch {
   kdsDevices KdsDevice[]
   cashDrawerSessions CashDrawerSession[]
   qrCashiers QrCashier[]
+  productRequests ProductRequest[]
   locationGroupId     String?
   locationGroup       LocationGroup?     @relation(fields: [locationGroupId], references: [id])
   customPaymentTypes CustomPaymentType[]
@@ -403,4 +404,34 @@ model CashDrawerSession {
   updatedAt             DateTime  @updatedAt
 
   @@index([branchId])
+}
+
+// ─── Warehouses and Inventory Management ───────────────
+
+model Warehouse {
+  id        String   @id @default(uuid())
+  name      String
+  location  String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  productRequests ProductRequest[]
+}
+
+model ProductRequest {
+  id          String   @id @default(uuid())
+  type        String   // "RESTOCK" or "NEW_PRODUCT"
+  details     String   // items & quantities or specifications
+  reason      String?  // notes / reason
+  status      String   @default("PENDING") // PENDING, APPROVED, FULFILLED, REJECTED
+  
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  
+  branchId    String
+  branch      Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
