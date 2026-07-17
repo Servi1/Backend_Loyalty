@@ -7,9 +7,9 @@ const router = Router();
 router.use(authenticate);
 
 // Branch Manager, Brand Manager, Admin, and B2B staff can access/manipulate inventory
-router.get("/", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"), ctrl.getAll);
-router.post("/", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"), ctrl.create);
-router.patch("/:id", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"), ctrl.update);
-router.delete("/:id", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"), ctrl.remove);
+router.get("/", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.getAll);
+router.post("/", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.create);
+router.patch("/:id", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.update);
+router.delete("/:id", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.remove);
 
 module.exports = router;

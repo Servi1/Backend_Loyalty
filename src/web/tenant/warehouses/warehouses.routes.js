@@ -6,7 +6,7 @@ const router = Router();
 
 router.use(authenticate);
 
-const allowedRoles = ["ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"];
+const allowedRoles = ["ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM", "WAREHOUSE_MANAGER"];
 
 router.get("/", authorize(...allowedRoles), ctrl.getAll);
 router.post("/", authorize(...allowedRoles), ctrl.create);

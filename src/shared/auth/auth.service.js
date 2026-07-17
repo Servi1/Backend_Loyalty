@@ -93,7 +93,8 @@ const attachUserPermissions = async (db, user) => {
       BRANCH_MANAGER: "branch-manager",
       CASHIER: "cashier",
       WAITER: "waiter",
-      KITCHEN: "kitchen"
+      KITCHEN: "kitchen",
+      WAREHOUSE_MANAGER: "warehouse-manager"
     };
     roleIdToLookup = roleMap[user.role];
   }
@@ -162,7 +163,7 @@ const loginWithEmail = async (db, email, password) => {
     };
   }
 
-  const user = await db.user.findUnique({ where: { email }, include: { branch: true } });
+  const user = await db.user.findUnique({ where: { email }, include: { branch: true, warehouse: true } });
   if (!user) throw new ApiError(401, "Invalid credentials");
 
   if (user.isActive === false) {

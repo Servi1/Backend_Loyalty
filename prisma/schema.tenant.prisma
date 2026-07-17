@@ -20,6 +20,7 @@ enum Role {
   WAITER
   KITCHEN
   CUSTOM
+  WAREHOUSE_MANAGER
 }
  
 enum OrderStatus {
@@ -57,6 +58,8 @@ model User {
   // Relations
   branchId  String?
   branch    Branch?  @relation(fields: [branchId], references: [id])
+  warehouseId String?
+  warehouse   Warehouse? @relation("WarehouseStaff", fields: [warehouseId], references: [id], onDelete: SetNull)
  
   orders    Order[]
   openedSessions CashDrawerSession[] @relation("OpenedSessions")
@@ -417,6 +420,7 @@ model Warehouse {
   updatedAt DateTime @updatedAt
 
   productRequests ProductRequest[]
+  staff           User[]           @relation("WarehouseStaff")
 }
 
 model ProductRequest {

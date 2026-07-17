@@ -4,7 +4,7 @@ const bcrypt = require("bcryptjs");
 const getAllStaff = async (db, branchId, startDate, endDate) => {
   const where = {
     role: {
-      in: ["BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"]
+      in: ["BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM", "WAREHOUSE_MANAGER"]
     },
     OR: [
       { customRole: null },
@@ -22,7 +22,8 @@ const getAllStaff = async (db, branchId, startDate, endDate) => {
   return db.user.findMany({
     where,
     include: {
-      branch: true
+      branch: true,
+      warehouse: true
     },
     orderBy: {
       createdAt: "desc"
@@ -66,12 +67,14 @@ const createStaff = async (db, data) => {
       role: data.role,
       customRole: data.customRole || null,
       branchId: data.branchId || null,
+      warehouseId: data.warehouseId || null,
       password: hashedPassword,
       pinCode,
       isActive: data.isActive !== undefined ? data.isActive : true,
     },
     include: {
-      branch: true
+      branch: true,
+      warehouse: true
     }
   });
 };
@@ -109,6 +112,7 @@ const removeStaff = async (db, id) => {
         pinCode: null,
         password: null,
         branchId: null,
+        warehouseId: null,
         role: "CUSTOM",
         customRole: "DELETED"
       }
@@ -151,6 +155,7 @@ const updateStaff = async (db, id, data) => {
     role: data.role,
     customRole: data.customRole || null,
     branchId: data.branchId || null,
+    warehouseId: data.warehouseId !== undefined ? data.warehouseId : user.warehouseId,
     pinCode: data.pinCode || user.pinCode,
     isActive: data.isActive !== undefined ? data.isActive : user.isActive,
   };
@@ -167,7 +172,8 @@ const updateStaff = async (db, id, data) => {
     where: { id },
     data: updateData,
     include: {
-      branch: true
+      branch: true,
+      warehouse: true
     }
   });
 };
