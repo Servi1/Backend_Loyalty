@@ -18,6 +18,9 @@ const TENANTS_TO_SEED = [
     loyaltyEnabled: true,
     loyaltyEarnRate: 1.0,
     loyaltyRedeemRate: 100.0,
+    bannerUrl: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&fit=crop",
+    bannerUrl2: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800&fit=crop",
+    bannerUrl3: "https://images.unsplash.com/photo-1544025162-d76694265947?w=800&fit=crop",
   },
   {
     name: "Olive & Oak",
@@ -30,6 +33,9 @@ const TENANTS_TO_SEED = [
     loyaltyEnabled: true,
     loyaltyEarnRate: 1.5,
     loyaltyRedeemRate: 100.0,
+    bannerUrl: "https://images.unsplash.com/photo-1544025162-d76694265947?w=800&fit=crop",
+    bannerUrl2: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800&fit=crop",
+    bannerUrl3: "https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=800&fit=crop",
   },
   {
     name: "Bolt Burgers",
@@ -42,6 +48,9 @@ const TENANTS_TO_SEED = [
     loyaltyEnabled: true,
     loyaltyEarnRate: 1.0,
     loyaltyRedeemRate: 100.0,
+    bannerUrl: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800&fit=crop",
+    bannerUrl2: "https://images.unsplash.com/photo-1550547660-d9450f859349?w=800&fit=crop",
+    bannerUrl3: "https://images.unsplash.com/photo-1571091718767-18b5b1457add?w=800&fit=crop",
   },
   {
     name: "Matcha House",
@@ -54,6 +63,9 @@ const TENANTS_TO_SEED = [
     loyaltyEnabled: true,
     loyaltyEarnRate: 2.0,
     loyaltyRedeemRate: 100.0,
+    bannerUrl: "https://images.unsplash.com/photo-1515823662972-da6a2e4d3002?w=800&fit=crop",
+    bannerUrl2: "https://images.unsplash.com/photo-1536256263959-770b48d82b0a?w=800&fit=crop",
+    bannerUrl3: "https://images.unsplash.com/photo-1501443762994-82bd5dace89a?w=800&fit=crop",
   },
   {
     name: "Dunes Grill",
@@ -66,6 +78,9 @@ const TENANTS_TO_SEED = [
     loyaltyEnabled: true,
     loyaltyEarnRate: 1.0,
     loyaltyRedeemRate: 100.0,
+    bannerUrl: "https://images.unsplash.com/photo-1544025162-d76694265947?w=800&fit=crop",
+    bannerUrl2: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800&fit=crop",
+    bannerUrl3: "https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=800&fit=crop",
   },
   {
     name: "Sakura Sushi",
@@ -78,6 +93,9 @@ const TENANTS_TO_SEED = [
     loyaltyEnabled: true,
     loyaltyEarnRate: 1.2,
     loyaltyRedeemRate: 100.0,
+    bannerUrl: "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=800&fit=crop",
+    bannerUrl2: "https://images.unsplash.com/photo-1611143669185-af224c5e3252?w=800&fit=crop",
+    bannerUrl3: "https://images.unsplash.com/photo-1553621042-f6e147245754?w=800&fit=crop",
   },
   {
     name: "Casa Pizza",
@@ -90,6 +108,9 @@ const TENANTS_TO_SEED = [
     loyaltyEnabled: true,
     loyaltyEarnRate: 1.0,
     loyaltyRedeemRate: 100.0,
+    bannerUrl: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800&fit=crop",
+    bannerUrl2: "https://images.unsplash.com/photo-1534308983496-4fabb1a015ee?w=800&fit=crop",
+    bannerUrl3: "https://images.unsplash.com/photo-1573140247632-f8fd74997d5c?w=800&fit=crop",
   }
 ];
 
@@ -291,6 +312,9 @@ async function seed() {
         isActive: true,
         subQrTable: true,
         subQrCashier: true,
+        bannerUrl: tConfig.bannerUrl || null,
+        bannerUrl2: tConfig.bannerUrl2 || null,
+        bannerUrl3: tConfig.bannerUrl3 || null,
       }
     });
     registeredTenants.push(tenant);
@@ -391,17 +415,30 @@ async function seed() {
   const createdAppUsers = [];
   
   for (const cData of GLOBAL_CUSTOMERS) {
-    const user = await mainPrisma.appUser.create({
-      data: {
+    const user = await mainPrisma.appUser.upsert({
+      where: { phone: cData.phone },
+      update: {
+        name: cData.name,
+        email: cData.email,
+        favoriteBrands: registeredTenants.slice(0, 2).map(t => t.id),
+        isDelete: false
+      },
+      create: {
         name: cData.name,
         phone: cData.phone,
         email: cData.email,
-        favoriteBrands: registeredTenants.slice(0, 2).map(t => t.id) // only first 2 brands favorited by default
+        favoriteBrands: registeredTenants.slice(0, 2).map(t => t.id)
       }
     });
 
-    const wallet = await mainPrisma.wallet.create({
-      data: {
+    const wallet = await mainPrisma.wallet.upsert({
+      where: { appUserId: user.id },
+      update: {
+        points: cData.points,
+        lifetimeEarn: cData.points,
+        tier: cData.points >= 3000 ? "gold" : cData.points >= 1000 ? "silver" : "bronze"
+      },
+      create: {
         appUserId: user.id,
         points: cData.points,
         lifetimeEarn: cData.points,
