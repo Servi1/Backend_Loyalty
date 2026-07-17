@@ -74,7 +74,8 @@ const updateStatus = catchAsync(async (req, res) => {
 });
 
 const getAll = catchAsync(async (req, res) => {
-  const orders = await ordersService.getAll(req.tenantDb, req.query.status);
+  const { status, branchId, startDate, endDate } = req.query;
+  const orders = await ordersService.getAll(req.tenantDb, { status, branchId, startDate, endDate });
   res.json({ success: true, data: orders });
 });
 

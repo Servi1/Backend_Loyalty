@@ -735,7 +735,15 @@ const getInvoices = async (filters = {}) => {
 const getSuperAdminOrders = async ({ tenantId, startDate, endDate, status, page = 1, limit = 20 }) => {
   const where = {};
   if (status) where.status = status;
-  if (tenantId) where.tenantId = tenantId;
+  if (tenantId) {
+    if (typeof tenantId === "string" && tenantId.includes(",")) {
+      where.tenantId = { in: tenantId.split(",").map(t => t.trim()) };
+    } else if (Array.isArray(tenantId)) {
+      where.tenantId = { in: tenantId };
+    } else {
+      where.tenantId = tenantId;
+    }
+  }
 
   if (startDate || endDate) {
     where.createdAt = {};
