@@ -72,12 +72,6 @@ const defaultBrandRoles = [
     description: "Manage product requests, warehouse inventory, and replenishment operations.",
     color: "Purple",
     permissions: {
-      overview: ["view"],
-      orders: [],
-      menu: ["view"],
-      branches: ["view"],
-      staff: [],
-      reports: [],
       productRequests: ["view", "update"],
       inventory: ["view", "update"],
     },
@@ -90,6 +84,11 @@ const seedDefaultTenantRolesIfEmpty = async (db) => {
     if (!existing) {
       console.log(`Seeding missing default Tenant role: ${r.name}...`);
       await db.customRole.create({ data: r });
+    } else if (r.id === "warehouse-manager") {
+      await db.customRole.update({
+        where: { id: r.id },
+        data: { permissions: r.permissions }
+      });
     }
   }
 };
