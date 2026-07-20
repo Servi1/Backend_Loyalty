@@ -78,9 +78,10 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
   let orderNumber = "";
   let isUnique = false;
   let attempts = 0;
+  const isOffline = !!orderData.isOffline;
   while (!isUnique && attempts < 10) {
     const suffix = Math.floor(100000 + Math.random() * 900000);
-    orderNumber = `ORD-${suffix}`;
+    orderNumber = `ORD-${suffix}${isOffline ? '-OFF' : ''}`;
     const existing = await db.order.findUnique({ where: { orderNumber } });
     if (!existing) isUnique = true;
     attempts++;
