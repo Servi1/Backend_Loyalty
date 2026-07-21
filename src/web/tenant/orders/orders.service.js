@@ -336,9 +336,27 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
   return updated;
 };
 
-const getAll = async (db, status) => {
+const getAll = async (db, { status, branchId, startDate, endDate } = {}) => {
   const where = {};
   if (status) where.status = status;
+  if (branchId) {
+    if (typeof branchId === "string" && branchId.includes(",")) {
+      where.branchId = { in: branchId.split(",").map(b => b.trim()) };
+    } else if (Array.isArray(branchId)) {
+      where.branchId = { in: branchId };
+    } else {
+      where.branchId = branchId;
+    }
+  }
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) where.createdAt.gte = new Date(startDate);
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      where.createdAt.lte = end;
+    }
+  }
   const orders = await db.order.findMany({
     where,
     include: { items: { include: { menuItem: true } }, table: true, branch: true },

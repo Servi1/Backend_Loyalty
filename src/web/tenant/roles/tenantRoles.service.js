@@ -8,13 +8,11 @@ const defaultBrandRoles = [
     description: "Manage daily branch operations, staff, and view analytics reports.",
     color: "Blue",
     permissions: {
-      overview: ["view", "update"],
-      orders: ["view", "create", "update"],
-      menu: ["view", "update"],
-      branches: ["view"],
+      overview: ["view"],
+      orders: ["view", "update"],
+      menu: ["view", "update_item"],
+      branches: ["view", "manage_tables"],
       staff: ["view", "create", "update"],
-      roles: ["view"],
-      design: ["view"],
       reports: ["view"],
     },
   },
@@ -26,13 +24,11 @@ const defaultBrandRoles = [
     color: "Green",
     permissions: {
       overview: ["view"],
-      orders: ["view", "update"],
+      orders: ["view", "create", "update"],
       menu: ["view"],
-      branches: [],
+      branches: ["view"],
       staff: [],
-      roles: [],
-      design: [],
-      reports: [],
+      reports: ["view"],
     },
   },
   {
@@ -69,14 +65,30 @@ const defaultBrandRoles = [
       reports: [],
     },
   },
+  {
+    id: "warehouse-manager",
+    name: "Warehouse Manager",
+    level: 30,
+    description: "Manage product requests, warehouse inventory, and replenishment operations.",
+    color: "Purple",
+    permissions: {
+      productRequests: ["view", "update"],
+      inventory: ["view", "update"],
+    },
+  },
 ];
 
 const seedDefaultTenantRolesIfEmpty = async (db) => {
-  const count = await db.customRole.count();
-  if (count === 0) {
-    console.log("Seeding default Tenant Custom roles...");
-    for (const r of defaultBrandRoles) {
+  for (const r of defaultBrandRoles) {
+    const existing = await db.customRole.findUnique({ where: { id: r.id } });
+    if (!existing) {
+      console.log(`Seeding missing default Tenant role: ${r.name}...`);
       await db.customRole.create({ data: r });
+    } else if (r.id === "warehouse-manager") {
+      await db.customRole.update({
+        where: { id: r.id },
+        data: { permissions: r.permissions }
+      });
     }
   }
 };
@@ -134,7 +146,7 @@ const remove = async (db, id) => {
   const existing = await db.customRole.findUnique({ where: { id } });
   if (!existing) throw new ApiError(404, "Role not found");
 
-  if (id === "branch-manager" || id === "cashier" || id === "waiter" || id === "kitchen") {
+  if (id === "branch-manager" || id === "cashier" || id === "waiter" || id === "kitchen" || id === "warehouse-manager") {
     throw new ApiError(400, "System default roles cannot be deleted");
   }
 

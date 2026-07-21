@@ -12,6 +12,13 @@ const getAll = async (db, branchId, startDate, endDate) => {
   }
   return db.inventoryItem.findMany({
     where,
+    include: {
+      branch: {
+        select: {
+          name: true
+        }
+      }
+    },
     orderBy: {
       updatedAt: "desc"
     }

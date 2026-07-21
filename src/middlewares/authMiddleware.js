@@ -65,7 +65,7 @@ const authenticate = async (req, _res, next) => {
       }
       const user = await req.tenantDb.user.findUnique({
         where: { id: decoded.sub },
-        include: { branch: true }
+        include: { branch: true, warehouse: true }
       });
       if (!user) throw new ApiError(401, "User no longer exists");
 
@@ -85,7 +85,8 @@ const authenticate = async (req, _res, next) => {
           BRANCH_MANAGER: "branch-manager",
           CASHIER: "cashier",
           WAITER: "waiter",
-          KITCHEN: "kitchen"
+          KITCHEN: "kitchen",
+          WAREHOUSE_MANAGER: "warehouse-manager"
         };
         roleIdToLookup = roleMap[user.role];
       }

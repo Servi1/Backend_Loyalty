@@ -9,7 +9,8 @@ const defaults = {
   auto_payout: "true",
   refund_enabled: "true",
   push_notifications: "true",
-  email_marketing: "false"
+  email_marketing: "false",
+  disabledCategories: ""
 };
 
 const getSettings = async () => {
