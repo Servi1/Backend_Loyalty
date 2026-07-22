@@ -11,6 +11,9 @@ const ApiError = require("../../utils/ApiError");
 
 const getBranches = async (db) => {
   const branches = await db.branch.findMany({
+    where: {
+      ordersEnabled: true,
+    },
     orderBy: { name: "asc" },
     select: {
       id: true,

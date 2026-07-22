@@ -74,7 +74,10 @@ const getBrands = async (userId) => {
   const favBrands = user.favoriteBrands || [];
 
   const tenants = await mainPrisma.tenant.findMany({
-    where: { isActive: true }
+    where: {
+      isActive: true,
+      ordersEnabled: true
+    }
   });
 
   return tenants.map(t => {

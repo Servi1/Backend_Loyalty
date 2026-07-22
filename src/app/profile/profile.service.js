@@ -120,7 +120,9 @@ const getFavoriteBrandsDetails = async (brandIds) => {
       OR: [
         { id: { in: brandIds } },
         { slug: { in: brandIds } }
-      ]
+      ],
+      isActive: true,
+      ordersEnabled: true
     },
     select: {
       id: true,
