@@ -200,6 +200,9 @@ model MenuItem {
   isChefPick  Boolean @default(false)
   rating      Float?  @default(4.8)
   modifiers   Json?   @default("[]")
+  spinEnabled    Boolean @default(false)
+  spinDailyLimit Int?    @default(0)
+  spinTotalLimit Int?    @default(0)
  
   categoryId String
   category   MenuCategory @relation(fields: [categoryId], references: [id])

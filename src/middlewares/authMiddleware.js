@@ -77,6 +77,10 @@ const authenticate = async (req, _res, next) => {
         throw new ApiError(403, "This branch is currently deactivated.");
       }
 
+      if (user.warehouse && !user.warehouse.isActive && user.role !== "BRAND_MANAGER") {
+        throw new ApiError(403, "This warehouse is currently deactivated.");
+      }
+
       let rolePermissions = undefined;
       let roleName = undefined;
       let roleIdToLookup = user.customRole;

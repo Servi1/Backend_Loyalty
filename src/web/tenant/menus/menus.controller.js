@@ -18,22 +18,26 @@ const createCategory = catchAsync(async (req, res) => {
 });
 
 const createItem = catchAsync(async (req, res) => {
-  const item = await menusService.createItem(req.tenantDb, req.body);
+  const { tenantId } = req.params;
+  const item = await menusService.createItem(req.tenantDb, req.body, tenantId);
   res.status(201).json({ success: true, data: item });
 });
 
 const updateItem = catchAsync(async (req, res) => {
-  const item = await menusService.updateItem(req.tenantDb, req.params.id, req.body);
+  const { tenantId } = req.params;
+  const item = await menusService.updateItem(req.tenantDb, req.params.id, req.body, tenantId);
   res.json({ success: true, data: item });
 });
 
 const toggleAvailability = catchAsync(async (req, res) => {
-  const item = await menusService.toggleAvailability(req.tenantDb, req.params.id);
+  const { tenantId } = req.params;
+  const item = await menusService.toggleAvailability(req.tenantDb, req.params.id, tenantId);
   res.json({ success: true, data: item });
 });
 
 const removeItem = catchAsync(async (req, res) => {
-  await menusService.removeItem(req.tenantDb, req.params.id);
+  const { tenantId } = req.params;
+  await menusService.removeItem(req.tenantDb, req.params.id, tenantId);
   res.status(204).send();
 });
 

@@ -1,4 +1,5 @@
 const ApiError = require("../../../utils/ApiError");
+const mainPrisma = require("../../../config/prisma");
 
 const getCategories = async (db) =>
   db.menuCategory.findMany({ orderBy: { order: "asc" }, include: { items: true } });
@@ -15,23 +16,83 @@ const getItems = async (db, startDate, endDate) => {
 
 const createCategory = async (db, data) => db.menuCategory.create({ data });
 
-const createItem = async (db, data) => db.menuItem.create({ data });
-
-const updateItem = async (db, id, data) => {
-  const item = await db.menuItem.findUnique({ where: { id } });
-  if (!item) throw new ApiError(404, "Menu item not found");
-  return db.menuItem.update({ where: { id }, data });
+const syncGlobalSpinItem = async (tenantId, item) => {
+  if (!tenantId || !item) return;
+  if (item.spinEnabled) {
+    await mainPrisma.globalSpinItem.upsert({
+      where: {
+        tenantId_menuItemId: {
+          tenantId,
+          menuItemId: item.id
+        }
+      },
+      create: {
+        tenantId,
+        menuItemId: item.id,
+        name: item.name,
+        description: item.description,
+        price: item.price,
+        imageUrl: item.imageUrl,
+        spinDailyLimit: item.spinDailyLimit || 0,
+        spinTotalLimit: item.spinTotalLimit || 0,
+        isActive: item.isAvailable
+      },
+      update: {
+        name: item.name,
+        description: item.description,
+        price: item.price,
+        imageUrl: item.imageUrl,
+        spinDailyLimit: item.spinDailyLimit || 0,
+        spinTotalLimit: item.spinTotalLimit || 0,
+        isActive: item.isAvailable
+      }
+    });
+  } else {
+    await mainPrisma.globalSpinItem.deleteMany({
+      where: {
+        tenantId,
+        menuItemId: item.id
+      }
+    });
+  }
 };
 
-const toggleAvailability = async (db, id) => {
-  const item = await db.menuItem.findUnique({ where: { id } });
-  if (!item) throw new ApiError(404, "Menu item not found");
-  return db.menuItem.update({ where: { id }, data: { isAvailable: !item.isAvailable } });
+const createItem = async (db, data, tenantId) => {
+  const item = await db.menuItem.create({ data });
+  await syncGlobalSpinItem(tenantId, item);
+  return item;
 };
 
-const removeItem = async (db, id) => {
+const updateItem = async (db, id, data, tenantId) => {
   const item = await db.menuItem.findUnique({ where: { id } });
   if (!item) throw new ApiError(404, "Menu item not found");
+  const updated = await db.menuItem.update({ where: { id }, data });
+  await syncGlobalSpinItem(tenantId, updated);
+  return updated;
+};
+
+const toggleAvailability = async (db, id, tenantId) => {
+  const item = await db.menuItem.findUnique({ where: { id } });
+  if (!item) throw new ApiError(404, "Menu item not found");
+  const updated = await db.menuItem.update({ where: { id }, data: { isAvailable: !item.isAvailable } });
+  if (updated.spinEnabled) {
+    await mainPrisma.globalSpinItem.updateMany({
+      where: { tenantId, menuItemId: id },
+      data: { isActive: updated.isAvailable }
+    });
+  }
+  return updated;
+};
+
+const removeItem = async (db, id, tenantId) => {
+  const item = await db.menuItem.findUnique({ where: { id } });
+  if (!item) throw new ApiError(404, "Menu item not found");
+  await mainPrisma.globalSpinItem.deleteMany({
+    where: {
+      tenantId,
+      menuItemId: id
+    }
+  });
   return db.menuItem.delete({ where: { id } });
 };
 

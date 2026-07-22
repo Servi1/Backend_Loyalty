@@ -174,6 +174,10 @@ const loginWithEmail = async (db, email, password) => {
     throw new ApiError(403, "This branch is currently deactivated.");
   }
 
+  if (user.warehouse && !user.warehouse.isActive && user.role !== "BRAND_MANAGER") {
+    throw new ApiError(403, "This warehouse is currently deactivated.");
+  }
+
   // Check if PIN code is provided as password for cashier/waiter (direct login fallback)
   if (user.pinCode && password === user.pinCode) {
     await attachUserPermissions(db, user);
