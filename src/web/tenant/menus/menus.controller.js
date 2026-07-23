@@ -35,10 +35,31 @@ const toggleAvailability = catchAsync(async (req, res) => {
   res.json({ success: true, data: item });
 });
 
+const updateCategory = catchAsync(async (req, res) => {
+  const category = await menusService.updateCategory(req.tenantDb, req.params.id, req.body);
+  res.json({ success: true, data: category });
+});
+
+const removeCategory = catchAsync(async (req, res) => {
+  const { tenantId } = req.params;
+  await menusService.removeCategory(req.tenantDb, req.params.id, tenantId);
+  res.status(204).send();
+});
+
 const removeItem = catchAsync(async (req, res) => {
   const { tenantId } = req.params;
   await menusService.removeItem(req.tenantDb, req.params.id, tenantId);
   res.status(204).send();
 });
 
-module.exports = { getCategories, getItems, createCategory, createItem, updateItem, toggleAvailability, removeItem };
+module.exports = { 
+  getCategories, 
+  getItems, 
+  createCategory, 
+  updateCategory,
+  removeCategory,
+  createItem, 
+  updateItem, 
+  toggleAvailability, 
+  removeItem 
+};

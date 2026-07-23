@@ -11,6 +11,9 @@ router.get("/items", ctrl.getItems);
 // Protected — only brand/branch managers can mutate
 router.use(authenticate);
 router.post("/categories", authorize("ADMIN", "BRAND_MANAGER"), ctrl.createCategory);
+router.put("/categories/:id", authorize("ADMIN", "BRAND_MANAGER"), ctrl.updateCategory);
+router.patch("/categories/:id", authorize("ADMIN", "BRAND_MANAGER"), ctrl.updateCategory);
+router.delete("/categories/:id", authorize("ADMIN", "BRAND_MANAGER"), ctrl.removeCategory);
 router.post("/items", authorize("ADMIN", "BRAND_MANAGER"), ctrl.createItem);
 router.put("/items/:id", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.updateItem);
 router.patch("/items/:id", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.updateItem);
