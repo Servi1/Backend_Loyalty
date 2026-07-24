@@ -207,6 +207,7 @@ model AppUser {
   sentGifts     Gift[]   @relation("SentGifts")
   receivedGifts Gift[]   @relation("ReceivedGifts")
   cart          CartItem[]
+  coupons       EarnedCoupon[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   @@index([phone])
@@ -346,4 +347,24 @@ model GlobalSpinItem {
 
   @@unique([tenantId, menuItemId])
   @@index([tenantId])
+}
+
+model EarnedCoupon {
+  id            String   @id @default(uuid())
+  code          String   @unique
+  prizeLabel    String
+  prizeImageUrl String?
+  isUsed        Boolean  @default(false)
+  usedAt        DateTime?
+  winDate       DateTime @default(now())
+  expiresAt     DateTime
+
+  // Relations
+  appUserId     String
+  appUser       AppUser  @relation(fields: [appUserId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([appUserId])
 }

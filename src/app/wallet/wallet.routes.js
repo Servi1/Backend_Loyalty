@@ -28,4 +28,7 @@ router.get("/gifts", ctrl.getGifts);
 router.post("/gifts/:giftId/claim", ctrl.claimGift);
 router.post("/gifts/claim-all", ctrl.claimAllGifts);
 
+router.get("/coupons", ctrl.getCoupons);
+router.post("/coupons", ctrl.addCoupon);
+
 module.exports = router;

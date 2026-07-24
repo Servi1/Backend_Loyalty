@@ -50,6 +50,24 @@ const getLeaderboard = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+// ─── GET /wallet/coupons ──────────────────────────────────────────────────────
+const getCoupons = catchAsync(async (req, res) => {
+  const coupons = await walletService.getCoupons(req.tenantDb, req.user.id);
+  res.json({ success: true, data: coupons });
+});
+
+// ─── POST /wallet/coupons ─────────────────────────────────────────────────────
+const addCoupon = catchAsync(async (req, res) => {
+  const { prizeLabel, prizeImageUrl, code, expiresAt } = req.body;
+  const coupon = await walletService.addCoupon(req.tenantDb, req.user.id, {
+    prizeLabel,
+    prizeImageUrl,
+    code,
+    expiresAt,
+  });
+  res.json({ success: true, message: "Coupon saved successfully", data: coupon });
+});
+
 module.exports = {
   getWallet,
   getTransactions,
@@ -58,4 +76,6 @@ module.exports = {
   getGifts,
   claimGift,
   claimAllGifts,
+  getCoupons,
+  addCoupon,
 };

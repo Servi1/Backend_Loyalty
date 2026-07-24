@@ -312,6 +312,44 @@ const getLeaderboard = async (db) => {
   }));
 };
 
+// ─── getCoupons ───────────────────────────────────────────────────────────────
+const getCoupons = async (db, userId) => {
+  const coupons = await mainPrisma.earnedCoupon.findMany({
+    where: { appUserId: userId },
+    orderBy: { winDate: "desc" },
+  });
+
+  return coupons.map(c => ({
+    id: c.id,
+    couponCode: c.code,
+    item: {
+      label: c.prizeLabel,
+      imageUrl: c.prizeImageUrl || null,
+    },
+    winDate: c.winDate,
+    expiryDate: c.expiresAt,
+    isUsed: c.isUsed,
+  }));
+};
+
+// ─── addCoupon ────────────────────────────────────────────────────────────────
+const addCoupon = async (db, userId, { prizeLabel, prizeImageUrl, code, expiresAt } = {}) => {
+  const generatedCode = code || Array.from({ length: 8 }, () => Math.floor(Math.random() * 10)).join('');
+  const expiry = expiresAt ? new Date(expiresAt) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  const coupon = await mainPrisma.earnedCoupon.create({
+    data: {
+      code: generatedCode,
+      prizeLabel,
+      prizeImageUrl: prizeImageUrl || null,
+      expiresAt: expiry,
+      appUserId: userId,
+    },
+  });
+
+  return coupon;
+};
+
 module.exports = {
   getWallet,
   getTransactions,
@@ -320,4 +358,6 @@ module.exports = {
   getGifts,
   claimGift,
   claimAllGifts,
+  getCoupons,
+  addCoupon,
 };
