@@ -96,4 +96,40 @@ const removeItem = async (db, id, tenantId) => {
   return db.menuItem.delete({ where: { id } });
 };
 
-module.exports = { getCategories, getItems, createCategory, createItem, updateItem, toggleAvailability, removeItem };
+const updateCategory = async (db, id, data) => {
+  const cat = await db.menuCategory.findUnique({ where: { id } });
+  if (!cat) throw new ApiError(404, "Category not found");
+  return db.menuCategory.update({ where: { id }, data });
+};
+
+const removeCategory = async (db, id, tenantId) => {
+  const cat = await db.menuCategory.findUnique({ where: { id }, include: { items: true } });
+  if (!cat) throw new ApiError(404, "Category not found");
+  
+  if (cat.items && cat.items.length > 0) {
+    const itemIds = cat.items.map((i) => i.id);
+    await mainPrisma.globalSpinItem.deleteMany({
+      where: {
+        tenantId,
+        menuItemId: { in: itemIds }
+      }
+    });
+    await db.menuItem.deleteMany({
+      where: { categoryId: id }
+    });
+  }
+
+  return db.menuCategory.delete({ where: { id } });
+};
+
+module.exports = { 
+  getCategories, 
+  getItems, 
+  createCategory, 
+  updateCategory,
+  removeCategory,
+  createItem, 
+  updateItem, 
+  toggleAvailability, 
+  removeItem 
+};
