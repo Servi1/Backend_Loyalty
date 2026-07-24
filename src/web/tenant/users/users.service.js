@@ -12,7 +12,13 @@ const getAllStaff = async (db, branchId, startDate, endDate) => {
     ]
   };
   if (branchId) {
-    where.branchId = branchId;
+    if (typeof branchId === "string" && branchId.includes(",")) {
+      where.branchId = { in: branchId.split(",").map(b => b.trim()) };
+    } else if (Array.isArray(branchId)) {
+      where.branchId = { in: branchId };
+    } else {
+      where.branchId = branchId;
+    }
   }
   if (startDate || endDate) {
     where.createdAt = {};
@@ -23,7 +29,9 @@ const getAllStaff = async (db, branchId, startDate, endDate) => {
     where,
     include: {
       branch: true,
-      warehouse: true
+      warehouse: true,
+      schedules: true,
+      specialties: true,
     },
     orderBy: {
       createdAt: "desc"
@@ -60,6 +68,13 @@ const createStaff = async (db, data) => {
   // Generate a random 4-digit pinCode if not provided (for POS roles)
   const pinCode = data.pinCode || Math.floor(1000 + Math.random() * 9000).toString();
 
+  const specialtiesConnect = data.specialtyIds ? data.specialtyIds.map(id => ({ id })) : [];
+  const schedulesCreate = data.schedules ? data.schedules.map(s => ({
+    dayOfWeek: Number(s.dayOfWeek),
+    startTime: s.startTime,
+    endTime: s.endTime
+  })) : [];
+
   return db.user.create({
     data: {
       email: data.email,
@@ -71,10 +86,18 @@ const createStaff = async (db, data) => {
       password: hashedPassword,
       pinCode,
       isActive: data.isActive !== undefined ? data.isActive : true,
+      specialties: {
+        connect: specialtiesConnect
+      },
+      schedules: {
+        create: schedulesCreate
+      }
     },
     include: {
       branch: true,
-      warehouse: true
+      warehouse: true,
+      schedules: true,
+      specialties: true
     }
   });
 };
@@ -150,6 +173,11 @@ const updateStaff = async (db, id, data) => {
     }
   }
 
+  // Handle schedules replacement
+  if (data.schedules !== undefined) {
+    await db.staffSchedule.deleteMany({ where: { userId: id } });
+  }
+
   const updateData = {
     name: data.name,
     role: data.role,
@@ -168,12 +196,30 @@ const updateStaff = async (db, id, data) => {
     updateData.password = await bcrypt.hash(data.password, 10);
   }
 
+  if (data.schedules !== undefined) {
+    updateData.schedules = {
+      create: data.schedules.map(s => ({
+        dayOfWeek: Number(s.dayOfWeek),
+        startTime: s.startTime,
+        endTime: s.endTime
+      }))
+    };
+  }
+
+  if (data.specialtyIds !== undefined) {
+    updateData.specialties = {
+      set: data.specialtyIds.map(id => ({ id }))
+    };
+  }
+
   return db.user.update({
     where: { id },
     data: updateData,
     include: {
       branch: true,
-      warehouse: true
+      warehouse: true,
+      schedules: true,
+      specialties: true
     }
   });
 };

@@ -11,7 +11,7 @@ const getItems = async (db, startDate, endDate) => {
     if (startDate) where.createdAt.gte = new Date(startDate);
     if (endDate) where.createdAt.lte = new Date(endDate);
   }
-  return db.menuItem.findMany({ where, include: { category: true } });
+  return db.menuItem.findMany({ where, include: { category: true, specialists: true } });
 };
 
 const createCategory = async (db, data) => db.menuCategory.create({ data });
@@ -58,7 +58,20 @@ const syncGlobalSpinItem = async (tenantId, item) => {
 };
 
 const createItem = async (db, data, tenantId) => {
-  const item = await db.menuItem.create({ data });
+  const { specialistIds, ...rest } = data;
+  const specialistsConnect = specialistIds ? specialistIds.map(id => ({ id })) : [];
+  
+  const item = await db.menuItem.create({ 
+    data: {
+      ...rest,
+      specialists: {
+        connect: specialistsConnect
+      }
+    },
+    include: {
+      specialists: true
+    }
+  });
   await syncGlobalSpinItem(tenantId, item);
   return item;
 };
@@ -66,7 +79,22 @@ const createItem = async (db, data, tenantId) => {
 const updateItem = async (db, id, data, tenantId) => {
   const item = await db.menuItem.findUnique({ where: { id } });
   if (!item) throw new ApiError(404, "Menu item not found");
-  const updated = await db.menuItem.update({ where: { id }, data });
+  
+  const { specialistIds, ...rest } = data;
+  const updatePayload = { ...rest };
+  if (specialistIds !== undefined) {
+    updatePayload.specialists = {
+      set: specialistIds.map(id => ({ id }))
+    };
+  }
+
+  const updated = await db.menuItem.update({ 
+    where: { id }, 
+    data: updatePayload,
+    include: {
+      specialists: true
+    }
+  });
   await syncGlobalSpinItem(tenantId, updated);
   return updated;
 };
