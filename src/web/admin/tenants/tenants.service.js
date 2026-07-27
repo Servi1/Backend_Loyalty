@@ -91,7 +91,7 @@ const create = async (data) => {
     throw new ApiError(500, `Failed to push schema to tenant DB: ${err.message}`);
   }
 
-  // 3.5. Create initial BRAND_MANAGER
+  // 3.5. Create initial BRAND_MANAGER and seed default order types
   if (data.adminEmail && data.adminPassword) {
     try {
       const tenantPrisma = getTenantClient(tenantDbUrl);
@@ -114,8 +114,19 @@ const create = async (data) => {
           data: { password: hashedPassword }
         });
       }
+
+      // Seed default order types
+      await tenantPrisma.customOrderType.createMany({
+        data: [
+          { name: "Dine In", isActive: true },
+          { name: "Takeaway", isActive: true },
+          { name: "Delivery", isActive: true },
+          { name: "Deliver to Car", isActive: true },
+          { name: "Scheduled", isActive: true }
+        ]
+      });
     } catch (err) {
-      console.error("Failed to create initial admin user:", err);
+      console.error("Failed to initialize tenant defaults:", err);
     }
   }
 
