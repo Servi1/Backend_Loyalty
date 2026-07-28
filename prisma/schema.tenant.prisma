@@ -64,6 +64,8 @@ model User {
   orders    Order[]
   openedSessions CashDrawerSession[] @relation("OpenedSessions")
   closedSessions CashDrawerSession[] @relation("ClosedSessions")
+  schedules StaffSchedule[]
+  specialties MenuItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -203,14 +205,29 @@ model MenuItem {
   spinEnabled    Boolean @default(false)
   spinDailyLimit Int?    @default(0)
   spinTotalLimit Int?    @default(0)
+  prepTime       Int?    @default(15)
  
   categoryId String
   category   MenuCategory @relation(fields: [categoryId], references: [id])
  
   orderItems OrderItem[]
+  specialists User[]
  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model StaffSchedule {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dayOfWeek Int      // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  startTime String   // e.g. "09:00"
+  endTime   String   // e.g. "17:00"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, dayOfWeek, startTime, endTime])
 }
  
 // ─── Orders ──────────────────────────────────────────
