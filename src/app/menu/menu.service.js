@@ -17,6 +17,13 @@ const getMenu = async (db) => {
       items: {
         where: { isAvailable: true },
         orderBy: { name: "asc" },
+        include: {
+          specialists: {
+            include: {
+              schedules: true
+            }
+          }
+        }
       },
     },
   });

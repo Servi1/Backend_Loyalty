@@ -48,6 +48,10 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         source: order.source || "app",
         paymentMethod: order.paymentMethod || "cash",
         pointsRedeemed: order.pointsRedeemed || null,
+        staffId: order.staffId || null,
+        staffName: order.staffName || null,
+        selectedSlot: order.selectedSlot || null,
+        selectedSlotDate: order.selectedSlotDate || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       },
@@ -60,6 +64,10 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         source: order.source || "app",
         paymentMethod: order.paymentMethod || "cash",
         pointsRedeemed: order.pointsRedeemed || null,
+        staffId: order.staffId || null,
+        staffName: order.staffName || null,
+        selectedSlot: order.selectedSlot || null,
+        selectedSlotDate: order.selectedSlotDate || null,
         updatedAt: order.updatedAt,
       },
     });
@@ -71,7 +79,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
 // ─── placeOrder ───────────────────────────────────────────────────────────────
 
 const placeOrder = async (db, userId, body, tenantId, tenant) => {
-  const { branchId, tableId, qrCashierId, cashierId, type = "DINE_IN", items, notes, total, paymentMethod, source, staffId, earnRate } = body;
+  const { branchId, tableId, qrCashierId, cashierId, type = "DINE_IN", items, notes, total, paymentMethod, source, staffId, earnRate, selectedSlot, selectedSlotDate } = body;
 
   if (!branchId) throw new ApiError(400, "branchId is required");
   if (!items || !Array.isArray(items) || items.length === 0) {
@@ -182,10 +190,12 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   }
 
   let orderStaffId = null;
+  let staffName = null;
   if (staffId) {
     const staffExists = await db.user.findUnique({ where: { id: staffId } });
     if (staffExists) {
       orderStaffId = staffId;
+      staffName = staffExists.name;
       finalNotes = finalNotes ? `${finalNotes} | Assigned: ${staffExists.name}` : `Assigned: ${staffExists.name}`;
     } else {
       const mockNames = {
@@ -194,6 +204,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
         chefJohn: "Chef John"
       };
       const mockName = mockNames[staffId] || staffId;
+      staffName = mockName;
       finalNotes = finalNotes ? `${finalNotes} | Assigned: ${mockName}` : `Assigned: ${mockName}`;
     }
   }
@@ -230,6 +241,10 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       tableId: tableId || null,
       qrCashierId: finalQrCashierId,
       userId: orderStaffId,
+      staffId: staffId || null,
+      staffName: staffName || null,
+      selectedSlot: selectedSlot || null,
+      selectedSlotDate: selectedSlotDate || null,
       type,
       notes: finalNotes,
       total: subtotal,
@@ -304,6 +319,10 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
         qrCashierId: order.qrCashierId,
         source: order.source,
         appUserId: userId,
+        staffId: order.staffId || null,
+        staffName: order.staffName || null,
+        selectedSlot: order.selectedSlot || null,
+        selectedSlotDate: order.selectedSlotDate || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       }

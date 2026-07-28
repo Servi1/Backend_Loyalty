@@ -816,6 +816,10 @@ const syncAllTenantOrders = async () => {
               branchName: order.branch?.name || "Register Terminal",
               feeRate: order.feeRate || 0.0,
               source: order.source || "pos",
+              staffId: order.staffId || null,
+              staffName: order.staffName || null,
+              selectedSlot: order.selectedSlot || null,
+              selectedSlotDate: order.selectedSlotDate || null,
               createdAt: order.createdAt,
               updatedAt: order.updatedAt,
             },
@@ -828,6 +832,10 @@ const syncAllTenantOrders = async () => {
               branchName: order.branch?.name || "Register Terminal",
               feeRate: order.feeRate || 0.0,
               source: order.source || "pos",
+              staffId: order.staffId || null,
+              staffName: order.staffName || null,
+              selectedSlot: order.selectedSlot || null,
+              selectedSlotDate: order.selectedSlotDate || null,
               updatedAt: order.updatedAt,
             }
           });
@@ -1284,6 +1292,10 @@ const syncTenantOrders = async (tenantId) => {
         branchName: order.branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
         source: order.source || "pos",
+        staffId: order.staffId || null,
+        staffName: order.staffName || null,
+        selectedSlot: order.selectedSlot || null,
+        selectedSlotDate: order.selectedSlotDate || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       },
@@ -1296,6 +1308,10 @@ const syncTenantOrders = async (tenantId) => {
         branchName: order.branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
         source: order.source || "pos",
+        staffId: order.staffId || null,
+        staffName: order.staffName || null,
+        selectedSlot: order.selectedSlot || null,
+        selectedSlotDate: order.selectedSlotDate || null,
         updatedAt: order.updatedAt,
       }
     });

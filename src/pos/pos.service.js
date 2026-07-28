@@ -192,6 +192,10 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         branchName: branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
         source: order.source || "pos",
+        staffId: order.staffId || null,
+        staffName: order.staffName || null,
+        selectedSlot: order.selectedSlot || null,
+        selectedSlotDate: order.selectedSlotDate || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       },
@@ -204,6 +208,10 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         branchName: branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
         source: order.source || "pos",
+        staffId: order.staffId || null,
+        staffName: order.staffName || null,
+        selectedSlot: order.selectedSlot || null,
+        selectedSlotDate: order.selectedSlotDate || null,
         updatedAt: order.updatedAt,
       }
     });

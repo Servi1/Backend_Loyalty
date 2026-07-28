@@ -131,4 +131,62 @@ const getBranchStaff = async (db, branchId) => {
   });
 };
 
-module.exports = { getBranches, getBranch, getBranchStaff };
+const getStaffSlots = async (db, staffId) => {
+  const staff = await db.user.findUnique({
+    where: { id: staffId },
+    include: { schedules: true }
+  });
+  if (!staff) throw new ApiError(404, "Staff not found");
+
+  const datemap = {};
+  const schedulesByDay = {};
+  staff.schedules.forEach(s => {
+    if (!schedulesByDay[s.dayOfWeek]) {
+      schedulesByDay[s.dayOfWeek] = [];
+    }
+    schedulesByDay[s.dayOfWeek].push(s);
+  });
+
+  const today = new Date();
+  for (let i = 0; i < 7; i++) {
+    const currentDate = new Date(today);
+    currentDate.setDate(today.getDate() + i);
+    
+    const yyyy = currentDate.getFullYear();
+    const mm = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(currentDate.getDate()).padStart(2, '0');
+    const dateKey = `${yyyy}-${mm}-${dd}`;
+    
+    const dayOfWeek = currentDate.getDay();
+    const daySchedules = schedulesByDay[dayOfWeek] || [];
+    const slots = [];
+    
+    daySchedules.forEach(sch => {
+      const parseTime = (t) => {
+        const [h, m] = t.split(':').map(Number);
+        return h * 60 + m;
+      };
+      
+      const formatTime = (min) => {
+        const h = Math.floor(min / 60);
+        const m = min % 60;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      };
+      
+      const start = parseTime(sch.startTime);
+      const end = parseTime(sch.endTime);
+      
+      let curr = start;
+      while (curr + 15 <= end) {
+        slots.push(`${formatTime(curr)} - ${formatTime(curr + 15)}`);
+        curr += 15;
+      }
+    });
+    
+    datemap[dateKey] = slots;
+  }
+  
+  return datemap;
+};
+
+module.exports = { getBranches, getBranch, getBranchStaff, getStaffSlots };

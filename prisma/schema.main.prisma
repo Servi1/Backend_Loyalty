@@ -177,6 +177,10 @@ model AggregatedOrder {
   source         String   @default("pos") // pos | app | qr_cashier | qr_table
   paymentMethod  String?  // cash | card | apple_pay | google_pay | split | points
   pointsRedeemed Int?     // points deducted (set when paymentMethod = "points")
+  staffId          String?
+  staffName        String?
+  selectedSlot     String?
+  selectedSlotDate String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
  
@@ -253,6 +257,10 @@ model Order {
   qrCashierId String?
   paymentMethod  String? @default("cash") // cash | card | apple_pay | google_pay | split | points
   pointsRedeemed Int?   // points deducted (set when paymentMethod = "points")
+  staffId          String?
+  staffName        String?
+  selectedSlot     String?
+  selectedSlotDate String?
 
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt

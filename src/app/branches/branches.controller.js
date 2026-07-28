@@ -73,5 +73,10 @@ const getStaff = catchAsync(async (req, res) => {
   res.json({ success: true, data: staff });
 });
 
-module.exports = { getAll, getOne, getStaff };
+const getStaffSlots = catchAsync(async (req, res) => {
+  const slots = await branchesService.getStaffSlots(req.tenantDb, req.params.staffId);
+  res.json({ success: true, data: slots });
+});
+
+module.exports = { getAll, getOne, getStaff, getStaffSlots };
 

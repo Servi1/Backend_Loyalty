@@ -39,6 +39,10 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         branchName: branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
         source: order.source || "pos",
+        staffId: order.staffId || null,
+        staffName: order.staffName || null,
+        selectedSlot: order.selectedSlot || null,
+        selectedSlotDate: order.selectedSlotDate || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       },
@@ -51,6 +55,10 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         branchName: branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
         source: order.source || "pos",
+        staffId: order.staffId || null,
+        staffName: order.staffName || null,
+        selectedSlot: order.selectedSlot || null,
+        selectedSlotDate: order.selectedSlotDate || null,
         updatedAt: order.updatedAt,
       }
     });
@@ -67,7 +75,7 @@ const generateOrderNumber = () => {
   return `SRV-${hex}`;
 };
 
-const create = async (db, { userId, customerId, branchId, tableId, qrCashierId, type, items, notes, total, posUnit, source }, tenantId) => {
+const create = async (db, { userId, customerId, branchId, tableId, qrCashierId, type, items, notes, total, posUnit, source, staffId, staffName, selectedSlot, selectedSlotDate }, tenantId) => {
   if (tableId) {
     const table = await db.table.findUnique({ where: { id: tableId } });
     if (table) {
@@ -175,6 +183,10 @@ const create = async (db, { userId, customerId, branchId, tableId, qrCashierId, 
       feeRate,
       posUnit: posUnit || null,
       source: orderSource,
+      staffId: staffId || null,
+      staffName: staffName || null,
+      selectedSlot: selectedSlot || null,
+      selectedSlotDate: selectedSlotDate || null,
       items: { create: orderItems },
     },
     include: { items: { include: { menuItem: true } }, branch: true },
@@ -203,6 +215,10 @@ const create = async (db, { userId, customerId, branchId, tableId, qrCashierId, 
         posUnit: order.posUnit,
         source: order.source,
         appUserId: order.customerId || null,
+        staffId: order.staffId || null,
+        staffName: order.staffName || null,
+        selectedSlot: order.selectedSlot || null,
+        selectedSlotDate: order.selectedSlotDate || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       }
