@@ -205,6 +205,7 @@ model MenuItem {
   spinEnabled    Boolean @default(false)
   spinDailyLimit Int?    @default(0)
   spinTotalLimit Int?    @default(0)
+  prepTime       Int?    @default(15)
  
   categoryId String
   category   MenuCategory @relation(fields: [categoryId], references: [id])
