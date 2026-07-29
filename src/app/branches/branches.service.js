@@ -131,62 +131,61 @@ const getBranchStaff = async (db, branchId) => {
   });
 };
 
-const getStaffSlots = async (db, staffId) => {
-  const staff = await db.user.findUnique({
-    where: { id: staffId },
-    include: { schedules: true }
-  });
-  if (!staff) throw new ApiError(404, "Staff not found");
+const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
+  const duration = parseInt(durationStr, 10) || 30;
 
-  const datemap = {};
-  const schedulesByDay = {};
-  staff.schedules.forEach(s => {
-    if (!schedulesByDay[s.dayOfWeek]) {
-      schedulesByDay[s.dayOfWeek] = [];
-    }
-    schedulesByDay[s.dayOfWeek].push(s);
+  const targetDate = dateStr ? new Date(dateStr) : new Date();
+  const dayOfWeek = targetDate.getDay();
+
+  const schedule = await db.staffSchedule.findFirst({
+    where: { userId: staffId, dayOfWeek }
   });
 
-  const today = new Date();
-  for (let i = 0; i < 7; i++) {
-    const currentDate = new Date(today);
-    currentDate.setDate(today.getDate() + i);
-    
-    const yyyy = currentDate.getFullYear();
-    const mm = String(currentDate.getMonth() + 1).padStart(2, '0');
-    const dd = String(currentDate.getDate()).padStart(2, '0');
-    const dateKey = `${yyyy}-${mm}-${dd}`;
-    
-    const dayOfWeek = currentDate.getDay();
-    const daySchedules = schedulesByDay[dayOfWeek] || [];
-    const slots = [];
-    
-    daySchedules.forEach(sch => {
-      const parseTime = (t) => {
-        const [h, m] = t.split(':').map(Number);
-        return h * 60 + m;
-      };
-      
-      const formatTime = (min) => {
-        const h = Math.floor(min / 60);
-        const m = min % 60;
-        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-      };
-      
-      const start = parseTime(sch.startTime);
-      const end = parseTime(sch.endTime);
-      
-      let curr = start;
-      while (curr + 15 <= end) {
-        slots.push(`${formatTime(curr)} - ${formatTime(curr + 15)}`);
-        curr += 15;
-      }
-    });
-    
-    datemap[dateKey] = slots;
+  if (!schedule) {
+    return [];
   }
-  
-  return datemap;
+
+  // Fetch scheduled orders for this date and staff
+  const scheduledOrders = await db.order.findMany({
+    where: {
+      staffId: staffId,
+      selectedSlotDate: dateStr,
+      status: {
+        notIn: ["CANCELLED", "COMPLETED"]
+      }
+    },
+    select: {
+      selectedSlot: true
+    }
+  });
+
+  const bookedSlots = new Set(scheduledOrders.map(o => o.selectedSlot));
+
+  const parseTime = (t) => {
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+  };
+  const formatTime = (min) => {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+
+  const start = parseTime(schedule.startTime);
+  const end = parseTime(schedule.endTime);
+  const slots = [];
+
+  let curr = start;
+  while (curr + duration <= end) {
+    const slotTime = formatTime(curr);
+    slots.push({
+      time: slotTime,
+      available: !bookedSlots.has(slotTime)
+    });
+    curr += duration;
+  }
+
+  return slots;
 };
 
 module.exports = { getBranches, getBranch, getBranchStaff, getStaffSlots };

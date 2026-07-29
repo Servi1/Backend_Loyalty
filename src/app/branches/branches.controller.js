@@ -74,7 +74,8 @@ const getStaff = catchAsync(async (req, res) => {
 });
 
 const getStaffSlots = catchAsync(async (req, res) => {
-  const slots = await branchesService.getStaffSlots(req.tenantDb, req.params.staffId);
+  const { date, duration } = req.query;
+  const slots = await branchesService.getStaffSlots(req.tenantDb, req.params.staffId, date, duration);
   res.json({ success: true, data: slots });
 });
 
