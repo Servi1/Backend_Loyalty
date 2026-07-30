@@ -52,6 +52,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         staffName: order.staffName || null,
         selectedSlot: order.selectedSlot || null,
         selectedSlotDate: order.selectedSlotDate || null,
+        slotDetails: order.slotDetails || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       },
@@ -68,6 +69,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         staffName: order.staffName || null,
         selectedSlot: order.selectedSlot || null,
         selectedSlotDate: order.selectedSlotDate || null,
+        slotDetails: order.slotDetails || null,
         updatedAt: order.updatedAt,
       },
     });
@@ -156,6 +158,10 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       price: itemPrice,
       notes: item.notes || null,
       selectedModifiers: item.selectedModifiers || [],
+      staffId: item.staffId || null,
+      staffName: item.staffName || null,
+      selectedSlot: item.selectedSlot || null,
+      selectedSlotDate: item.selectedSlotDate || null,
     };
   });
 
@@ -233,6 +239,17 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   const finalQrCashierId = qrCashierId || cashierId || null;
   const orderSource = source || (tableId ? "qr_table" : (finalQrCashierId ? "qr_cashier" : "app"));
 
+  const slotDetails = orderItems
+    .filter(i => i.staffId && i.selectedSlot)
+    .map(i => ({
+      staffId: i.staffId,
+      staffName: i.staffName,
+      selectedSlot: i.selectedSlot,
+      selectedSlotDate: i.selectedSlotDate,
+      menuItemId: i.menuItemId,
+      quantity: i.quantity,
+    }));
+
   const order = await db.order.create({
     data: {
       orderNumber,
@@ -245,6 +262,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       staffName: staffName || null,
       selectedSlot: selectedSlot || null,
       selectedSlotDate: selectedSlotDate || null,
+      slotDetails: slotDetails.length > 0 ? slotDetails : null,
       type,
       notes: finalNotes,
       total: subtotal,
@@ -323,6 +341,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
         staffName: order.staffName || null,
         selectedSlot: order.selectedSlot || null,
         selectedSlotDate: order.selectedSlotDate || null,
+        slotDetails: order.slotDetails || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       }

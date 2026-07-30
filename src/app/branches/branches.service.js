@@ -145,13 +145,15 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
     return [];
   }
 
-  // Fetch scheduled orders for this date and staff
-  const scheduledOrders = await db.order.findMany({
+  // Fetch scheduled order items for this date and staff
+  const scheduledOrderItems = await db.orderItem.findMany({
     where: {
       staffId: staffId,
       selectedSlotDate: dateStr,
-      status: {
-        notIn: ["CANCELLED", "COMPLETED"]
+      order: {
+        status: {
+          notIn: ["CANCELLED", "COMPLETED"]
+        }
       }
     },
     select: {
@@ -159,7 +161,7 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
     }
   });
 
-  const bookedSlots = new Set(scheduledOrders.map(o => o.selectedSlot));
+  const bookedSlots = new Set(scheduledOrderItems.map(o => o.selectedSlot));
 
   const parseTime = (t) => {
     const [h, m] = t.split(':').map(Number);
