@@ -75,7 +75,23 @@ const generateOrderNumber = () => {
   return `SRV-${hex}`;
 };
 
-const create = async (db, { userId, customerId, branchId, tableId, qrCashierId, type, items, notes, total, posUnit, source, staffId, staffName, selectedSlot, selectedSlotDate }, tenantId) => {
+const create = async (db, { userId, customerId, customerPhone, status, branchId, tableId, qrCashierId, type, items, notes, total, posUnit, source, staffId, staffName, selectedSlot, selectedSlotDate }, tenantId) => {
+  let finalCustomerId = customerId;
+  if (customerPhone) {
+    const cleanedPhone = customerPhone.trim();
+    let appUser = await mainPrisma.appUser.findUnique({
+      where: { phone: cleanedPhone }
+    });
+    if (!appUser) {
+      appUser = await mainPrisma.appUser.create({
+        data: {
+          phone: cleanedPhone,
+          name: "Guest Client"
+        }
+      });
+    }
+    finalCustomerId = appUser.id;
+  }
   if (tableId) {
     const table = await db.table.findUnique({ where: { id: tableId } });
     if (table) {
@@ -172,8 +188,10 @@ const create = async (db, { userId, customerId, branchId, tableId, qrCashierId, 
   const order = await db.order.create({
     data: {
       orderNumber: generateOrderNumber(),
+      status: status || "PENDING",
       userId: userId || null,
-      customerId: customerId || null,
+      customerId: finalCustomerId || null,
+      customerPhone: customerPhone || null,
       branchId,
       tableId: tableId || null,
       qrCashierId: qrCashierId || null,

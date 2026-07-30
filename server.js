@@ -24,5 +24,9 @@ server.listen(config.port, () => {
   // Trigger initial synchronization of tenant orders to the main database
   const tenantsService = require("./src/web/admin/tenants/tenants.service");
   tenantsService.syncAllTenantOrders().catch(err => console.error("Initial order sync failed:", err));
+
+  // Start background worker to expire unpaid HOLD orders
+  const holdExpiryWorker = require("./src/shared/workers/holdExpiry.worker");
+  holdExpiryWorker.start();
 });
 // Trigger reload for new env config (HTTP base URL)
