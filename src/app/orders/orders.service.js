@@ -136,7 +136,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   let subtotal = 0;
   const orderItems = items.map((item) => {
     const menuItem = menuItems.find((m) => m.id === item.menuItemId);
-    
+
     let modifiersPrice = 0;
     if (item.selectedModifiers && Array.isArray(item.selectedModifiers)) {
       item.selectedModifiers.forEach((mod) => {
@@ -151,7 +151,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     const itemPrice = menuItem.price + modifiersPrice;
     const lineTotal = itemPrice * (item.quantity || 1);
     subtotal += lineTotal;
-    
+
     return {
       menuItemId: item.menuItemId,
       quantity: item.quantity || 1,
@@ -480,4 +480,42 @@ const getOrder = async (db, orderId, userId) => {
   return detailedOrder;
 };
 
-module.exports = { placeOrder, getMyOrders, getOrder };
+const payHaltedOrder = async (orderId, userId) => {
+  // 1. Find the order in main database to verify ownership & fetch tenantId
+  const mainOrder = await mainPrisma.order.findFirst({
+    where: { id: orderId, appUserId: userId },
+  });
+  if (!mainOrder) throw new ApiError(404, "Order not found");
+
+  // 2. Resolve tenant
+  const tenant = await mainPrisma.tenant.findUnique({ where: { id: mainOrder.tenantId } });
+  if (!tenant) throw new ApiError(404, "Brand not found");
+
+  // 3. Resolve tenant DB client
+  const { getTenantClient } = require("../../config/tenantManager");
+  const tenantDb = getTenantClient(tenant.dbUrl);
+
+  // 4. Update status in main registry
+  await mainPrisma.order.update({
+    where: { id: orderId },
+    data: { status: "PENDING" },
+  });
+
+  // 5. Update status in tenant DB
+  const updatedTenantOrder = await tenantDb.order.update({
+    where: { id: orderId },
+    data: { status: "PENDING" },
+    include: {
+      items: { include: { menuItem: true } },
+      branch: true,
+      table: true,
+    },
+  });
+
+  // 6. Sync to aggregated order for Super Admin / POS view
+  await syncToAggregatedOrder(tenantDb, mainOrder.tenantId, updatedTenantOrder);
+
+  return updatedTenantOrder;
+};
+
+module.exports = { placeOrder, getMyOrders, getOrder, payHaltedOrder };

@@ -51,4 +51,10 @@ const getOne = catchAsync(async (req, res) => {
   res.json({ success: true, data: order });
 });
 
-module.exports = { place, placePublic, myOrders, getOne };
+// ─── POST /orders/:orderId/pay ────────────────────────────────────────────────
+const payOrder = catchAsync(async (req, res) => {
+  const order = await ordersService.payHaltedOrder(req.params.orderId, req.user.id);
+  res.json({ success: true, data: order });
+});
+
+module.exports = { place, placePublic, myOrders, getOne, payOrder };

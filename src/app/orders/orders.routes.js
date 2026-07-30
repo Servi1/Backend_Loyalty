@@ -23,5 +23,6 @@ router.use(authenticateAppUser);
 router.post("/", requireAppTenant, ctrl.place);
 router.get("/", ctrl.myOrders);
 router.get("/:orderId", ctrl.getOne);
+router.post("/:orderId/pay", ctrl.payOrder);
 
 module.exports = router;
