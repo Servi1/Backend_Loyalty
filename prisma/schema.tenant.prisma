@@ -263,6 +263,7 @@ model Order {
   staffName        String?
   selectedSlot     String?
   selectedSlotDate String?
+  slotDetails      Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -274,6 +275,11 @@ model OrderItem {
   price             Float
   notes             String?
   selectedModifiers Json?   @default("[]")
+  
+  staffId          String?
+  staffName        String?
+  selectedSlot     String?
+  selectedSlotDate String?
  
   orderId    String
   order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)

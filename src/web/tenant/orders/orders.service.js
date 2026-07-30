@@ -43,6 +43,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         staffName: order.staffName || null,
         selectedSlot: order.selectedSlot || null,
         selectedSlotDate: order.selectedSlotDate || null,
+        slotDetails: order.slotDetails || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       },
@@ -59,6 +60,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         staffName: order.staffName || null,
         selectedSlot: order.selectedSlot || null,
         selectedSlotDate: order.selectedSlotDate || null,
+        slotDetails: order.slotDetails || null,
         updatedAt: order.updatedAt,
       }
     });
@@ -154,6 +156,10 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
       price: itemPrice,
       notes: item.notes || null,
       selectedModifiers: item.selectedModifiers || [],
+      staffId: item.staffId || null,
+      staffName: item.staffName || null,
+      selectedSlot: item.selectedSlot || null,
+      selectedSlotDate: item.selectedSlotDate || null,
     };
   });
 
@@ -185,6 +191,17 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
 
   const orderSource = source || (tableId ? "qr_table" : (qrCashierId ? "qr_cashier" : "pos"));
 
+  const slotDetails = orderItems
+    .filter(i => i.staffId && i.selectedSlot)
+    .map(i => ({
+      staffId: i.staffId,
+      staffName: i.staffName,
+      selectedSlot: i.selectedSlot,
+      selectedSlotDate: i.selectedSlotDate,
+      menuItemId: i.menuItemId,
+      quantity: i.quantity,
+    }));
+
   const order = await db.order.create({
     data: {
       orderNumber: generateOrderNumber(),
@@ -205,6 +222,7 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
       staffName: staffName || null,
       selectedSlot: selectedSlot || null,
       selectedSlotDate: selectedSlotDate || null,
+      slotDetails: slotDetails.length > 0 ? slotDetails : null,
       items: { create: orderItems },
     },
     include: { items: { include: { menuItem: true } }, branch: true },
@@ -237,6 +255,7 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
         staffName: order.staffName || null,
         selectedSlot: order.selectedSlot || null,
         selectedSlotDate: order.selectedSlotDate || null,
+        slotDetails: order.slotDetails || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       }
