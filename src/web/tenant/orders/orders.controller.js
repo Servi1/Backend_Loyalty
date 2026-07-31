@@ -73,10 +73,25 @@ const updateStatus = catchAsync(async (req, res) => {
   res.json({ success: true, data: order });
 });
 
+const updateOrder = catchAsync(async (req, res) => {
+  const order = await ordersService.updateOrder(
+    req.tenantDb,
+    req.params.id,
+    req.body,
+    req.tenantId
+  );
+  // Notify via socket
+  const io = req.app.get("io");
+  if (io) {
+    io.to(`branch:${order.branchId}`).emit("order:updated", order);
+  }
+  res.json({ success: true, data: order });
+});
+
 const getAll = catchAsync(async (req, res) => {
   const { status, branchId, startDate, endDate } = req.query;
   const orders = await ordersService.getAll(req.tenantDb, { status, branchId, startDate, endDate });
   res.json({ success: true, data: orders });
 });
 
-module.exports = { create, getByBranch, getMyOrders, updateStatus, getAll };
+module.exports = { create, getByBranch, getMyOrders, updateStatus, updateOrder, getAll };

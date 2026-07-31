@@ -21,4 +21,7 @@ router.get("/", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER",
 // Update order status (cashier accepts / completes)
 router.patch("/:id/status", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"), ctrl.updateStatus);
 
+// Edit order details (reschedule slot or reassign staff)
+router.put("/:id", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"), ctrl.updateOrder);
+
 module.exports = router;
