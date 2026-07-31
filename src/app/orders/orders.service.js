@@ -202,7 +202,6 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     if (staffExists) {
       orderStaffId = staffId;
       staffName = staffExists.name;
-      finalNotes = finalNotes ? `${finalNotes} | Assigned: ${staffExists.name}` : `Assigned: ${staffExists.name}`;
     } else {
       const mockNames = {
         chefAhmed: "Chef Ahmed",
@@ -211,7 +210,6 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       };
       const mockName = mockNames[staffId] || staffId;
       staffName = mockName;
-      finalNotes = finalNotes ? `${finalNotes} | Assigned: ${mockName}` : `Assigned: ${mockName}`;
     }
   }
 
@@ -367,7 +365,7 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20 } = {}) => {
         where: { customerId: userId },
         include: {
           items: { include: { menuItem: { select: { name: true, price: true } } } },
-          branch: { select: { id: true, name: true, address: true } },
+          branch: { select: { id: true, name: true, address: true, lat: true, lng: true } },
         },
         orderBy: { createdAt: "desc" },
         skip,
@@ -409,7 +407,7 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20 } = {}) => {
           where: { id: mainOrder.id },
           include: {
             items: { include: { menuItem: { select: { name: true, price: true } } } },
-            branch: { select: { id: true, name: true, address: true } },
+            branch: { select: { id: true, name: true, address: true, lat: true, lng: true } },
           },
         });
         if (detailedOrder) {
@@ -425,7 +423,7 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20 } = {}) => {
     enrichedOrders.push({
       ...mainOrder,
       items: [],
-      branch: { id: mainOrder.branchId, name: "Unknown Branch", address: null }
+      branch: { id: mainOrder.branchId, name: "Unknown Branch", address: null, lat: null, lng: null }
     });
   }
 
