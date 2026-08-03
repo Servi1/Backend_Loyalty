@@ -310,6 +310,111 @@ const getByCustomer = async (db, customerId) =>
     orderBy: { createdAt: "desc" },
   });
 
+const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedSlotDate, status, menuItemId }, tenantId) => {
+  const order = await db.order.findUnique({
+    where: { id },
+    include: { items: true }
+  });
+  if (!order) throw new ApiError(404, "Order not found");
+
+  const updateData = {};
+  if (status !== undefined) updateData.status = status;
+
+  // Update specific slot inside slotDetails array if it exists
+  let updatedSlotDetails = null;
+  if (order.slotDetails && Array.isArray(order.slotDetails) && order.slotDetails.length > 0) {
+    updatedSlotDetails = order.slotDetails.map(slot => {
+      // If menuItemId matches, update that item's specialist and time allocation
+      if (menuItemId && slot.menuItemId === menuItemId) {
+        return {
+          ...slot,
+          staffId: staffId !== undefined ? staffId : slot.staffId,
+          staffName: staffName !== undefined ? (staffName || null) : slot.staffName,
+          selectedSlot: selectedSlot !== undefined ? selectedSlot : slot.selectedSlot,
+          selectedSlotDate: selectedSlotDate !== undefined ? selectedSlotDate : slot.selectedSlotDate
+        };
+      }
+      // If no menuItemId specified but there is only 1 slot item in slotDetails, update it
+      if (!menuItemId && order.slotDetails.length === 1) {
+        return {
+          ...slot,
+          staffId: staffId !== undefined ? staffId : slot.staffId,
+          staffName: staffName !== undefined ? (staffName || null) : slot.staffName,
+          selectedSlot: selectedSlot !== undefined ? selectedSlot : slot.selectedSlot,
+          selectedSlotDate: selectedSlotDate !== undefined ? selectedSlotDate : slot.selectedSlotDate
+        };
+      }
+      return slot;
+    });
+
+    updateData.slotDetails = updatedSlotDetails;
+
+    // Update the matching OrderItem in the database
+    if (menuItemId) {
+      await db.orderItem.updateMany({
+        where: { orderId: id, menuItemId },
+        data: {
+          staffId: staffId !== undefined ? (staffId || null) : undefined,
+          staffName: staffName !== undefined ? (staffName || null) : undefined,
+          selectedSlot: selectedSlot !== undefined ? (selectedSlot || null) : undefined,
+          selectedSlotDate: selectedSlotDate !== undefined ? (selectedSlotDate || null) : undefined
+        }
+      });
+    } else if (order.slotDetails.length === 1) {
+      const singleItem = order.slotDetails[0];
+      await db.orderItem.updateMany({
+        where: { orderId: id, menuItemId: singleItem.menuItemId },
+        data: {
+          staffId: staffId !== undefined ? (staffId || null) : undefined,
+          staffName: staffName !== undefined ? (staffName || null) : undefined,
+          selectedSlot: selectedSlot !== undefined ? (selectedSlot || null) : undefined,
+          selectedSlotDate: selectedSlotDate !== undefined ? (selectedSlotDate || null) : undefined
+        }
+      });
+    }
+  }
+
+  // Update parent order level fields if single item slot or if no slotDetails exist
+  const shouldUpdateParentFields = !order.slotDetails || !Array.isArray(order.slotDetails) || order.slotDetails.length <= 1 || (updatedSlotDetails && updatedSlotDetails.length === 1);
+  if (shouldUpdateParentFields) {
+    if (staffId !== undefined) updateData.staffId = staffId || null;
+    if (staffName !== undefined) updateData.staffName = staffName || null;
+    if (selectedSlot !== undefined) updateData.selectedSlot = selectedSlot || null;
+    if (selectedSlotDate !== undefined) updateData.selectedSlotDate = selectedSlotDate || null;
+  }
+
+  const updated = await db.order.update({
+    where: { id },
+    data: updateData,
+    include: { items: { include: { menuItem: true } }, table: true, branch: true }
+  });
+
+  // Sync to central main database Order registry
+  try {
+    const mainOrderExists = await mainPrisma.order.findUnique({ where: { id } });
+    if (mainOrderExists) {
+      await mainPrisma.order.update({
+        where: { id },
+        data: {
+          status: updated.status,
+          staffId: updated.staffId,
+          staffName: updated.staffName,
+          selectedSlot: updated.selectedSlot,
+          selectedSlotDate: updated.selectedSlotDate,
+          slotDetails: updated.slotDetails || undefined,
+        }
+      });
+    }
+  } catch (err) {
+    console.error("[TENANT ORDER] Failed to sync order edit to main database:", err.message);
+  }
+
+  // Sync to aggregated order for Super Admin / POS view
+  await syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
+
+  return updated;
+};
+
 const updateStatus = async (db, id, status, tenantId, notes) => {
   const order = await db.order.findUnique({ where: { id } });
   if (!order) throw new ApiError(404, "Order not found");
@@ -428,4 +533,4 @@ const getAll = async (db, { status, branchId, startDate, endDate } = {}) => {
   return orders;
 };
 
-module.exports = { create, getByBranch, getByUser, getByCustomer, updateStatus, getAll };
+module.exports = { create, getByBranch, getByUser, getByCustomer, updateStatus, updateOrder, getAll };
