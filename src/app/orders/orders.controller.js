@@ -57,4 +57,16 @@ const payOrder = catchAsync(async (req, res) => {
   res.json({ success: true, data: order });
 });
 
-module.exports = { place, placePublic, myOrders, getOne, payOrder };
+// ─── POST /orders/:orderId/notify-arrived ─────────────────────────────────────
+const notifyArrived = catchAsync(async (req, res) => {
+  const io = req.app.get("io");
+  const result = await ordersService.notifyArrived(
+    req.tenantDb,
+    req.params.orderId,
+    req.user.id,
+    io
+  );
+  res.json({ success: true, ...result });
+});
+
+module.exports = { place, placePublic, myOrders, getOne, payOrder, notifyArrived };

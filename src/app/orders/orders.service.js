@@ -516,4 +516,95 @@ const payHaltedOrder = async (orderId, userId) => {
   return updatedTenantOrder;
 };
 
-module.exports = { placeOrder, getMyOrders, getOrder, payHaltedOrder };
+// ─── In-memory cooldown tracker (per orderId) ────────────────────────────────
+// Maps orderId → timestamp (ms) of last notification sent.
+const _arrivedCooldowns = new Map();
+const ARRIVED_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
+// ─── notifyArrived ────────────────────────────────────────────────────────────
+
+/**
+ * Emits a `customer:arrived` socket event to the branch room when a customer
+ * taps "I'm Here" for a DELIVER_TO_CAR order. Enforces:
+ *  - Ownership check (order belongs to calling user)
+ *  - Order type must be DELIVER_TO_CAR
+ *  - Status must be PREPARING or READY
+ *  - 5-minute cooldown per order
+ */
+const notifyArrived = async (db, orderId, userId, io) => {
+  // 1. Resolve order (tenant DB or main DB)
+  let order = null;
+  let branchId = null;
+
+  if (db) {
+    order = await db.order.findFirst({
+      where: { id: orderId, customerId: userId },
+      include: { branch: { select: { id: true, name: true } } },
+    });
+  } else {
+    // Global path — look up via main DB then tenant DB
+    const mainOrder = await mainPrisma.order.findFirst({
+      where: { id: orderId, appUserId: userId },
+    });
+    if (mainOrder) {
+      const tenant = await mainPrisma.tenant.findUnique({ where: { id: mainOrder.tenantId } });
+      if (tenant) {
+        const { getTenantClient } = require("../../config/tenantManager");
+        const tenantDb = getTenantClient(tenant.dbUrl);
+        order = await tenantDb.order.findFirst({
+          where: { id: orderId, customerId: userId },
+          include: { branch: { select: { id: true, name: true } } },
+        });
+      }
+    }
+  }
+
+  if (!order) throw new ApiError(403, "Order not found or access denied");
+
+  // 2. Validate order type
+  if (order.type !== "DELIVER_TO_CAR") {
+    throw new ApiError(400, "This notification is only available for car delivery orders");
+  }
+
+  // 3. Validate status — only allowed when PREPARING or READY
+  const allowedStatuses = ["PREPARING", "READY"];
+  if (!allowedStatuses.includes(order.status)) {
+    throw new ApiError(400, "Cannot notify staff — order is not being prepared or ready yet");
+  }
+
+  // 4. Cooldown check
+  const lastSent = _arrivedCooldowns.get(orderId);
+  if (lastSent && Date.now() - lastSent < ARRIVED_COOLDOWN_MS) {
+    const remainingMs = ARRIVED_COOLDOWN_MS - (Date.now() - lastSent);
+    const remainingMin = Math.ceil(remainingMs / 60000);
+    throw new ApiError(429, `You already notified the staff. Please wait ${remainingMin} minute(s) before notifying again.`);
+  }
+
+  // 5. Emit socket event to branch room
+  branchId = order.branchId || order.branch?.id;
+  if (io && branchId) {
+    io.to(`branch:${branchId}`).emit("customer:arrived", {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      type: order.type,
+      branchId,
+      branchName: order.branch?.name || null,
+      notifiedAt: new Date().toISOString(),
+    });
+  }
+
+  // 6. Record cooldown
+  _arrivedCooldowns.set(orderId, Date.now());
+
+  // Clean up old entries to prevent memory leak (>30 min old)
+  if (_arrivedCooldowns.size > 500) {
+    const cutoff = Date.now() - 30 * 60 * 1000;
+    for (const [key, ts] of _arrivedCooldowns.entries()) {
+      if (ts < cutoff) _arrivedCooldowns.delete(key);
+    }
+  }
+
+  return { notified: true, orderNumber: order.orderNumber };
+};
+
+module.exports = { placeOrder, getMyOrders, getOrder, payHaltedOrder, notifyArrived };

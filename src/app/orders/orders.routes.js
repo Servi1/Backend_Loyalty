@@ -24,5 +24,6 @@ router.post("/", requireAppTenant, ctrl.place);
 router.get("/", ctrl.myOrders);
 router.get("/:orderId", ctrl.getOne);
 router.post("/:orderId/pay", ctrl.payOrder);
+router.post("/:orderId/notify-arrived", ctrl.notifyArrived);
 
 module.exports = router;
