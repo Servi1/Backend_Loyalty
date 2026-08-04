@@ -35,6 +35,7 @@ const couponsRoutes = require("./src/web/tenant/coupons/coupons.routes");
 const customPaymentTypesRoutes = require("./src/web/tenant/custom-payment-types/customPaymentTypes.routes");
 const locationGroupsRoutes = require("./src/web/tenant/location-groups/locationGroups.routes");
 const customOrderTypesRoutes = require("./src/web/tenant/custom-order-types/customOrderTypes.routes");
+const notificationsRoutes = require("./src/web/tenant/notifications/notifications.routes");
 
 // ─── Mobile App Routes ────────────────────────────────
 // ─── Mobile App Routes ────────────────────────────────
@@ -177,6 +178,7 @@ tenantRouter.use("/coupons", couponsRoutes);
 tenantRouter.use("/custom-payment-types", customPaymentTypesRoutes);
 tenantRouter.use("/location-groups", locationGroupsRoutes);
 tenantRouter.use("/custom-order-types", customOrderTypesRoutes);
+tenantRouter.use("/notifications", notificationsRoutes);
 
 app.use("/api/tenant/:tenantId", tenantRouter);
 

@@ -28,6 +28,15 @@ module.exports = {
     authToken: process.env.TWILIO_AUTH_TOKEN,
     phoneNumber: process.env.TWILIO_PHONE_NUMBER,
   },
+  smtp2go: {
+    apiKey: process.env.SMTP2GO_API_KEY,
+    sender: process.env.SMTP2GO_SENDER_EMAIL || "no-reply@servi.sa",
+  },
+  metaWhatsapp: {
+    token: process.env.META_WHATSAPP_API_TOKEN,
+    phoneNumberId: process.env.META_WHATSAPP_PHONE_NUMBER_ID,
+    templateName: process.env.META_WHATSAPP_REMINDER_TEMPLATE || "appointment_reminder",
+  },
   cors: {
     origin: "*",
   },
