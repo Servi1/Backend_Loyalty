@@ -1,5 +1,6 @@
 const mainPrisma = require("../../../config/prisma");
 const ApiError = require("../../../utils/ApiError");
+const { getTenantClient } = require("../../../config/tenantManager");
 
 const defaultOrderTypes = ["Dine In", "Takeaway", "Delivery", "Deliver to Car", "Scheduled"];
 
@@ -30,12 +31,35 @@ const create = async (data) => {
   if (existing) {
     throw new ApiError(400, "Order Type name already exists");
   }
-  return mainPrisma.globalOrderType.create({
+  const created = await mainPrisma.globalOrderType.create({
     data: {
       name: data.name,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : true
     }
   });
+
+  // Propagate to all active tenants immediately
+  const tenants = await mainPrisma.tenant.findMany({ where: { isActive: true } });
+  for (const tenant of tenants) {
+    try {
+      const tenantDb = getTenantClient(tenant.dbUrl);
+      const localExists = await tenantDb.customOrderType.findFirst({
+        where: { name: { equals: created.name, mode: "insensitive" } }
+      });
+      if (!localExists) {
+        await tenantDb.customOrderType.create({
+          data: {
+            name: created.name,
+            isActive: created.isActive
+          }
+        });
+      }
+    } catch (err) {
+      console.error(`Failed to propagate new global order type ${created.name} to tenant ${tenant.name}:`, err.message);
+    }
+  }
+
+  return created;
 };
 
 const update = async (id, data) => {
@@ -53,13 +77,41 @@ const update = async (id, data) => {
     }
   }
 
-  return mainPrisma.globalOrderType.update({
+  const updated = await mainPrisma.globalOrderType.update({
     where: { id },
     data: {
       name: data.name !== undefined ? data.name : existing.name,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : existing.isActive
     }
   });
+
+  // Propagate update to all active tenants immediately
+  const tenants = await mainPrisma.tenant.findMany({ where: { isActive: true } });
+  for (const tenant of tenants) {
+    try {
+      const tenantDb = getTenantClient(tenant.dbUrl);
+      
+      // Update name if changed
+      if (data.name && data.name !== existing.name) {
+        await tenantDb.customOrderType.updateMany({
+          where: { name: existing.name },
+          data: { name: data.name }
+        });
+      }
+      
+      // Force deactivation locally if globally deactivated
+      if (data.isActive === false) {
+        await tenantDb.customOrderType.updateMany({
+          where: { name: data.name || existing.name },
+          data: { isActive: false }
+        });
+      }
+    } catch (err) {
+      console.error(`Failed to propagate update of global order type ${existing.name} to tenant ${tenant.name}:`, err.message);
+    }
+  }
+
+  return updated;
 };
 
 const remove = async (id) => {
@@ -67,6 +119,20 @@ const remove = async (id) => {
   if (!existing) {
     throw new ApiError(404, "Order Type not found");
   }
+  
+  // Propagate deletion to all active tenants immediately
+  const tenants = await mainPrisma.tenant.findMany({ where: { isActive: true } });
+  for (const tenant of tenants) {
+    try {
+      const tenantDb = getTenantClient(tenant.dbUrl);
+      await tenantDb.customOrderType.deleteMany({
+        where: { name: existing.name }
+      });
+    } catch (err) {
+      console.error(`Failed to propagate deletion of global order type ${existing.name} to tenant ${tenant.name}:`, err.message);
+    }
+  }
+
   await mainPrisma.globalOrderType.delete({ where: { id } });
   return { success: true };
 };
