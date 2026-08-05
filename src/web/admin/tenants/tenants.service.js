@@ -1174,7 +1174,8 @@ const getSuperAdminOrderDetail = async (tenantId, orderId) => {
         }
       },
       branch: true,
-      user: true
+      user: true,
+      customOrderType: true
     }
   });
 

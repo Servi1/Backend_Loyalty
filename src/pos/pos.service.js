@@ -40,7 +40,8 @@ const getOrders = async (db, branchId, status) => {
         include: { menuItem: true }
       },
       table: true,
-      user: true
+      user: true,
+      customOrderType: true
     },
     orderBy: { createdAt: "desc" }
   });
@@ -116,7 +117,8 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
       items: {
         include: { menuItem: true }
       },
-      table: true
+      table: true,
+      customOrderType: true
     }
   });
 
@@ -252,7 +254,8 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
         include: { menuItem: true }
       },
       table: true,
-      branch: true
+      branch: true,
+      customOrderType: true
     }
   });
 
