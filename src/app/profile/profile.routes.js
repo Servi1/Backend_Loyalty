@@ -10,7 +10,7 @@
 const { Router } = require("express");
 const ctrl = require("./profile.controller");
 const { authenticateAppUser } = require("../middlewares/appAuth.middleware");
-const upload = require("../../../middlewares/uploadMiddleware");
+const upload = require("../../middlewares/uploadMiddleware");
 
 const router = Router();
 
