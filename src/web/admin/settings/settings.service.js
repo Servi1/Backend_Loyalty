@@ -10,7 +10,8 @@ const defaults = {
   refund_enabled: "true",
   push_notifications: "true",
   email_marketing: "false",
-  disabledCategories: ""
+  disabledCategories: "",
+  platform_vat: "15.0"
 };
 
 const getSettings = async () => {
