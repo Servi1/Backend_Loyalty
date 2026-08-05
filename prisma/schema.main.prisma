@@ -378,3 +378,13 @@ model EarnedCoupon {
 
   @@index([appUserId])
 }
+
+// ─── Global Order Types ──────────────────────────────
+
+model GlobalOrderType {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

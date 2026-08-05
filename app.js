@@ -14,6 +14,7 @@ const adminUsersRoutes = require("./src/web/admin/users/adminUsers.routes");
 const adminRolesRoutes = require("./src/web/admin/roles/adminRoles.routes");
 const settingsRoutes = require("./src/web/admin/settings/settings.routes");
 const tenantCategoriesRoutes = require("./src/web/admin/categories/categories.routes");
+const globalOrderTypesRoutes = require("./src/web/admin/order-types/globalOrderTypes.routes");
 const branchesRoutes = require("./src/web/tenant/branches/branches.routes");
 const menusRoutes = require("./src/web/tenant/menus/menus.routes");
 const ordersRoutes = require("./src/web/tenant/orders/orders.routes");
@@ -72,6 +73,7 @@ app.use("/api/admin/users", adminUsersRoutes);
 app.use("/api/admin/roles", adminRolesRoutes);
 app.use("/api/admin/settings", settingsRoutes);
 app.use("/api/admin/categories", tenantCategoriesRoutes);
+app.use("/api/admin/global-order-types", globalOrderTypesRoutes);
 app.use("/api/auth", authRoutes); // auth handles both super admin and tenant logins
 app.use("/api/pos", authenticatePos, posRoutes);
 app.use("/api/kds", authenticateKds, kdsRoutes);
