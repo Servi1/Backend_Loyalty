@@ -29,6 +29,7 @@ const getAll = catchAsync(async (req, res) => {
       showHero: req.tenant.showHero,
       heroTitle: req.tenant.heroTitle,
       heroSubtitle: req.tenant.heroSubtitle,
+      vatPercentage: req.tenant.vatPercentage,
     }
   }));
   res.json({ success: true, data });
@@ -63,6 +64,7 @@ const getOne = catchAsync(async (req, res) => {
         showHero: req.tenant.showHero,
         heroTitle: req.tenant.heroTitle,
         heroSubtitle: req.tenant.heroSubtitle,
+        vatPercentage: req.tenant.vatPercentage,
       }
     } 
   });

@@ -97,6 +97,7 @@ model Tenant {
   currency         String?
   billingCycle     String?
   taxId            String?
+  vatPercentage    Float            @default(15.0)
   notes            String?
   subscriptionTier SubscriptionTier @default(FREE)
   plan             String?          @default("starter")
