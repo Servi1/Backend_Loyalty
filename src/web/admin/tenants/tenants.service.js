@@ -902,7 +902,7 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
   return {
     customers: customers.map((c) => {
       const firstTxWithTenant = c.wallet?.transactions?.find((t) => t.tenantId);
-      let tenantName = "Servio Platform";
+      let tenantName = "Servi Platform";
       let tenantId = null;
 
       if (firstTxWithTenant) {
@@ -1013,7 +1013,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     name: customer.name || "Walk-in Customer",
     phone: customer.phone || null,
     email: customer.email || null,
-    tenantName: tenant?.name || "Servio Platform",
+    tenantName: tenant?.name || "Servi Platform",
     points: wallet?.points || 0,
     tier: getCustomerTier(wallet),
     joinedAt: customer.createdAt,
@@ -1083,7 +1083,7 @@ const addSuperAdminCustomer = async ({ tenantId, name, phone, email, points = 0,
     name: customer.name,
     phone: customer.phone,
     email: customer.email,
-    tenantName: tenant?.name || "Servio Platform",
+    tenantName: tenant?.name || "Servi Platform",
     points: wallet.points,
     tier: getCustomerTier(wallet),
     joinedAt: customer.createdAt,
@@ -1124,7 +1124,7 @@ const getAllSystemUsers = async (filters = {}) => {
     name: admin.name || "Super Admin",
     email: admin.email,
     role: "super_admin",
-    tenantName: "Servio Platform",
+    tenantName: "Servi Platform",
     status: "active",
     lastActive: admin.createdAt,
     createdAt: admin.createdAt,
