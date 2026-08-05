@@ -11,7 +11,7 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 // Sub-directories for different upload types
-const subDirs = ["menus", "logos", "avatars", "branches"];
+const subDirs = ["menus", "logos", "avatars", "branches", "doorsteps"];
 subDirs.forEach((dir) => {
   const fullPath = path.join(uploadDir, dir);
   if (!fs.existsSync(fullPath)) {
@@ -46,5 +46,14 @@ const upload = multer({
   fileFilter,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB max
 });
+
+// Multer instance for doorstep photos, restricted to 3 MB
+const doorstepUpload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 3 * 1024 * 1024 }, // 3 MB max
+});
+
+upload.doorstepUpload = doorstepUpload;
 
 module.exports = upload;

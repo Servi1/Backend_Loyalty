@@ -6,6 +6,7 @@
  */
 
 const catchAsync = require("../../utils/catchAsync");
+const ApiError = require("../../utils/ApiError");
 const profileService = require("./profile.service");
 
 // ─── PATCH /profile ───────────────────────────────────────────────────────────
@@ -26,4 +27,20 @@ const remove = catchAsync(async (req, res) => {
   res.json({ success: true, ...result });
 });
 
-module.exports = { update, remove };
+// ─── POST /profile/address/upload-doorstep ────────────────────────────────────
+const uploadDoorstepImages = catchAsync(async (req, res) => {
+  if (!req.files || req.files.length === 0) {
+    throw new ApiError(400, "No doorstep image files provided");
+  }
+
+  const images = req.files.map((file) => ({
+    imageUrl: `/uploads/doorsteps/${file.filename}`,
+    filename: file.filename,
+    originalName: file.originalname,
+    size: file.size,
+  }));
+
+  res.status(201).json({ success: true, data: images });
+});
+
+module.exports = { update, remove, uploadDoorstepImages };

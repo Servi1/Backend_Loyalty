@@ -8,6 +8,8 @@
 const ApiError = require("../../utils/ApiError");
 const mainPrisma = require("../../config/prisma");
 const { getAppImageURL } = require("../../config");
+const fs = require("fs");
+const path = require("path");
 
 // ─── Update profile ───────────────────────────────────────────────────────────
 
@@ -24,6 +26,47 @@ const updateProfile = async (db, userId, { name, email, avatarUrl, cars, address
     if (exists) throw new ApiError(409, "That email is already in use");
   }
 
+  // Cleanup doorstep images for deleted addresses
+  if (addresses !== undefined) {
+    const oldAddresses = user.addresses || [];
+    const newAddressIds = new Set((addresses || []).map((a) => a.id));
+    const deletedAddresses = oldAddresses.filter((a) => !newAddressIds.has(a.id));
+
+    for (const addr of deletedAddresses) {
+      if (addr.doorstepImages && Array.isArray(addr.doorstepImages)) {
+        for (const imgUrl of addr.doorstepImages) {
+          const filename = path.basename(imgUrl);
+          const filePath = path.join(__dirname, "../../../uploads/doorsteps", filename);
+          if (fs.existsSync(filePath)) {
+            try {
+              fs.unlinkSync(filePath);
+              console.log("[Address Delete] Cleaned up doorstep image:", filePath);
+            } catch (err) {
+              console.error("[Address Delete] Failed to delete doorstep image:", filePath, err.message);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Normalize doorstep image paths to relative paths before saving to database
+  let cleanAddresses = addresses;
+  if (addresses !== undefined) {
+    cleanAddresses = addresses.map((addr) => {
+      if (addr.doorstepImages && Array.isArray(addr.doorstepImages)) {
+        return {
+          ...addr,
+          doorstepImages: addr.doorstepImages.map((img) => {
+            const match = img.match(/\/uploads\/doorsteps\/[^/]+$/);
+            return match ? match[0] : img;
+          }),
+        };
+      }
+      return addr;
+    });
+  }
+
   const updated = await mainPrisma.appUser.update({
     where: { id: userId },
     data: {
@@ -31,7 +74,7 @@ const updateProfile = async (db, userId, { name, email, avatarUrl, cars, address
       ...(email !== undefined && { email }),
       ...(avatarUrl !== undefined && { avatarUrl }),
       ...(cars !== undefined && { cars }),
-      ...(addresses !== undefined && { addresses }),
+      ...(addresses !== undefined && { addresses: cleanAddresses }),
       ...(paymentMethods !== undefined && { paymentMethods }),
       ...(favoriteBrands !== undefined && { favoriteBrands }),
       ...(lastName !== undefined && { lastName }),
@@ -76,6 +119,24 @@ const deleteAccount = async (db, userId) => {
     include: { wallet: true }
   });
   if (!user) throw new ApiError(404, "User not found");
+
+  // Clean up doorstep images from filesystem
+  const oldAddresses = user.addresses || [];
+  for (const addr of oldAddresses) {
+    if (addr.doorstepImages && Array.isArray(addr.doorstepImages)) {
+      for (const imgUrl of addr.doorstepImages) {
+        const filename = path.basename(imgUrl);
+        const filePath = path.join(__dirname, "../../../uploads/doorsteps", filename);
+        if (fs.existsSync(filePath)) {
+          try {
+            fs.unlinkSync(filePath);
+          } catch (err) {
+            console.error("[Account Delete] Failed to delete doorstep image:", filePath, err.message);
+          }
+        }
+      }
+    }
+  }
 
   // Soft-delete: clear all personal details but keep phone so they can be blocked on future logins
   await mainPrisma.appUser.update({
@@ -165,7 +226,12 @@ const _formatProfile = async (user) => {
     avatarUrl: getAppImageURL(user.avatarUrl),
     role: "CUSTOMER",
     cars: user.cars || [],
-    addresses: user.addresses || [],
+    addresses: (user.addresses || []).map((addr) => ({
+      ...addr,
+      doorstepImages: addr.doorstepImages && Array.isArray(addr.doorstepImages)
+        ? addr.doorstepImages.map((img) => getAppImageURL(img))
+        : [],
+    })),
     paymentMethods: user.paymentMethods || [],
     favoriteBrands: user.favoriteBrands || [],
     favoriteBrandsDetails,
