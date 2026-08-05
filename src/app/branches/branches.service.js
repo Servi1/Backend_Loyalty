@@ -45,6 +45,10 @@ const getBranch = async (db, branchId) => {
         where: { isActive: true },
         select: { id: true, label: true, seats: true, zone: true, qrCode: true, isActive: true, expiresAt: true },
       },
+      customOrderTypes: {
+        where: { isActive: true },
+        select: { id: true, name: true, standardType: true },
+      },
     },
   });
   if (!branch) throw new ApiError(404, "Branch not found");

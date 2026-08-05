@@ -81,7 +81,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
 // ─── placeOrder ───────────────────────────────────────────────────────────────
 
 const placeOrder = async (db, userId, body, tenantId, tenant) => {
-  const { branchId, tableId, qrCashierId, cashierId, type = "DINE_IN", items, notes, total, paymentMethod, source, staffId, earnRate, selectedSlot, selectedSlotDate } = body;
+  const { branchId, tableId, qrCashierId, cashierId, type = "DINE_IN", customOrderTypeId, items, notes, total, paymentMethod, source, staffId, earnRate, selectedSlot, selectedSlotDate } = body;
 
   if (!branchId) throw new ApiError(400, "branchId is required");
   if (!items || !Array.isArray(items) || items.length === 0) {
@@ -270,6 +270,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       source: orderSource,
       paymentMethod: paymentMethod || "cash",
       pointsRedeemed: pointsRedeemed,
+      ...(customOrderTypeId ? { customOrderType: { connect: { id: customOrderTypeId } } } : {}),
       items: { create: orderItems },
     },
     include: {
