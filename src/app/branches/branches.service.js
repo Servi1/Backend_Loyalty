@@ -178,7 +178,7 @@ const getBranchStaff = async (db, branchId) => {
 };
 
 const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
-  const duration = parseInt(durationStr, 10) || 60;
+  const duration = parseInt(durationStr, 10) || 15;
 
   // Clean local day-of-week parsing (avoid UTC shift bugs)
   let dayOfWeek;
