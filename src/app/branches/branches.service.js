@@ -193,40 +193,18 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
     dayOfWeek = new Date().getDay();
   }
 
-  // Look for custom staffSchedule entry for this day of week
+  // Strictly look for staffSchedule entry for this staff member on this day of week
   const schedule = await db.staffSchedule.findFirst({
     where: { userId: staffId, dayOfWeek }
   });
 
-  let startTimeStr = schedule?.startTime;
-  let endTimeStr = schedule?.endTime;
-
-  // If no custom shift schedule exists for this day of week, fallback to branch hours or 09:00 - 17:00
-  if (!startTimeStr || !endTimeStr) {
-    const user = await db.user.findUnique({
-      where: { id: staffId },
-      select: { branch: { select: { hours: true } } }
-    });
-    let startH = 9;
-    let endH = 17;
-    if (user?.branch?.hours) {
-      const match = user.branch.hours.match(/(\d+)\s*(am|pm)?\s*-\s*(\d+)\s*(am|pm)?/i);
-      if (match) {
-        let sh = parseInt(match[1]);
-        let eh = parseInt(match[3]);
-        const samSuffix = (match[2] || "").toLowerCase();
-        const eamSuffix = (match[4] || "").toLowerCase();
-        if (samSuffix === "pm" && sh !== 12) sh += 12;
-        if (samSuffix === "am" && sh === 12) sh = 0;
-        if (eamSuffix === "pm" && eh !== 12) eh += 12;
-        if (eamSuffix === "am" && eh === 12) eh = 0;
-        startH = sh;
-        endH = eh;
-      }
-    }
-    startTimeStr = `${String(startH).padStart(2, "0")}:00`;
-    endTimeStr = `${String(endH).padStart(2, "0")}:00`;
+  // If no schedule exists for this day of week, return 0 slots
+  if (!schedule) {
+    return [];
   }
+
+  const startTimeStr = schedule.startTime;
+  const endTimeStr = schedule.endTime;
 
   // Fetch booked orders for this staff member and date
   const targetDateStr = dateStr || new Date().toISOString().split("T")[0];
