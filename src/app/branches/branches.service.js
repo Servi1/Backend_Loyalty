@@ -178,28 +178,64 @@ const getBranchStaff = async (db, branchId) => {
 };
 
 const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
-  const duration = parseInt(durationStr, 10) || 30;
+  const duration = parseInt(durationStr, 10) || 60;
 
-  const targetDate = dateStr ? new Date(dateStr) : new Date();
-  const dayOfWeek = targetDate.getDay();
+  // Clean local day-of-week parsing (avoid UTC shift bugs)
+  let dayOfWeek;
+  if (dateStr) {
+    const parts = dateStr.split("-").map(Number);
+    if (parts.length === 3) {
+      dayOfWeek = new Date(parts[0], parts[1] - 1, parts[2]).getDay();
+    } else {
+      dayOfWeek = new Date(dateStr).getDay();
+    }
+  } else {
+    dayOfWeek = new Date().getDay();
+  }
 
+  // Look for custom staffSchedule entry for this day of week
   const schedule = await db.staffSchedule.findFirst({
     where: { userId: staffId, dayOfWeek }
   });
 
-  if (!schedule) {
-    return [];
+  let startTimeStr = schedule?.startTime;
+  let endTimeStr = schedule?.endTime;
+
+  // If no custom shift schedule exists for this day of week, fallback to branch hours or 09:00 - 17:00
+  if (!startTimeStr || !endTimeStr) {
+    const user = await db.user.findUnique({
+      where: { id: staffId },
+      select: { branch: { select: { hours: true } } }
+    });
+    let startH = 9;
+    let endH = 17;
+    if (user?.branch?.hours) {
+      const match = user.branch.hours.match(/(\d+)\s*(am|pm)?\s*-\s*(\d+)\s*(am|pm)?/i);
+      if (match) {
+        let sh = parseInt(match[1]);
+        let eh = parseInt(match[3]);
+        const samSuffix = (match[2] || "").toLowerCase();
+        const eamSuffix = (match[4] || "").toLowerCase();
+        if (samSuffix === "pm" && sh !== 12) sh += 12;
+        if (samSuffix === "am" && sh === 12) sh = 0;
+        if (eamSuffix === "pm" && eh !== 12) eh += 12;
+        if (eamSuffix === "am" && eh === 12) eh = 0;
+        startH = sh;
+        endH = eh;
+      }
+    }
+    startTimeStr = `${String(startH).padStart(2, "0")}:00`;
+    endTimeStr = `${String(endH).padStart(2, "0")}:00`;
   }
 
-  // Fetch scheduled order items for this date and staff
-  const scheduledOrderItems = await db.orderItem.findMany({
+  // Fetch booked orders for this staff member and date
+  const targetDateStr = dateStr || new Date().toISOString().split("T")[0];
+  const scheduledOrders = await db.order.findMany({
     where: {
       staffId: staffId,
-      selectedSlotDate: dateStr,
-      order: {
-        status: {
-          notIn: ["CANCELLED", "COMPLETED"]
-        }
+      selectedSlotDate: targetDateStr,
+      status: {
+        notIn: ["CANCELLED", "COMPLETED"]
       }
     },
     select: {
@@ -207,20 +243,20 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
     }
   });
 
-  const bookedSlots = new Set(scheduledOrderItems.map(o => o.selectedSlot));
+  const bookedSlots = new Set(scheduledOrders.map(o => o.selectedSlot).filter(Boolean));
 
   const parseTime = (t) => {
-    const [h, m] = t.split(':').map(Number);
+    const [h, m] = t.split(":").map(Number);
     return h * 60 + m;
   };
   const formatTime = (min) => {
     const h = Math.floor(min / 60);
     const m = min % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   };
 
-  const start = parseTime(schedule.startTime);
-  const end = parseTime(schedule.endTime);
+  const start = parseTime(startTimeStr);
+  const end = parseTime(endTimeStr);
   const slots = [];
 
   let curr = start;
