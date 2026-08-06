@@ -55,6 +55,74 @@ const getBranch = async (db, branchId) => {
   return branch;
 };
 
+// ─── getBranchScheduleSlots ────────────────────────────────────────────────────
+
+const getBranchScheduleSlots = async (db, branchId, dateStr, durationMin = 60) => {
+  const branch = await db.branch.findUnique({
+    where: { id: branchId },
+    select: { hours: true }
+  });
+
+  // Try to parse branch hours string e.g. "9am - 9pm", "10am - 11pm"
+  let startHour = 9;
+  let endHour = 21;
+  if (branch?.hours) {
+    const match = branch.hours.match(/(\d+)\s*(am|pm)?\s*-\s*(\d+)\s*(am|pm)?/i);
+    if (match) {
+      let sh = parseInt(match[1]);
+      let eh = parseInt(match[3]);
+      const samSuffix = (match[2] || "").toLowerCase();
+      const eamSuffix = (match[4] || "").toLowerCase();
+      if (samSuffix === "pm" && sh !== 12) sh += 12;
+      if (samSuffix === "am" && sh === 12) sh = 0;
+      if (eamSuffix === "pm" && eh !== 12) eh += 12;
+      if (eamSuffix === "am" && eh === 12) eh = 0;
+      startHour = sh;
+      endHour = eh;
+    }
+  }
+
+  // Generate time slot strings every durationMin minutes
+  const slots = [];
+  const totalMinutes = (endHour - startHour) * 60;
+  for (let offset = 0; offset < totalMinutes; offset += durationMin) {
+    const h = startHour + Math.floor(offset / 60);
+    const m = offset % 60;
+    slots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+  }
+
+  // Count existing PENDING/IN_PROGRESS orders booked at each slot on this date
+  const targetDate = dateStr || new Date().toISOString().split("T")[0];
+  const existingOrders = await db.order.findMany({
+    where: {
+      branchId,
+      selectedSlotDate: targetDate,
+      selectedSlot: { not: null },
+      status: { notIn: ["CANCELLED", "COMPLETED"] }
+    },
+    select: { selectedSlot: true }
+  });
+
+  const bookedCounts = {};
+  for (const o of existingOrders) {
+    if (o.selectedSlot) {
+      bookedCounts[o.selectedSlot] = (bookedCounts[o.selectedSlot] || 0) + 1;
+    }
+  }
+
+  const MAX_PER_SLOT = 3; // configurable capacity per time slot
+
+  return {
+    date: targetDate,
+    slotDuration: durationMin,
+    slots: slots.map(time => ({
+      time,
+      available: (bookedCounts[time] || 0) < MAX_PER_SLOT,
+      bookedCount: bookedCounts[time] || 0
+    }))
+  };
+};
+
 const getBranchStaff = async (db, branchId) => {
   const mockStaffs = [
     {
@@ -194,4 +262,4 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
   return slots;
 };
 
-module.exports = { getBranches, getBranch, getBranchStaff, getStaffSlots };
+module.exports = { getBranches, getBranch, getBranchStaff, getStaffSlots, getBranchScheduleSlots };

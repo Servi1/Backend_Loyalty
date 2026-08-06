@@ -81,5 +81,16 @@ const getStaffSlots = catchAsync(async (req, res) => {
   res.json({ success: true, data: slots });
 });
 
-module.exports = { getAll, getOne, getStaff, getStaffSlots };
+const getScheduleSlots = catchAsync(async (req, res) => {
+  const { date, duration } = req.query;
+  const data = await branchesService.getBranchScheduleSlots(
+    req.tenantDb,
+    req.params.branchId,
+    date,
+    parseInt(duration) || 60
+  );
+  res.json({ success: true, data });
+});
+
+module.exports = { getAll, getOne, getStaff, getStaffSlots, getScheduleSlots };
 
