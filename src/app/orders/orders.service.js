@@ -81,7 +81,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
 // ─── placeOrder ───────────────────────────────────────────────────────────────
 
 const placeOrder = async (db, userId, body, tenantId, tenant) => {
-  const { branchId, tableId, qrCashierId, cashierId, type = "DINE_IN", customOrderTypeId, items, notes, total, paymentMethod, source, staffId, earnRate, selectedSlot, selectedSlotDate } = body;
+  const { branchId, tableId, qrCashierId, cashierId, type = "DINE_IN", customOrderTypeId, items, notes, total, paymentMethod, source, staffId, earnRate, selectedSlot, selectedSlotDate, customerName, customerPhone } = body;
 
   if (!branchId) throw new ApiError(400, "branchId is required");
   if (!items || !Array.isArray(items) || items.length === 0) {
@@ -172,7 +172,10 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   }
 
   const orderNumber = generateOrderNumber();
-  let finalNotes = notes || null;
+  let finalNotes = notes || "";
+  if (customerName) {
+    finalNotes = finalNotes ? `Customer: ${customerName} | ${finalNotes}` : `Customer: ${customerName}`;
+  }
   let pointsRedeemed = null;
 
   if (paymentMethod === "points") {
@@ -254,6 +257,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     data: {
       orderNumber,
       customerId: userId,
+      customerPhone: customerPhone || null,
       branchId,
       tableId: tableId || null,
       qrCashierId: finalQrCashierId,
@@ -264,13 +268,13 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       selectedSlotDate: selectedSlotDate || null,
       slotDetails: slotDetails.length > 0 ? slotDetails : null,
       type,
-      notes: finalNotes,
+      notes: finalNotes || null,
       total: subtotal,
       feeRate,
       source: orderSource,
       paymentMethod: paymentMethod || "cash",
       pointsRedeemed: pointsRedeemed,
-      ...(customOrderTypeId ? { customOrderType: { connect: { id: customOrderTypeId } } } : {}),
+      customOrderTypeId: customOrderTypeId || null,
       items: { create: orderItems },
     },
     include: {
