@@ -72,7 +72,8 @@ const getOne = catchAsync(async (req, res) => {
 
 const getStaff = catchAsync(async (req, res) => {
   const staff = await branchesService.getBranchStaff(req.tenantDb, req.params.branchId);
-  res.json({ success: true, data: staff });
+  const data = staff.map(s => ({ ...s, avatarUrl: getAppImageURL(s.avatarUrl) }));
+  res.json({ success: true, data });
 });
 
 const getStaffSlots = catchAsync(async (req, res) => {

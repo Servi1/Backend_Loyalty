@@ -135,21 +135,12 @@ const getBranchStaff = async (db, branchId) => {
       hasSchedule: true
     },
     {
-      id: "chefSarah",
-      name: "Chef Sarah",
-      role: "WAITER",
-      customRole: "Sous Chef",
-      avatarUrl: "https://images.unsplash.com/photo-1581299894007-aaa50297cf16?w=120&fit=crop",
-      rating: 4.9,
-      hasSchedule: false
-    },
-    {
       id: "chefJohn",
       name: "Chef John",
       role: "WAITER",
       customRole: "Pastry Chef",
       avatarUrl: "https://images.unsplash.com/photo-1583394838336-acd977736f90?w=120&fit=crop",
-      rating: null,
+      rating: 4.7,
       hasSchedule: true
     }
   ];
@@ -172,35 +163,18 @@ const getBranchStaff = async (db, branchId) => {
     return mockStaffs;
   }
 
-  return dbStaff.map((staff, index) => {
-    let rating = 4.5;
-    let hasSchedule = false;
-
-    if (staff.name) {
-      if (staff.name.includes("Ahmed")) {
-        rating = 4.8;
-        hasSchedule = true;
-      } else if (staff.name.includes("Sarah")) {
-        rating = 4.9;
-        hasSchedule = false;
-      } else if (staff.name.includes("John")) {
-        rating = null;
-        hasSchedule = true;
-      } else {
-        rating = index % 2 === 0 ? 4.7 : null;
-        hasSchedule = index % 2 === 0;
-      }
-    } else {
-      rating = index % 2 === 0 ? 4.7 : null;
-      hasSchedule = index % 2 === 0;
-    }
-
-    return {
-      ...staff,
-      rating,
-      hasSchedule
-    };
+  // Check which staff have actual schedule entries in the staffSchedule table
+  const scheduleEntries = await db.staffSchedule.findMany({
+    where: { userId: { in: dbStaff.map(s => s.id) } },
+    select: { userId: true }
   });
+  const scheduledStaffIds = new Set(scheduleEntries.map(e => e.userId));
+
+  return dbStaff.map(staff => ({
+    ...staff,
+    hasSchedule: scheduledStaffIds.has(staff.id),
+    rating: 4.5 // Default; can be extended to a real ratings model later
+  }));
 };
 
 const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
