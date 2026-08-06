@@ -178,10 +178,37 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   }
   let pointsRedeemed = null;
 
+  // Lookup or create customer account by phone number in central AppUser table
+  let finalCustomerId = userId || null;
+  if (customerPhone) {
+    const cleanedPhone = customerPhone.trim();
+    try {
+      let appUser = await mainPrisma.appUser.findUnique({
+        where: { phone: cleanedPhone }
+      });
+      if (!appUser) {
+        appUser = await mainPrisma.appUser.create({
+          data: {
+            phone: cleanedPhone,
+            name: customerName ? customerName.trim() : "Guest Customer"
+          }
+        });
+      } else if (customerName && (!appUser.name || appUser.name === "Guest Customer")) {
+        await mainPrisma.appUser.update({
+          where: { id: appUser.id },
+          data: { name: customerName.trim() }
+        });
+      }
+      finalCustomerId = appUser.id;
+    } catch (err) {
+      console.error("[PUBLIC ORDER] Failed to lookup/create appUser by phone:", err.message);
+    }
+  }
+
   if (paymentMethod === "points") {
     const redeemRate = Number(tenant?.loyaltyRedeemRate || 100.0);
     const pointsCost = Math.round(subtotal * redeemRate);
-    const wallet = await loyaltyService.getWallet(db, userId);
+    const wallet = await loyaltyService.getWallet(db, finalCustomerId || userId);
     if (!wallet || wallet.points < pointsCost) {
       throw new ApiError(400, "Insufficient points to complete this order");
     }
@@ -189,9 +216,9 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     // Redeem points — link transaction to this order so the wallet history shows the order number
     await loyaltyService.redeemPoints(
       db,
-      userId,
+      finalCustomerId || userId,
       pointsCost,
-      `Points redeemed for Order #${orderNumber}`,
+      `Redeemed ${pointsCost} pts for order ${orderNumber}`,
       tenantId,
       { orderId: null, orderNumber } // orderId filled after order creation below
     );
@@ -256,7 +283,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   const order = await db.order.create({
     data: {
       orderNumber,
-      customerId: userId,
+      customerId: finalCustomerId,
       customerPhone: customerPhone || null,
       branchId,
       tableId: tableId || null,
