@@ -47,7 +47,7 @@ const getBranch = async (db, branchId) => {
       },
       customOrderTypes: {
         where: { isActive: true },
-        select: { id: true, name: true },
+        select: { id: true, name: true, description: true },
       },
     },
   });
