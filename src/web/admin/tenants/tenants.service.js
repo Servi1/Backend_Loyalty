@@ -694,6 +694,52 @@ const getInvoices = async (filters = {}) => {
         }
       }
 
+      // C. Service Transaction Fees breakdown (calculates total fees based on transaction rates set in tenant configuration)
+      let periodOrders = [];
+      try {
+        periodOrders = await mainPrisma.aggregatedOrder.findMany({
+          where: {
+            tenantId: tenant.id,
+            createdAt: { gte: monthStart, lte: currentMonthEnd },
+            status: { not: "CANCELLED" }
+          }
+        });
+      } catch (err) {
+        console.error(`Failed to fetch orders for fee calculation for tenant ${tenant.slug}:`, err.message);
+      }
+
+      const feeConfigs = [
+        { key: "feeAppServi", label: "APP servi", sourceMatch: (o) => o.source === "app" },
+        { key: "feeAppBrand", label: "APP brand", sourceMatch: (o) => o.source === "app_brand" || o.type === "DELIVERY" },
+        { key: "feePos", label: "POS Integration", sourceMatch: (o) => o.source === "pos" },
+        { key: "feeQrTable", label: "QR Table Dining", sourceMatch: (o) => o.source === "qr_table" },
+        { key: "feeQrCashier", label: "QR Cashier", sourceMatch: (o) => o.source === "qr_cashier" },
+        { key: "feeKds", label: "KDS Screen", sourceMatch: (o) => o.source === "kds" },
+        { key: "feeCds", label: "CDS Screen", sourceMatch: (o) => o.source === "cds" },
+        { key: "feeBranch", label: "Physical Branches", sourceMatch: (o) => false }
+      ];
+
+      const transactionFeesList = [];
+      let totalTransactionFees = 0;
+
+      for (const fc of feeConfigs) {
+        const rate = tenant[fc.key] !== undefined && tenant[fc.key] !== null ? Number(tenant[fc.key]) : 0.0;
+        const matchingOrders = periodOrders.filter(fc.sourceMatch);
+        const salesVolume = matchingOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+        const feeAmount = salesVolume * (rate / 100);
+
+        if (rate > 0 || salesVolume > 0) {
+          totalTransactionFees += feeAmount;
+          transactionFeesList.push({
+            name: fc.label,
+            feeRate: rate,
+            ordersCount: matchingOrders.length,
+            salesVolume: parseFloat(salesVolume.toFixed(2)),
+            feeAmount: parseFloat(feeAmount.toFixed(2))
+          });
+        }
+      }
+
       // Only generate invoice if there are active features/services
       const activeFeatures = [];
       if (tenant.subAppServi) activeFeatures.push("APP servi");
@@ -724,7 +770,9 @@ const getInvoices = async (filters = {}) => {
           createdAt: new Date(currentYear, currentMonth, 1),
           breakdown: {
             globalServices,
-            branches: branchBreakdowns
+            branches: branchBreakdowns,
+            transactionFees: transactionFeesList,
+            totalTransactionFees: parseFloat(totalTransactionFees.toFixed(2))
           }
         });
       }
