@@ -2,14 +2,34 @@ const mainPrisma = require("../../../config/prisma");
 const ApiError = require("../../../utils/ApiError");
 const { getTenantClient } = require("../../../config/tenantManager");
 
-const defaultOrderTypes = ["Dine In", "Takeaway", "Delivery", "Deliver to Car", "Scheduled"];
+const defaultOrderTypes = [
+  { name: "Dine In", description: "Enjoy your meal served directly at your table inside our restaurant." },
+  { name: "Takeaway", description: "Pick up your order directly from the counter when ready." },
+  { name: "Delivery", description: "Your order is cooked fresh and delivered to your doorstep." },
+  { name: "Deliver to Car", description: "Curbside service — we bring your food right to your parked vehicle." },
+  { name: "Scheduled", description: "Book an appointment for a specific date and time slot with our specialists." },
+  { name: "Home Service", description: "Our specialist visits your home or office at your scheduled appointment time." }
+];
 
 const seedDefaultOrderTypesIfEmpty = async () => {
   const count = await mainPrisma.globalOrderType.count();
   if (count === 0) {
     console.log("Seeding default global order types...");
-    for (const name of defaultOrderTypes) {
-      await mainPrisma.globalOrderType.create({ data: { name, isActive: true } });
+    for (const item of defaultOrderTypes) {
+      await mainPrisma.globalOrderType.create({ data: { name: item.name, description: item.description, isActive: true } });
+    }
+  } else {
+    // Backfill descriptions for existing default order types if null
+    for (const item of defaultOrderTypes) {
+      const existing = await mainPrisma.globalOrderType.findFirst({
+        where: { name: { equals: item.name, mode: "insensitive" } }
+      });
+      if (existing && !existing.description) {
+        await mainPrisma.globalOrderType.update({
+          where: { id: existing.id },
+          data: { description: item.description }
+        });
+      }
     }
   }
 };
@@ -34,6 +54,7 @@ const create = async (data) => {
   const created = await mainPrisma.globalOrderType.create({
     data: {
       name: data.name,
+      description: data.description || null,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : true
     }
   });
@@ -50,8 +71,14 @@ const create = async (data) => {
         await tenantDb.customOrderType.create({
           data: {
             name: created.name,
+            description: created.description,
             isActive: created.isActive
           }
+        });
+      } else {
+        await tenantDb.customOrderType.update({
+          where: { id: localExists.id },
+          data: { description: created.description }
         });
       }
     } catch (err) {
@@ -81,6 +108,7 @@ const update = async (id, data) => {
     where: { id },
     data: {
       name: data.name !== undefined ? data.name : existing.name,
+      description: data.description !== undefined ? data.description : existing.description,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : existing.isActive
     }
   });
@@ -90,22 +118,14 @@ const update = async (id, data) => {
   for (const tenant of tenants) {
     try {
       const tenantDb = getTenantClient(tenant.dbUrl);
-      
-      // Update name if changed
-      if (data.name && data.name !== existing.name) {
-        await tenantDb.customOrderType.updateMany({
-          where: { name: existing.name },
-          data: { name: data.name }
-        });
-      }
-      
-      // Force deactivation locally if globally deactivated
-      if (data.isActive === false) {
-        await tenantDb.customOrderType.updateMany({
-          where: { name: data.name || existing.name },
-          data: { isActive: false }
-        });
-      }
+      await tenantDb.customOrderType.updateMany({
+        where: { name: existing.name },
+        data: {
+          name: updated.name,
+          description: updated.description,
+          ...(data.isActive === false && { isActive: false })
+        }
+      });
     } catch (err) {
       console.error(`Failed to propagate update of global order type ${existing.name} to tenant ${tenant.name}:`, err.message);
     }
