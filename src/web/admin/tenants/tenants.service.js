@@ -728,7 +728,7 @@ const getInvoices = async (filters = {}) => {
         const salesVolume = matchingOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
         const feeAmount = salesVolume * (rate / 100);
 
-        if (rate > 0 || salesVolume > 0) {
+        if (rate > 0 || matchingOrders.length > 0 || fc.key === "feeAppServi" || fc.key === "feeAppBrand" || fc.key === "feePos") {
           totalTransactionFees += feeAmount;
           transactionFeesList.push({
             name: fc.label,
@@ -760,12 +760,14 @@ const getInvoices = async (filters = {}) => {
       if (filters.endDate && invoiceDate > new Date(filters.endDate)) match = false;
 
       if (match) {
+        const totalBilledAmount = invoiceAmount + totalTransactionFees;
         invoices.push({
           id: `INV-${tenant.slug.toUpperCase()}-${currentYear}${String(currentMonth + 1).padStart(2, "0")}`,
           tenantName: tenant.name,
           plan: planName,
           period: `${startPeriodStr} - ${endPeriodStr}`,
-          amount: parseFloat(invoiceAmount.toFixed(2)),
+          amount: parseFloat(totalBilledAmount.toFixed(2)),
+          subscriptionAmount: parseFloat(invoiceAmount.toFixed(2)),
           status: tenant.isActive ? "paid" : "overdue",
           createdAt: new Date(currentYear, currentMonth, 1),
           breakdown: {
