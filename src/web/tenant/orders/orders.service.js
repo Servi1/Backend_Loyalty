@@ -77,7 +77,7 @@ const generateOrderNumber = () => {
   return `SRV-${hex}`;
 };
 
-const create = async (db, { userId, customerId, customerPhone, status, branchId, tableId, qrCashierId, type, items, notes, total, posUnit, source, staffId, staffName, selectedSlot, selectedSlotDate }, tenantId) => {
+const create = async (db, { userId, customerId, customerPhone, status, branchId, tableId, qrCashierId, type, items, notes, total, posUnit, source, staffId, staffName, selectedSlot, selectedSlotDate, customOrderTypeId }, tenantId) => {
   let finalCustomerId = customerId;
   if (customerPhone) {
     const cleanedPhone = customerPhone.trim();
@@ -223,9 +223,10 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
       selectedSlot: selectedSlot || null,
       selectedSlotDate: selectedSlotDate || null,
       slotDetails: slotDetails.length > 0 ? slotDetails : null,
+      customOrderTypeId: customOrderTypeId || null,
       items: { create: orderItems },
     },
-    include: { items: { include: { menuItem: true } }, branch: true },
+    include: { items: { include: { menuItem: true } }, branch: true, customOrderType: true },
   });
 
   if (userId) {
@@ -280,7 +281,7 @@ const getByBranch = async (db, branchId, status, startDate, endDate) => {
   }
   const orders = await db.order.findMany({
     where,
-    include: { items: { include: { menuItem: true } }, table: true },
+    include: { items: { include: { menuItem: true } }, table: true, customOrderType: true },
     orderBy: { createdAt: "desc" },
   });
 
@@ -299,14 +300,14 @@ const getByBranch = async (db, branchId, status, startDate, endDate) => {
 const getByUser = async (db, userId) =>
   db.order.findMany({
     where: { customerId: userId },
-    include: { items: { include: { menuItem: true } }, branch: true },
+    include: { items: { include: { menuItem: true } }, branch: true, customOrderType: true },
     orderBy: { createdAt: "desc" },
   });
 
 const getByCustomer = async (db, customerId) =>
   db.order.findMany({
     where: { customerId },
-    include: { items: { include: { menuItem: true } }, branch: true },
+    include: { items: { include: { menuItem: true } }, branch: true, customOrderType: true },
     orderBy: { createdAt: "desc" },
   });
 
@@ -386,7 +387,7 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
   const updated = await db.order.update({
     where: { id },
     data: updateData,
-    include: { items: { include: { menuItem: true } }, table: true, branch: true }
+    include: { items: { include: { menuItem: true } }, table: true, branch: true, customOrderType: true }
   });
 
   // Sync to central main database Order registry
@@ -427,7 +428,7 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
   const updated = await db.order.update({
     where: { id },
     data: updateData,
-    include: { items: { include: { menuItem: true } }, table: true, branch: true }
+    include: { items: { include: { menuItem: true } }, table: true, branch: true, customOrderType: true }
   });
 
   // Sync status update to main database
@@ -517,7 +518,7 @@ const getAll = async (db, { status, branchId, startDate, endDate } = {}) => {
   }
   const orders = await db.order.findMany({
     where,
-    include: { items: { include: { menuItem: true } }, table: true, branch: true },
+    include: { items: { include: { menuItem: true } }, table: true, branch: true, customOrderType: true },
     orderBy: { createdAt: "desc" },
   });
 

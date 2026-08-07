@@ -694,6 +694,52 @@ const getInvoices = async (filters = {}) => {
         }
       }
 
+      // C. Service Transaction Fees breakdown (calculates total fees based on transaction rates set in tenant configuration)
+      let periodOrders = [];
+      try {
+        periodOrders = await mainPrisma.aggregatedOrder.findMany({
+          where: {
+            tenantId: tenant.id,
+            createdAt: { gte: monthStart, lte: currentMonthEnd },
+            status: { not: "CANCELLED" }
+          }
+        });
+      } catch (err) {
+        console.error(`Failed to fetch orders for fee calculation for tenant ${tenant.slug}:`, err.message);
+      }
+
+      const feeConfigs = [
+        { key: "feeAppServi", label: "APP servi", sourceMatch: (o) => o.source === "app" },
+        { key: "feeAppBrand", label: "APP brand", sourceMatch: (o) => o.source === "app_brand" || o.type === "DELIVERY" },
+        { key: "feePos", label: "POS Integration", sourceMatch: (o) => o.source === "pos" },
+        { key: "feeQrTable", label: "QR Table Dining", sourceMatch: (o) => o.source === "qr_table" },
+        { key: "feeQrCashier", label: "QR Cashier", sourceMatch: (o) => o.source === "qr_cashier" },
+        { key: "feeKds", label: "KDS Screen", sourceMatch: (o) => o.source === "kds" },
+        { key: "feeCds", label: "CDS Screen", sourceMatch: (o) => o.source === "cds" },
+        { key: "feeBranch", label: "Physical Branches", sourceMatch: (o) => false }
+      ];
+
+      const transactionFeesList = [];
+      let totalTransactionFees = 0;
+
+      for (const fc of feeConfigs) {
+        const rate = tenant[fc.key] !== undefined && tenant[fc.key] !== null ? Number(tenant[fc.key]) : 0.0;
+        const matchingOrders = periodOrders.filter(fc.sourceMatch);
+        const salesVolume = matchingOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+        const feeAmount = salesVolume * (rate / 100);
+
+        if (rate > 0 || matchingOrders.length > 0 || fc.key === "feeAppServi" || fc.key === "feeAppBrand" || fc.key === "feePos") {
+          totalTransactionFees += feeAmount;
+          transactionFeesList.push({
+            name: fc.label,
+            feeRate: rate,
+            ordersCount: matchingOrders.length,
+            salesVolume: parseFloat(salesVolume.toFixed(2)),
+            feeAmount: parseFloat(feeAmount.toFixed(2))
+          });
+        }
+      }
+
       // Only generate invoice if there are active features/services
       const activeFeatures = [];
       if (tenant.subAppServi) activeFeatures.push("APP servi");
@@ -714,17 +760,21 @@ const getInvoices = async (filters = {}) => {
       if (filters.endDate && invoiceDate > new Date(filters.endDate)) match = false;
 
       if (match) {
+        const totalBilledAmount = invoiceAmount + totalTransactionFees;
         invoices.push({
           id: `INV-${tenant.slug.toUpperCase()}-${currentYear}${String(currentMonth + 1).padStart(2, "0")}`,
           tenantName: tenant.name,
           plan: planName,
           period: `${startPeriodStr} - ${endPeriodStr}`,
-          amount: parseFloat(invoiceAmount.toFixed(2)),
+          amount: parseFloat(totalBilledAmount.toFixed(2)),
+          subscriptionAmount: parseFloat(invoiceAmount.toFixed(2)),
           status: tenant.isActive ? "paid" : "overdue",
           createdAt: new Date(currentYear, currentMonth, 1),
           breakdown: {
             globalServices,
-            branches: branchBreakdowns
+            branches: branchBreakdowns,
+            transactionFees: transactionFeesList,
+            totalTransactionFees: parseFloat(totalTransactionFees.toFixed(2))
           }
         });
       }
@@ -902,7 +952,7 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
   return {
     customers: customers.map((c) => {
       const firstTxWithTenant = c.wallet?.transactions?.find((t) => t.tenantId);
-      let tenantName = "Servio Platform";
+      let tenantName = "Servi Platform";
       let tenantId = null;
 
       if (firstTxWithTenant) {
@@ -1013,7 +1063,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     name: customer.name || "Walk-in Customer",
     phone: customer.phone || null,
     email: customer.email || null,
-    tenantName: tenant?.name || "Servio Platform",
+    tenantName: tenant?.name || "Servi Platform",
     points: wallet?.points || 0,
     tier: getCustomerTier(wallet),
     joinedAt: customer.createdAt,
@@ -1083,7 +1133,7 @@ const addSuperAdminCustomer = async ({ tenantId, name, phone, email, points = 0,
     name: customer.name,
     phone: customer.phone,
     email: customer.email,
-    tenantName: tenant?.name || "Servio Platform",
+    tenantName: tenant?.name || "Servi Platform",
     points: wallet.points,
     tier: getCustomerTier(wallet),
     joinedAt: customer.createdAt,
@@ -1124,7 +1174,7 @@ const getAllSystemUsers = async (filters = {}) => {
     name: admin.name || "Super Admin",
     email: admin.email,
     role: "super_admin",
-    tenantName: "Servio Platform",
+    tenantName: "Servi Platform",
     status: "active",
     lastActive: admin.createdAt,
     createdAt: admin.createdAt,
@@ -1174,7 +1224,8 @@ const getSuperAdminOrderDetail = async (tenantId, orderId) => {
         }
       },
       branch: true,
-      user: true
+      user: true,
+      customOrderType: true
     }
   });
 

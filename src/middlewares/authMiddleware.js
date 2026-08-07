@@ -65,7 +65,16 @@ const authenticate = async (req, _res, next) => {
       }
       const user = await req.tenantDb.user.findUnique({
         where: { id: decoded.sub },
-        include: { branch: true, warehouse: true }
+        include: {
+          branch: {
+            include: {
+              customOrderTypes: {
+                where: { isActive: true }
+              }
+            }
+          },
+          warehouse: true
+        }
       });
       if (!user) throw new ApiError(401, "User no longer exists");
 
