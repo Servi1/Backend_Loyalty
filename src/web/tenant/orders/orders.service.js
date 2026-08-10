@@ -2,9 +2,27 @@ const ApiError = require("../../../utils/ApiError");
 const crypto = require("crypto");
 const mainPrisma = require("../../../config/prisma");
 
+const resolveTenantFeeRate = (tenant, source) => {
+  if (!tenant) return 0.0;
+  const src = (source || "pos").toLowerCase();
+  if (src === "app") return Number(tenant.feeAppServi !== undefined && tenant.feeAppServi !== null ? tenant.feeAppServi : 0.0);
+  if (src === "app_brand") return Number(tenant.feeAppBrand !== undefined && tenant.feeAppBrand !== null ? tenant.feeAppBrand : 0.0);
+  if (src === "pos") return Number(tenant.feePos !== undefined && tenant.feePos !== null ? tenant.feePos : 0.0);
+  if (src === "qr_table") return Number(tenant.feeQrTable !== undefined && tenant.feeQrTable !== null ? tenant.feeQrTable : 0.0);
+  if (src === "qr_cashier") return Number(tenant.feeQrCashier !== undefined && tenant.feeQrCashier !== null ? tenant.feeQrCashier : 0.0);
+  if (src === "kds") return Number(tenant.feeKds !== undefined && tenant.feeKds !== null ? tenant.feeKds : 0.0);
+  if (src === "cds") return Number(tenant.feeCds !== undefined && tenant.feeCds !== null ? tenant.feeCds : 0.0);
+  return 0.0;
+};
+
 const syncToAggregatedOrder = async (db, tenantId, order) => {
   if (!tenantId) return;
   try {
+    const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+    const resolvedFeeRate = (order.feeRate && Number(order.feeRate) > 0) 
+      ? Number(order.feeRate) 
+      : resolveTenantFeeRate(tenant, order.source);
+
     let customerName = "Customer Walk-in";
     if (order.customerId) {
       const customer = await mainPrisma.appUser.findUnique({ where: { id: order.customerId } });
@@ -37,7 +55,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerName,
         customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
-        feeRate: order.feeRate || 0.0,
+        feeRate: resolvedFeeRate,
         source: order.source || "pos",
         staffId: order.staffId || null,
         staffName: order.staffName || null,
@@ -54,7 +72,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerName,
         customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
-        feeRate: order.feeRate || 0.0,
+        feeRate: resolvedFeeRate,
         source: order.source || "pos",
         staffId: order.staffId || null,
         staffName: order.staffName || null,
