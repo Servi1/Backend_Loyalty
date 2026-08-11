@@ -507,6 +507,15 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
     }
   }
 
+  if (status === "REFUNDED" && updated.customerId) {
+    try {
+      const loyaltyService = require("../loyalty/loyalty.service");
+      await loyaltyService.reverseOrderPoints(db, updated.customerId, updated.orderNumber, updated.pointsRedeemed, tenantId, updated.id);
+    } catch (err) {
+      console.error("Failed to reverse points on order refund:", err.message);
+    }
+  }
+
   // Sync to super admin aggregated orders asynchronously
   syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
 
