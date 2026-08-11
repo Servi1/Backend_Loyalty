@@ -245,7 +245,12 @@ const _formatUser = async (user) => {
     role: "CUSTOMER",
     avatarUrl: config.getAppImageURL(user.avatarUrl),
     cars: user.cars || [],
-    addresses: user.addresses || [],
+    addresses: (user.addresses || []).map((addr) => ({
+      ...addr,
+      doorstepImages: addr.doorstepImages && Array.isArray(addr.doorstepImages)
+        ? addr.doorstepImages.map((img) => config.getAppImageURL(img))
+        : [],
+    })),
     paymentMethods: user.paymentMethods || [],
     favoriteBrands: user.favoriteBrands || [],
     favoriteBrandsDetails,
