@@ -33,7 +33,7 @@ const sendOtp = async (db, phone) => {
   // Send via Twilio (skip in development if not configured)
   if (twilioClient && config.twilio.phoneNumber) {
     await twilioClient.messages.create({
-      body: `Your Servio verification code is: ${code}`,
+      body: `Your Servi verification code is: ${code}`,
       from: config.twilio.phoneNumber,
       to: phone,
     });

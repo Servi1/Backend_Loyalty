@@ -2,9 +2,27 @@ const ApiError = require("../../../utils/ApiError");
 const crypto = require("crypto");
 const mainPrisma = require("../../../config/prisma");
 
+const resolveTenantFeeRate = (tenant, source) => {
+  if (!tenant) return 0.0;
+  const src = (source || "pos").toLowerCase();
+  if (src === "app") return Number(tenant.feeAppServi !== undefined && tenant.feeAppServi !== null ? tenant.feeAppServi : 0.0);
+  if (src === "app_brand") return Number(tenant.feeAppBrand !== undefined && tenant.feeAppBrand !== null ? tenant.feeAppBrand : 0.0);
+  if (src === "pos") return Number(tenant.feePos !== undefined && tenant.feePos !== null ? tenant.feePos : 0.0);
+  if (src === "qr_table") return Number(tenant.feeQrTable !== undefined && tenant.feeQrTable !== null ? tenant.feeQrTable : 0.0);
+  if (src === "qr_cashier") return Number(tenant.feeQrCashier !== undefined && tenant.feeQrCashier !== null ? tenant.feeQrCashier : 0.0);
+  if (src === "kds") return Number(tenant.feeKds !== undefined && tenant.feeKds !== null ? tenant.feeKds : 0.0);
+  if (src === "cds") return Number(tenant.feeCds !== undefined && tenant.feeCds !== null ? tenant.feeCds : 0.0);
+  return 0.0;
+};
+
 const syncToAggregatedOrder = async (db, tenantId, order) => {
   if (!tenantId) return;
   try {
+    const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+    const resolvedFeeRate = (order.feeRate && Number(order.feeRate) > 0) 
+      ? Number(order.feeRate) 
+      : resolveTenantFeeRate(tenant, order.source);
+
     let customerName = "Customer Walk-in";
     if (order.customerId) {
       const customer = await mainPrisma.appUser.findUnique({ where: { id: order.customerId } });
@@ -37,7 +55,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerName,
         customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
-        feeRate: order.feeRate || 0.0,
+        feeRate: resolvedFeeRate,
         source: order.source || "pos",
         staffId: order.staffId || null,
         staffName: order.staffName || null,
@@ -54,7 +72,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerName,
         customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
-        feeRate: order.feeRate || 0.0,
+        feeRate: resolvedFeeRate,
         source: order.source || "pos",
         staffId: order.staffId || null,
         staffName: order.staffName || null,
@@ -77,7 +95,7 @@ const generateOrderNumber = () => {
   return `SRV-${hex}`;
 };
 
-const create = async (db, { userId, customerId, customerPhone, status, branchId, tableId, qrCashierId, type, items, notes, total, posUnit, source, staffId, staffName, selectedSlot, selectedSlotDate }, tenantId) => {
+const create = async (db, { userId, customerId, customerPhone, status, branchId, tableId, qrCashierId, type, items, notes, total, posUnit, source, staffId, staffName, selectedSlot, selectedSlotDate, customOrderTypeId }, tenantId) => {
   let finalCustomerId = customerId;
   if (customerPhone) {
     const cleanedPhone = customerPhone.trim();
@@ -223,9 +241,10 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
       selectedSlot: selectedSlot || null,
       selectedSlotDate: selectedSlotDate || null,
       slotDetails: slotDetails.length > 0 ? slotDetails : null,
+      customOrderTypeId: customOrderTypeId || null,
       items: { create: orderItems },
     },
-    include: { items: { include: { menuItem: true } }, branch: true },
+    include: { items: { include: { menuItem: true } }, branch: true, customOrderType: true },
   });
 
   if (userId) {
@@ -280,7 +299,7 @@ const getByBranch = async (db, branchId, status, startDate, endDate) => {
   }
   const orders = await db.order.findMany({
     where,
-    include: { items: { include: { menuItem: true } }, table: true },
+    include: { items: { include: { menuItem: true } }, table: true, customOrderType: true },
     orderBy: { createdAt: "desc" },
   });
 
@@ -299,14 +318,14 @@ const getByBranch = async (db, branchId, status, startDate, endDate) => {
 const getByUser = async (db, userId) =>
   db.order.findMany({
     where: { customerId: userId },
-    include: { items: { include: { menuItem: true } }, branch: true },
+    include: { items: { include: { menuItem: true } }, branch: true, customOrderType: true },
     orderBy: { createdAt: "desc" },
   });
 
 const getByCustomer = async (db, customerId) =>
   db.order.findMany({
     where: { customerId },
-    include: { items: { include: { menuItem: true } }, branch: true },
+    include: { items: { include: { menuItem: true } }, branch: true, customOrderType: true },
     orderBy: { createdAt: "desc" },
   });
 
@@ -386,7 +405,7 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
   const updated = await db.order.update({
     where: { id },
     data: updateData,
-    include: { items: { include: { menuItem: true } }, table: true, branch: true }
+    include: { items: { include: { menuItem: true } }, table: true, branch: true, customOrderType: true }
   });
 
   // Sync to central main database Order registry
@@ -427,7 +446,7 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
   const updated = await db.order.update({
     where: { id },
     data: updateData,
-    include: { items: { include: { menuItem: true } }, table: true, branch: true }
+    include: { items: { include: { menuItem: true } }, table: true, branch: true, customOrderType: true }
   });
 
   // Sync status update to main database
@@ -517,7 +536,7 @@ const getAll = async (db, { status, branchId, startDate, endDate } = {}) => {
   }
   const orders = await db.order.findMany({
     where,
-    include: { items: { include: { menuItem: true } }, table: true, branch: true },
+    include: { items: { include: { menuItem: true } }, table: true, branch: true, customOrderType: true },
     orderBy: { createdAt: "desc" },
   });
 

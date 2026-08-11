@@ -404,13 +404,14 @@ model LocationGroup {
 // ─── Custom Order Types ──────────────────────────────
 
 model CustomOrderType {
-  id        String   @id @default(uuid())
-  name      String
-  isActive  Boolean  @default(true)
-  branches  Branch[]
-  orders    Order[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  branches    Branch[]
+  orders      Order[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // ─── Cash Drawer Sessions ─────────────────────────────

@@ -29,6 +29,7 @@ const getAll = catchAsync(async (req, res) => {
       showHero: req.tenant.showHero,
       heroTitle: req.tenant.heroTitle,
       heroSubtitle: req.tenant.heroSubtitle,
+      vatPercentage: req.tenant.vatPercentage,
     }
   }));
   res.json({ success: true, data });
@@ -63,6 +64,7 @@ const getOne = catchAsync(async (req, res) => {
         showHero: req.tenant.showHero,
         heroTitle: req.tenant.heroTitle,
         heroSubtitle: req.tenant.heroSubtitle,
+        vatPercentage: req.tenant.vatPercentage,
       }
     } 
   });
@@ -70,7 +72,8 @@ const getOne = catchAsync(async (req, res) => {
 
 const getStaff = catchAsync(async (req, res) => {
   const staff = await branchesService.getBranchStaff(req.tenantDb, req.params.branchId);
-  res.json({ success: true, data: staff });
+  const data = staff.map(s => ({ ...s, avatarUrl: getAppImageURL(s.avatarUrl) }));
+  res.json({ success: true, data });
 });
 
 const getStaffSlots = catchAsync(async (req, res) => {
@@ -79,5 +82,16 @@ const getStaffSlots = catchAsync(async (req, res) => {
   res.json({ success: true, data: slots });
 });
 
-module.exports = { getAll, getOne, getStaff, getStaffSlots };
+const getScheduleSlots = catchAsync(async (req, res) => {
+  const { date, duration } = req.query;
+  const data = await branchesService.getBranchScheduleSlots(
+    req.tenantDb,
+    req.params.branchId,
+    date,
+    parseInt(duration) || 60
+  );
+  res.json({ success: true, data });
+});
+
+module.exports = { getAll, getOne, getStaff, getStaffSlots, getScheduleSlots };
 

@@ -97,6 +97,7 @@ model Tenant {
   currency         String?
   billingCycle     String?
   taxId            String?
+  vatPercentage    Float            @default(15.0)
   notes            String?
   subscriptionTier SubscriptionTier @default(FREE)
   plan             String?          @default("starter")
@@ -377,4 +378,15 @@ model EarnedCoupon {
   updatedAt     DateTime @updatedAt
 
   @@index([appUserId])
+}
+
+// ─── Global Order Types ──────────────────────────────
+
+model GlobalOrderType {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
