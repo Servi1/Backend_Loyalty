@@ -27,6 +27,7 @@ enum OrderStatus {
   READY
   COMPLETED
   CANCELLED
+  REFUNDED
 }
 
 enum OrderType {
