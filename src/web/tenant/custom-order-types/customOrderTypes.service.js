@@ -15,17 +15,30 @@ const getAll = async (db) => {
       const created = await db.customOrderType.create({
         data: {
           name: gt.name,
+          description: gt.description || null,
           isActive: gt.isActive
         }
       });
       tenantTypes.push(created);
     } else {
       const tt = tenantTypes[matchIndex];
-      // If global type is disabled, force local to be disabled too in DB
+      let needsUpdate = false;
+      const updateData = {};
+
+      if (tt.description !== gt.description) {
+        updateData.description = gt.description;
+        needsUpdate = true;
+      }
+
       if (!gt.isActive && tt.isActive) {
+        updateData.isActive = false;
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
         const updated = await db.customOrderType.update({
           where: { id: tt.id },
-          data: { isActive: false }
+          data: updateData
         });
         tenantTypes[matchIndex] = updated;
       }
