@@ -13,6 +13,19 @@ const loyaltyService = require("../../web/tenant/loyalty/loyalty.service");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const resolveTenantFeeRate = (tenant, source) => {
+  if (!tenant) return 0.0;
+  const src = (source || "pos").toLowerCase();
+  if (src === "app") return Number(tenant.feeAppServi !== undefined && tenant.feeAppServi !== null ? tenant.feeAppServi : 0.0);
+  if (src === "app_brand") return Number(tenant.feeAppBrand !== undefined && tenant.feeAppBrand !== null ? tenant.feeAppBrand : 0.0);
+  if (src === "pos") return Number(tenant.feePos !== undefined && tenant.feePos !== null ? tenant.feePos : 0.0);
+  if (src === "qr_table") return Number(tenant.feeQrTable !== undefined && tenant.feeQrTable !== null ? tenant.feeQrTable : 0.0);
+  if (src === "qr_cashier") return Number(tenant.feeQrCashier !== undefined && tenant.feeQrCashier !== null ? tenant.feeQrCashier : 0.0);
+  if (src === "kds") return Number(tenant.feeKds !== undefined && tenant.feeKds !== null ? tenant.feeKds : 0.0);
+  if (src === "cds") return Number(tenant.feeCds !== undefined && tenant.feeCds !== null ? tenant.feeCds : 0.0);
+  return 0.0;
+};
+
 const generateOrderNumber = () => {
   const hex = crypto.randomBytes(3).toString("hex").toUpperCase();
   return `SRV-${hex}`;
@@ -245,29 +258,21 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     }
   }
 
-  // Look up fee percentage from main database
+  const finalQrCashierId = qrCashierId || cashierId || null;
+  const orderSource = source || (tableId ? "qr_table" : (finalQrCashierId ? "qr_cashier" : "app"));
+
+  // Look up fee percentage from main database using order channel source
   let feeRate = 0.0;
   if (tenantId) {
     try {
-      const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-      if (tenant) {
-        if (tableId) {
-          feeRate = tenant.feeQrTable ?? 0.0;
-        } else if (type === "TAKEAWAY" || type === "DELIVER_TO_CAR") {
-          feeRate = tenant.feeQrCashier ?? 0.0;
-        } else if (type === "DELIVERY") {
-          feeRate = tenant.feeAppBrand ?? 0.0;
-        } else {
-          feeRate = tenant.feeAppServi ?? 0.0;
-        }
+      const tenantObj = tenant || (await mainPrisma.tenant.findUnique({ where: { id: tenantId } }));
+      if (tenantObj) {
+        feeRate = resolveTenantFeeRate(tenantObj, orderSource);
       }
     } catch (e) {
       console.error("Failed to query tenant fee settings:", e.message);
     }
   }
-
-  const finalQrCashierId = qrCashierId || cashierId || null;
-  const orderSource = source || (tableId ? "qr_table" : (finalQrCashierId ? "qr_cashier" : "app"));
 
   const slotDetails = orderItems
     .filter(i => i.staffId && i.selectedSlot)

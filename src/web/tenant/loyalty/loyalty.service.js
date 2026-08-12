@@ -23,8 +23,9 @@ const getWallet = async (db, customerId) => {
 
 /**
  * Award points to a user (e.g. after order completion).
+ * @param {object} opts - Optional { orderId, orderNumber } to link transaction to an order
  */
-const earnPoints = async (db, customerId, points, description, tenantId) => {
+const earnPoints = async (db, customerId, points, description, tenantId, opts = {}) => {
   const customer = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
   if (!customer) throw new ApiError(404, "Customer not found");
 
@@ -41,7 +42,14 @@ const earnPoints = async (db, customerId, points, description, tenantId) => {
       data: { points: { increment: points }, lifetimeEarn: { increment: points } },
     }),
     mainPrisma.walletTransaction.create({
-      data: { walletId: wallet.id, points, description: description || "Points earned", tenantId },
+      data: {
+        walletId: wallet.id,
+        points,
+        description: description || "Points earned",
+        tenantId,
+        orderId: opts.orderId || null,
+        orderNumber: opts.orderNumber || null,
+      },
     }),
   ]);
 
@@ -215,18 +223,30 @@ const reverseOrderPoints = async (db, customerId, orderNumber, pointsRedeemed, t
   const wallet = customer.wallet;
 
   // 1. Reverse Earned Points
-  const earnDesc = `Earned on Order #${orderNumber}`;
   const earnTx = await mainPrisma.walletTransaction.findFirst({
     where: {
       walletId: wallet.id,
-      description: earnDesc,
+      points: { gt: 0 },
+      OR: [
+        { orderNumber: orderNumber },
+        { orderId: orderId || "non-existent-id" },
+        { description: `Earned on Order #${orderNumber}` },
+        { description: `Points earned for Order #${orderNumber}` },
+        { description: { contains: orderNumber } },
+      ],
     }
   });
 
   if (earnTx && earnTx.points > 0) {
     const reverseEarnDesc = `Reversed Earned Points (Refund Order #${orderNumber})`;
     const existingRevEarn = await mainPrisma.walletTransaction.findFirst({
-      where: { walletId: wallet.id, description: reverseEarnDesc }
+      where: {
+        walletId: wallet.id,
+        OR: [
+          { description: reverseEarnDesc },
+          { AND: [{ orderNumber: orderNumber }, { points: { lt: 0 } }] }
+        ]
+      }
     });
     if (!existingRevEarn) {
       const pointsToDeduct = earnTx.points;
@@ -254,7 +274,13 @@ const reverseOrderPoints = async (db, customerId, orderNumber, pointsRedeemed, t
   if (redeemedQty > 0) {
     const reverseRedeemDesc = `Refunded Redeemed Points (Refund Order #${orderNumber})`;
     const existingRevRedeem = await mainPrisma.walletTransaction.findFirst({
-      where: { walletId: wallet.id, description: reverseRedeemDesc }
+      where: {
+        walletId: wallet.id,
+        OR: [
+          { description: reverseRedeemDesc },
+          { AND: [{ orderNumber: orderNumber }, { points: { gt: 0 } }, { description: { contains: "Refunded" } }] }
+        ]
+      }
     });
     if (!existingRevRedeem) {
       await mainPrisma.$transaction([

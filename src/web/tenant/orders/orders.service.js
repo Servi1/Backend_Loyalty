@@ -184,30 +184,20 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
   // Use the passed total if provided; otherwise fall back to subtotal
   const finalTotal = typeof total === "number" ? total : subtotal;
 
+  const orderSource = source || (tableId ? "qr_table" : (qrCashierId ? "qr_cashier" : "pos"));
+
   // Look up fee percentage from main database
   let feeRate = 0.0;
   if (tenantId) {
     try {
       const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
       if (tenant) {
-        if (userId) {
-          feeRate = tenant.feePos ?? 0.0;
-        } else if (tableId) {
-          feeRate = tenant.feeQrTable ?? 0.0;
-        } else if (type === "TAKEAWAY" || type === "DELIVER_TO_CAR") {
-          feeRate = tenant.feeQrCashier ?? 0.0;
-        } else if (type === "DELIVERY") {
-          feeRate = tenant.feeAppBrand ?? 0.0;
-        } else {
-          feeRate = tenant.feeAppServi ?? 0.0;
-        }
+        feeRate = resolveTenantFeeRate(tenant, orderSource);
       }
     } catch (e) {
       console.error("Failed to query tenant fee settings:", e.message);
     }
   }
-
-  const orderSource = source || (tableId ? "qr_table" : (qrCashierId ? "qr_cashier" : "pos"));
 
   const slotDetails = orderItems
     .filter(i => i.staffId && i.selectedSlot)
@@ -431,7 +421,65 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
   // Sync to aggregated order for Super Admin / POS view
   await syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
 
+  if (status !== undefined) {
+    await handleOrderStatusLoyalty(db, updated, status, tenantId);
+  }
+
   return updated;
+};
+
+const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
+  if (!updated || !updated.customerId) return;
+
+  if (status === "COMPLETED") {
+    if (updated.notes && updated.notes.includes("Paid by Loyalty Points")) {
+      return;
+    }
+
+    try {
+      const customer = await mainPrisma.appUser.findUnique({
+        where: { id: updated.customerId },
+        include: { wallet: true }
+      });
+      if (customer && customer.wallet) {
+        const description = `Earned on Order #${updated.orderNumber}`;
+        const tx = await mainPrisma.walletTransaction.findFirst({
+          where: {
+            walletId: customer.wallet.id,
+            OR: [
+              { orderNumber: updated.orderNumber },
+              { orderId: updated.id },
+              { description }
+            ]
+          }
+        });
+
+        if (!tx) {
+          const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+          const earnRate = tenant ? tenant.loyaltyEarnRate : 1.0;
+          const pointsToEarn = Math.floor(updated.total * earnRate);
+          if (pointsToEarn > 0) {
+            const loyaltyService = require("../loyalty/loyalty.service");
+            await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId, {
+              orderId: updated.id,
+              orderNumber: updated.orderNumber
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to auto-award points on order completion:", err.message);
+    }
+  }
+
+  if (status === "REFUNDED") {
+    try {
+      const loyaltyService = require("../loyalty/loyalty.service");
+      await loyaltyService.reverseOrderPoints(db, updated.customerId, updated.orderNumber, updated.pointsRedeemed, tenantId, updated.id);
+    } catch (err) {
+      console.error("Failed to reverse points on order refund:", err.message);
+    }
+  }
 };
 
 const updateStatus = async (db, id, status, tenantId, notes) => {
@@ -471,50 +519,7 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
     updated.user = user;
   }
 
-  if (status === "COMPLETED" && updated.customerId) {
-    // Do not award points if paid using loyalty points
-    if (updated.notes && updated.notes.includes("Paid by Loyalty Points")) {
-      syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
-      return updated;
-    }
-
-    try {
-      const customer = await mainPrisma.appUser.findUnique({
-        where: { id: updated.customerId },
-        include: { wallet: true }
-      });
-      if (customer && customer.wallet) {
-        const description = `Earned on Order #${updated.orderNumber}`;
-        const tx = await mainPrisma.walletTransaction.findFirst({
-          where: {
-            walletId: customer.wallet.id,
-            description,
-          }
-        });
-
-        if (!tx) {
-          const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-          const earnRate = tenant ? tenant.loyaltyEarnRate : 1.0;
-          const pointsToEarn = Math.floor(updated.total * earnRate);
-          if (pointsToEarn > 0) {
-            const loyaltyService = require("../loyalty/loyalty.service");
-            await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId);
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Failed to auto-award points on order completion:", err.message);
-    }
-  }
-
-  if (status === "REFUNDED" && updated.customerId) {
-    try {
-      const loyaltyService = require("../loyalty/loyalty.service");
-      await loyaltyService.reverseOrderPoints(db, updated.customerId, updated.orderNumber, updated.pointsRedeemed, tenantId, updated.id);
-    } catch (err) {
-      console.error("Failed to reverse points on order refund:", err.message);
-    }
-  }
+  await handleOrderStatusLoyalty(db, updated, status, tenantId);
 
   // Sync to super admin aggregated orders asynchronously
   syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
