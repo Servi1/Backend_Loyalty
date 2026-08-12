@@ -27,6 +27,7 @@ enum OrderStatus {
   READY
   COMPLETED
   CANCELLED
+  REFUNDED
 }
 
 enum OrderType {
@@ -155,11 +156,25 @@ model Tenant {
   // Relations
   aggregatedOrders    AggregatedOrder[]
   spinItems           GlobalSpinItem[]
+  slotAddons          TenantSlotAddon[]
 
   lastOrderSyncAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model TenantSlotAddon {
+  id           String   @id @default(uuid())
+  tenantId     String
+  serviceType  String   // "pos", "qr_table", "qr_cashier", "kds", "cds", "branch"
+  quantity     Int      @default(1)
+  pricePerUnit Float    @default(0.0)
+  addedAt      DateTime @default(now())
+  notes        String?
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
  
 model AggregatedOrder {

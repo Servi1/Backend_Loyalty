@@ -143,7 +143,39 @@ const create = async (data) => {
 };
 
 const update = async (id, data) => {
-  await getById(id);
+  const existingTenant = await getById(id);
+
+  // Track mid-month slot additions
+  const slotFields = [
+    { key: "posQuantity", serviceType: "pos", priceKey: "pricePos", defaultPrice: 49.0 },
+    { key: "qrTableQuantity", serviceType: "qr_table", priceKey: "priceQrTable", defaultPrice: 19.0 },
+    { key: "qrCashierQuantity", serviceType: "qr_cashier", priceKey: "priceQrCashier", defaultPrice: 9.0 },
+    { key: "kdsQuantity", serviceType: "kds", priceKey: "priceKds", defaultPrice: 19.0 },
+    { key: "cdsQuantity", serviceType: "cds", priceKey: "priceCds", defaultPrice: 9.0 },
+    { key: "branchLimit", serviceType: "branch", priceKey: "priceBranch", defaultPrice: 19.0 },
+  ];
+
+  for (const sf of slotFields) {
+    if (data[sf.key] !== undefined && Number(data[sf.key]) > Number(existingTenant[sf.key] || 0)) {
+      const addedQuantity = Number(data[sf.key]) - Number(existingTenant[sf.key] || 0);
+      const pricePerUnit = data[sf.priceKey] !== undefined ? Number(data[sf.priceKey]) : Number(existingTenant[sf.priceKey] || sf.defaultPrice);
+
+      try {
+        await mainPrisma.tenantSlotAddon.create({
+          data: {
+            tenantId: id,
+            serviceType: sf.serviceType,
+            quantity: addedQuantity,
+            pricePerUnit,
+            notes: `Super Admin added +${addedQuantity} ${sf.serviceType.toUpperCase()} slot(s) mid-month`
+          }
+        });
+      } catch (err) {
+        console.error(`Failed to record slot addon for tenant ${id}:`, err.message);
+      }
+    }
+  }
+
   return mainPrisma.tenant.update({ where: { id }, data });
 };
 
@@ -488,6 +520,7 @@ const getInvoices = async (filters = {}) => {
 
   const tenants = await mainPrisma.tenant.findMany({
     where,
+    include: { slotAddons: true },
     orderBy: { createdAt: "desc" }
   });
 
@@ -559,28 +592,71 @@ const getInvoices = async (filters = {}) => {
     while (currentYear < targetYear || (currentYear === targetYear && currentMonth <= targetMonth)) {
       const monthStart = new Date(currentYear, currentMonth, 1);
       const monthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999);
-      const currentMonthEnd = (currentYear === targetYear && currentMonth === targetMonth) ? now : monthEnd;
+      const currentMonthEnd = monthEnd;
 
       let invoiceAmount = 0;
       const globalServices = [];
       const branchBreakdowns = [];
 
-      // A. Global services
-      if (tenant.subAppBrand) {
-        const { daysActive, totalDays, period } = getDaysActiveInMonth(tenant.createdAt, currentMonthEnd, currentYear, currentMonth);
-        if (daysActive > 0) {
-          const price = tenant.priceAppBrand !== undefined ? tenant.priceAppBrand : 99.0;
-          const cost = price * (daysActive / totalDays);
-          invoiceAmount += cost;
-          globalServices.push({
-            name: "App Brand License",
-            price,
-            amount: parseFloat(cost.toFixed(2)),
-            daysActive,
-            totalDays,
-            period,
-            prorated: daysActive < totalDays
-          });
+      // A. Global & Slot-based Subscription Services
+      const globalServiceConfigs = [
+        { flag: "subAppBrand", priceKey: "priceAppBrand", defaultPrice: 99.0, label: "App Brand License", isSlot: false },
+        { flag: "subPos", qtyKey: "posQuantity", priceKey: "pricePos", defaultPrice: 49.0, label: "POS Terminal", isSlot: true },
+        { flag: "subQrTable", qtyKey: "qrTableQuantity", priceKey: "priceQrTable", defaultPrice: 19.0, label: "QR Table Dining", isSlot: true },
+        { flag: "subQrCashier", qtyKey: "qrCashierQuantity", priceKey: "priceQrCashier", defaultPrice: 9.0, label: "QR Cashier Counter", isSlot: true },
+        { flag: "subKds", qtyKey: "kdsQuantity", priceKey: "priceKds", defaultPrice: 19.0, label: "KDS Kitchen Screen", isSlot: true },
+        { flag: "subCds", qtyKey: "cdsQuantity", priceKey: "priceCds", defaultPrice: 9.0, label: "CDS Customer Display", isSlot: true },
+        { flag: "subBranch", qtyKey: "branchLimit", priceKey: "priceBranch", defaultPrice: 19.0, label: "Branch Location", isSlot: true },
+      ];
+
+      for (const gsvc of globalServiceConfigs) {
+        if (tenant[gsvc.flag]) {
+          const { daysActive, totalDays, period } = getDaysActiveInMonth(tenant.createdAt, currentMonthEnd, currentYear, currentMonth);
+          if (daysActive > 0) {
+            const unitPrice = tenant[gsvc.priceKey] !== undefined && tenant[gsvc.priceKey] !== null ? Number(tenant[gsvc.priceKey]) : gsvc.defaultPrice;
+            const quantity = gsvc.isSlot ? Math.max(1, Number(tenant[gsvc.qtyKey] || 1)) : 1;
+            const monthlyPrice = unitPrice * quantity;
+            const cost = monthlyPrice * (daysActive / totalDays);
+
+            invoiceAmount += cost;
+            globalServices.push({
+              name: gsvc.isSlot ? `${gsvc.label} (${quantity} slots)` : gsvc.label,
+              price: unitPrice,
+              monthlyTotal: parseFloat(monthlyPrice.toFixed(2)),
+              amount: parseFloat(cost.toFixed(2)),
+              quantity,
+              daysActive,
+              totalDays,
+              period,
+              prorated: daysActive < totalDays
+            });
+          }
+        }
+      }
+
+      // Mid-month Slot Add-on Prorated Charges
+      const tenantAddons = tenant.slotAddons || [];
+      for (const addon of tenantAddons) {
+        const addedDate = new Date(addon.addedAt);
+        if (addedDate.getFullYear() === currentYear && addedDate.getMonth() === currentMonth) {
+          const { daysActive, totalDays, period } = getDaysActiveInMonth(addedDate, currentMonthEnd, currentYear, currentMonth);
+          if (daysActive > 0) {
+            const unitPrice = Number(addon.pricePerUnit || 0);
+            const addonCost = addon.quantity * unitPrice * (daysActive / totalDays);
+
+            invoiceAmount += addonCost;
+            globalServices.push({
+              name: `Add-on: +${addon.quantity} ${addon.serviceType.toUpperCase()} Slot(s)`,
+              price: unitPrice,
+              monthlyTotal: parseFloat((unitPrice * addon.quantity).toFixed(2)),
+              amount: parseFloat(addonCost.toFixed(2)),
+              quantity: addon.quantity,
+              daysActive,
+              totalDays,
+              period,
+              prorated: daysActive < totalDays
+            });
+          }
         }
       }
 
@@ -888,8 +964,8 @@ const syncAllTenantOrders = async () => {
               type: order.type,
               total: order.total,
               notes: order.notes,
-              customerName: order.user?.name || order.user?.phone || "Customer Walk-in",
-              customerPhone: order.customerPhone || null,
+              customerName: order.user?.name || order.user?.phone || order.customerPhone || "Customer Walk-in",
+              customerPhone: order.customerPhone || order.user?.phone || null,
               branchName: order.branch?.name || "Register Terminal",
               feeRate: resolvedFee,
               source: order.source || "pos",
@@ -904,8 +980,8 @@ const syncAllTenantOrders = async () => {
               status: order.status,
               total: order.total,
               notes: order.notes,
-              customerName: order.user?.name || order.user?.phone || "Customer Walk-in",
-              customerPhone: order.customerPhone || null,
+              customerName: order.user?.name || order.user?.phone || order.customerPhone || "Customer Walk-in",
+              customerPhone: order.customerPhone || order.user?.phone || null,
               branchName: order.branch?.name || "Register Terminal",
               feeRate: resolvedFee,
               source: order.source || "pos",
@@ -1059,13 +1135,25 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     duration: `${Math.floor(20 + (o.total % 40))} min`,
   }));
 
-  const pointsHistory = (wallet?.transactions || []).map((t) => ({
-    id: t.id,
-    date: t.createdAt.toISOString().slice(0, 10),
-    type: t.points > 0 ? "earned" : "redeemed",
-    points: Math.abs(t.points),
-    reason: t.description || "Loyalty points transaction",
-  }));
+  const pointsHistory = (wallet?.transactions || []).map((t) => {
+    const desc = (t.description || "").toLowerCase();
+    let type = t.points >= 0 ? "earned" : "redeemed";
+
+    if (desc.includes("gift sent") || desc.includes("transferred to") || desc.includes("transfer out")) {
+      type = "transferred";
+    } else if (desc.includes("claimed gift") || desc.includes("transferred from") || desc.includes("received gift")) {
+      type = "received";
+    }
+
+    return {
+      id: t.id,
+      date: t.createdAt.toISOString().slice(0, 10),
+      type,
+      points: Math.abs(t.points),
+      rawPoints: t.points,
+      reason: t.description || "Loyalty points transaction",
+    };
+  });
 
   const orderHistory = orders.map((o) => {
     const earnPointsTx = (wallet?.transactions || []).find(
@@ -1075,9 +1163,14 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
 
     return {
       id: o.id,
+      orderNumber: o.orderNumber,
       date: o.createdAt.toISOString().slice(0, 10),
       branch: o.branch?.name || "Register Terminal",
-      items: o.items.reduce((acc, item) => acc + item.quantity, 0),
+      source: o.source || "pos",
+      type: o.type || "DINE_IN",
+      status: o.status || "COMPLETED",
+      paymentMethod: o.paymentMethod || "cash",
+      items: o.items ? o.items.reduce((acc, item) => acc + item.quantity, 0) : 0,
       total: o.total,
       pointsEarned,
     };
@@ -1241,20 +1334,63 @@ const getSuperAdminOrderDetail = async (tenantId, orderId) => {
   const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
   if (!tenant) throw new ApiError(404, "Tenant not found");
 
-  const tenantPrisma = getTenantClient(tenant.dbUrl);
-  const order = await tenantPrisma.order.findUnique({
-    where: { id: orderId },
-    include: {
-      items: {
-        include: {
-          menuItem: true
-        }
+  let order = null;
+  try {
+    const tenantPrisma = getTenantClient(tenant.dbUrl);
+    order = await tenantPrisma.order.findFirst({
+      where: {
+        OR: [
+          { id: orderId },
+          { orderNumber: orderId }
+        ]
       },
-      branch: true,
-      user: true,
-      customOrderType: true
+      include: {
+        items: {
+          include: {
+            menuItem: true
+          }
+        },
+        branch: true,
+        user: true,
+        customOrderType: true
+      }
+    });
+  } catch (err) {
+    console.warn(`[getSuperAdminOrderDetail] Tenant DB query warning: ${err.message}`);
+  }
+
+  // Fall back to main database AggregatedOrder if order record was missing from tenant database
+  if (!order) {
+    const aggOrder = await mainPrisma.aggregatedOrder.findFirst({
+      where: {
+        tenantId,
+        OR: [
+          { id: `${tenantId}_${orderId}` },
+          { orderId: orderId },
+          { orderNumber: orderId }
+        ]
+      }
+    });
+
+    if (aggOrder) {
+      order = {
+        id: aggOrder.orderId,
+        orderNumber: aggOrder.orderNumber,
+        status: aggOrder.status,
+        type: aggOrder.type,
+        total: aggOrder.total,
+        notes: aggOrder.notes,
+        feeRate: aggOrder.feeRate,
+        source: aggOrder.source,
+        paymentMethod: aggOrder.paymentMethod,
+        createdAt: aggOrder.createdAt,
+        updatedAt: aggOrder.updatedAt,
+        user: aggOrder.customerName ? { name: aggOrder.customerName, phone: aggOrder.customerPhone } : null,
+        branch: aggOrder.branchName ? { name: aggOrder.branchName } : null,
+        items: []
+      };
     }
-  });
+  }
 
   if (!order) throw new ApiError(404, "Order not found");
 
@@ -1365,8 +1501,8 @@ const syncTenantOrders = async (tenantId) => {
         type: order.type,
         total: order.total,
         notes: order.notes,
-        customerName: order.user?.name || order.user?.phone || "Walk-in Customer",
-        customerPhone: order.customerPhone || null,
+        customerName: order.user?.name || order.user?.phone || order.customerPhone || "Walk-in Customer",
+        customerPhone: order.customerPhone || order.user?.phone || null,
         branchName: order.branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
         source: order.source || "pos",
@@ -1381,8 +1517,8 @@ const syncTenantOrders = async (tenantId) => {
         status: order.status,
         total: order.total,
         notes: order.notes,
-        customerName: order.user?.name || order.user?.phone || "Walk-in Customer",
-        customerPhone: order.customerPhone || null,
+        customerName: order.user?.name || order.user?.phone || order.customerPhone || "Walk-in Customer",
+        customerPhone: order.customerPhone || order.user?.phone || null,
         branchName: order.branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
         source: order.source || "pos",
