@@ -30,6 +30,10 @@ const getBranches = async (db) => {
       menuBannerUrl: true,
       tablesEnabled: true,
       qrEnabled: true,
+      customOrderTypes: {
+        where: { isActive: true },
+        select: { id: true, name: true, description: true },
+      },
     },
   });
   return branches;
