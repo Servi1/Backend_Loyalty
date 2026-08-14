@@ -600,13 +600,13 @@ const getInvoices = async (filters = {}) => {
 
       // A. Global & Slot-based Subscription Services
       const globalServiceConfigs = [
-        { flag: "subAppBrand", priceKey: "priceAppBrand", defaultPrice: 99.0, label: "App Brand License", isSlot: false },
-        { flag: "subPos", qtyKey: "posQuantity", priceKey: "pricePos", defaultPrice: 49.0, label: "POS Terminal", isSlot: true },
-        { flag: "subQrTable", qtyKey: "qrTableQuantity", priceKey: "priceQrTable", defaultPrice: 19.0, label: "QR Table Dining", isSlot: true },
-        { flag: "subQrCashier", qtyKey: "qrCashierQuantity", priceKey: "priceQrCashier", defaultPrice: 9.0, label: "QR Cashier Counter", isSlot: true },
-        { flag: "subKds", qtyKey: "kdsQuantity", priceKey: "priceKds", defaultPrice: 19.0, label: "KDS Kitchen Screen", isSlot: true },
-        { flag: "subCds", qtyKey: "cdsQuantity", priceKey: "priceCds", defaultPrice: 9.0, label: "CDS Customer Display", isSlot: true },
-        { flag: "subBranch", qtyKey: "branchLimit", priceKey: "priceBranch", defaultPrice: 19.0, label: "Branch Location", isSlot: true },
+        { flag: "subAppBrand", priceKey: "priceAppBrand", defaultPrice: 99.0, label: "App Brand License", isSlot: false, typeKey: "app_brand" },
+        { flag: "subPos", qtyKey: "posQuantity", priceKey: "pricePos", defaultPrice: 49.0, label: "POS Terminal", isSlot: true, typeKey: "pos" },
+        { flag: "subQrTable", qtyKey: "qrTableQuantity", priceKey: "priceQrTable", defaultPrice: 19.0, label: "QR Table Dining", isSlot: true, typeKey: "qr_table" },
+        { flag: "subQrCashier", qtyKey: "qrCashierQuantity", priceKey: "priceQrCashier", defaultPrice: 9.0, label: "QR Cashier Counter", isSlot: true, typeKey: "qr_cashier" },
+        { flag: "subKds", qtyKey: "kdsQuantity", priceKey: "priceKds", defaultPrice: 19.0, label: "KDS Kitchen Screen", isSlot: true, typeKey: "kds" },
+        { flag: "subCds", qtyKey: "cdsQuantity", priceKey: "priceCds", defaultPrice: 9.0, label: "CDS Customer Display", isSlot: true, typeKey: "cds" },
+        { flag: "subBranch", qtyKey: "branchLimit", priceKey: "priceBranch", defaultPrice: 19.0, label: "Branch Location", isSlot: true, typeKey: "branch" },
       ];
 
       for (const gsvc of globalServiceConfigs) {
@@ -614,27 +614,68 @@ const getInvoices = async (filters = {}) => {
           const { daysActive, totalDays, period } = getDaysActiveInMonth(tenant.createdAt, currentMonthEnd, currentYear, currentMonth);
           if (daysActive > 0) {
             const unitPrice = tenant[gsvc.priceKey] !== undefined && tenant[gsvc.priceKey] !== null ? Number(tenant[gsvc.priceKey]) : gsvc.defaultPrice;
-            const quantity = gsvc.isSlot ? Math.max(1, Number(tenant[gsvc.qtyKey] || 1)) : 1;
-            const monthlyPrice = unitPrice * quantity;
-            const cost = monthlyPrice * (daysActive / totalDays);
+            
+            // Subtract mid-month add-ons added in this month to get initial base slots
+            const monthAddonQty = (tenant.slotAddons || [])
+              .filter(a => {
+                const d = new Date(a.addedAt);
+                return a.serviceType.toLowerCase() === gsvc.typeKey && d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+              })
+              .reduce((sum, a) => sum + Number(a.quantity || 0), 0);
 
-            invoiceAmount += cost;
-            globalServices.push({
-              name: gsvc.isSlot ? `${gsvc.label} (${quantity} slots)` : gsvc.label,
-              price: unitPrice,
-              monthlyTotal: parseFloat(monthlyPrice.toFixed(2)),
-              amount: parseFloat(cost.toFixed(2)),
-              quantity,
-              daysActive,
-              totalDays,
-              period,
-              prorated: daysActive < totalDays
-            });
+            const rawCurrentQty = Number(tenant[gsvc.qtyKey] || 1);
+            const quantity = gsvc.isSlot ? Math.max(0, rawCurrentQty - monthAddonQty) : 1;
+
+            if (quantity > 0) {
+              if (gsvc.isSlot) {
+                for (let i = 0; i < quantity; i++) {
+                  const singleCost = unitPrice * (daysActive / totalDays);
+                  invoiceAmount += singleCost;
+                  globalServices.push({
+                    name: `${gsvc.label} Slot`,
+                    price: unitPrice,
+                    monthlyTotal: parseFloat(unitPrice.toFixed(2)),
+                    amount: parseFloat(singleCost.toFixed(2)),
+                    quantity: 1,
+                    daysActive,
+                    totalDays,
+                    period,
+                    prorated: daysActive < totalDays
+                  });
+                }
+              } else {
+                const monthlyPrice = unitPrice * quantity;
+                const cost = monthlyPrice * (daysActive / totalDays);
+
+                invoiceAmount += cost;
+                globalServices.push({
+                  name: gsvc.label,
+                  price: unitPrice,
+                  monthlyTotal: parseFloat(monthlyPrice.toFixed(2)),
+                  amount: parseFloat(cost.toFixed(2)),
+                  quantity: 1,
+                  daysActive,
+                  totalDays,
+                  period,
+                  prorated: daysActive < totalDays
+                });
+              }
+            }
           }
         }
       }
 
-      // Mid-month Slot Add-on Prorated Charges
+      // Mid-month Slot Add-on Prorated Charges (split into separate single-slot lines)
+      const serviceLabels = {
+        pos: "POS Terminal",
+        qr_table: "QR Table Dining",
+        qr_cashier: "QR Cashier Counter",
+        kds: "KDS Kitchen Screen",
+        cds: "CDS Customer Display",
+        branch: "Branch Location",
+        app_brand: "App Brand License"
+      };
+
       const tenantAddons = tenant.slotAddons || [];
       for (const addon of tenantAddons) {
         const addedDate = new Date(addon.addedAt);
@@ -642,20 +683,24 @@ const getInvoices = async (filters = {}) => {
           const { daysActive, totalDays, period } = getDaysActiveInMonth(addedDate, currentMonthEnd, currentYear, currentMonth);
           if (daysActive > 0) {
             const unitPrice = Number(addon.pricePerUnit || 0);
-            const addonCost = addon.quantity * unitPrice * (daysActive / totalDays);
+            const addonQty = Number(addon.quantity || 1);
+            const label = serviceLabels[addon.serviceType.toLowerCase()] || addon.serviceType.toUpperCase();
 
-            invoiceAmount += addonCost;
-            globalServices.push({
-              name: `Add-on: +${addon.quantity} ${addon.serviceType.toUpperCase()} Slot(s)`,
-              price: unitPrice,
-              monthlyTotal: parseFloat((unitPrice * addon.quantity).toFixed(2)),
-              amount: parseFloat(addonCost.toFixed(2)),
-              quantity: addon.quantity,
-              daysActive,
-              totalDays,
-              period,
-              prorated: daysActive < totalDays
-            });
+            for (let i = 0; i < addonQty; i++) {
+              const singleCost = unitPrice * (daysActive / totalDays);
+              invoiceAmount += singleCost;
+              globalServices.push({
+                name: `Add-on: +1 ${label} Slot`,
+                price: unitPrice,
+                monthlyTotal: parseFloat(unitPrice.toFixed(2)),
+                amount: parseFloat(singleCost.toFixed(2)),
+                quantity: 1,
+                daysActive,
+                totalDays,
+                period,
+                prorated: daysActive < totalDays
+              });
+            }
           }
         }
       }
@@ -777,7 +822,7 @@ const getInvoices = async (filters = {}) => {
           where: {
             tenantId: tenant.id,
             createdAt: { gte: monthStart, lte: currentMonthEnd },
-            status: { not: "CANCELLED" }
+            status: "COMPLETED"
           }
         });
       } catch (err) {
@@ -1164,14 +1209,24 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     return {
       id: o.id,
       orderNumber: o.orderNumber,
+      createdAt: o.createdAt,
       date: o.createdAt.toISOString().slice(0, 10),
       branch: o.branch?.name || "Register Terminal",
+      branchName: o.branch?.name || "Register Terminal",
       source: o.source || "pos",
       type: o.type || "DINE_IN",
       status: o.status || "COMPLETED",
       paymentMethod: o.paymentMethod || "cash",
       items: o.items ? o.items.reduce((acc, item) => acc + item.quantity, 0) : 0,
-      total: o.total,
+      itemsList: (o.items || []).map(i => ({
+        id: i.id,
+        quantity: i.quantity,
+        price: Number(i.price || 0),
+        menuItem: i.menuItem ? { name: i.menuItem.name } : { name: "Menu Item" }
+      })),
+      feeRate: o.feeRate,
+      notes: o.notes,
+      total: Number(o.total || 0),
       pointsEarned,
     };
   });
