@@ -23,8 +23,9 @@ const getWallet = async (db, customerId) => {
 
 /**
  * Award points to a user (e.g. after order completion).
+ * @param {object} opts - Optional { orderId, orderNumber } to link transaction to an order
  */
-const earnPoints = async (db, customerId, points, description, tenantId) => {
+const earnPoints = async (db, customerId, points, description, tenantId, opts = {}) => {
   const customer = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
   if (!customer) throw new ApiError(404, "Customer not found");
 
@@ -41,7 +42,14 @@ const earnPoints = async (db, customerId, points, description, tenantId) => {
       data: { points: { increment: points }, lifetimeEarn: { increment: points } },
     }),
     mainPrisma.walletTransaction.create({
-      data: { walletId: wallet.id, points, description: description || "Points earned", tenantId },
+      data: {
+        walletId: wallet.id,
+        points,
+        description: description || "Points earned",
+        tenantId,
+        orderId: opts.orderId || null,
+        orderNumber: opts.orderNumber || null,
+      },
     }),
   ]);
 
@@ -199,10 +207,107 @@ const createCustomer = async (db, { name, phone, email, points = 0 }, tenantId) 
   };
 };
 
+/**
+ * Reverse points for a refunded order:
+ * 1. If points were earned on this order, deduct them from user's wallet.
+ * 2. If points were redeemed for this order, refund them back to user's wallet.
+ */
+const reverseOrderPoints = async (db, customerId, orderNumber, pointsRedeemed, tenantId, orderId) => {
+  if (!customerId) return;
+  const customer = await mainPrisma.appUser.findUnique({
+    where: { id: customerId },
+    include: { wallet: true }
+  });
+  if (!customer || !customer.wallet) return;
+
+  const wallet = customer.wallet;
+
+  // 1. Reverse Earned Points
+  const earnTx = await mainPrisma.walletTransaction.findFirst({
+    where: {
+      walletId: wallet.id,
+      points: { gt: 0 },
+      OR: [
+        { orderNumber: orderNumber },
+        { orderId: orderId || "non-existent-id" },
+        { description: `Earned on Order #${orderNumber}` },
+        { description: `Points earned for Order #${orderNumber}` },
+        { description: { contains: orderNumber } },
+      ],
+    }
+  });
+
+  if (earnTx && earnTx.points > 0) {
+    const reverseEarnDesc = `Reversed Earned Points (Refund Order #${orderNumber})`;
+    const existingRevEarn = await mainPrisma.walletTransaction.findFirst({
+      where: {
+        walletId: wallet.id,
+        OR: [
+          { description: reverseEarnDesc },
+          { AND: [{ orderNumber: orderNumber }, { points: { lt: 0 } }] }
+        ]
+      }
+    });
+    if (!existingRevEarn) {
+      const pointsToDeduct = earnTx.points;
+      await mainPrisma.$transaction([
+        mainPrisma.wallet.update({
+          where: { id: wallet.id },
+          data: { points: { decrement: pointsToDeduct }, lifetimeEarn: { decrement: pointsToDeduct } }
+        }),
+        mainPrisma.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            points: -pointsToDeduct,
+            description: reverseEarnDesc,
+            tenantId,
+            orderId: orderId || null,
+            orderNumber: orderNumber || null
+          }
+        })
+      ]);
+    }
+  }
+
+  // 2. Reverse Redeemed Points (Refund redeemed points back to customer)
+  const redeemedQty = pointsRedeemed && Number(pointsRedeemed) > 0 ? Number(pointsRedeemed) : 0;
+  if (redeemedQty > 0) {
+    const reverseRedeemDesc = `Refunded Redeemed Points (Refund Order #${orderNumber})`;
+    const existingRevRedeem = await mainPrisma.walletTransaction.findFirst({
+      where: {
+        walletId: wallet.id,
+        OR: [
+          { description: reverseRedeemDesc },
+          { AND: [{ orderNumber: orderNumber }, { points: { gt: 0 } }, { description: { contains: "Refunded" } }] }
+        ]
+      }
+    });
+    if (!existingRevRedeem) {
+      await mainPrisma.$transaction([
+        mainPrisma.wallet.update({
+          where: { id: wallet.id },
+          data: { points: { increment: redeemedQty } }
+        }),
+        mainPrisma.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            points: redeemedQty,
+            description: reverseRedeemDesc,
+            tenantId,
+            orderId: orderId || null,
+            orderNumber: orderNumber || null
+          }
+        })
+      ]);
+    }
+  }
+};
+
 module.exports = {
   getWallet,
   earnPoints,
   redeemPoints,
+  reverseOrderPoints,
   searchCustomers,
   getAllCustomersForReport,
   getAllTransactionsForReport,
