@@ -27,4 +27,12 @@ router.post(
   ctrl.uploadDoorstepImages
 );
 
+// Route to upload avatar/profile picture
+router.post(
+  "/avatar",
+  (req, _res, next) => { req.uploadDir = "avatars"; next(); },
+  upload.single("avatar"),
+  ctrl.uploadAvatar
+);
+
 module.exports = router;

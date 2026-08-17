@@ -43,4 +43,19 @@ const uploadDoorstepImages = catchAsync(async (req, res) => {
   res.status(201).json({ success: true, data: images });
 });
 
-module.exports = { update, remove, uploadDoorstepImages };
+// ─── POST /profile/avatar ─────────────────────────────────────────────────────
+const uploadAvatar = catchAsync(async (req, res) => {
+  if (!req.file) {
+    throw new ApiError(400, "No avatar image file provided");
+  }
+
+  res.status(201).json({
+    success: true,
+    data: {
+      imageUrl: `/uploads/avatars/${req.file.filename}`,
+      filename: req.file.filename,
+    },
+  });
+});
+
+module.exports = { update, remove, uploadDoorstepImages, uploadAvatar };

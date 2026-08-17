@@ -26,6 +26,20 @@ const updateProfile = async (db, userId, { name, email, avatarUrl, cars, address
     if (exists) throw new ApiError(409, "That email is already in use");
   }
 
+  // Cleanup old avatar image if it is being replaced
+  if (avatarUrl !== undefined && user.avatarUrl && user.avatarUrl !== avatarUrl) {
+    const filename = path.basename(user.avatarUrl);
+    const filePath = path.join(__dirname, "../../../uploads/avatars", filename);
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+        console.log("[Avatar Update] Cleaned up old avatar:", filePath);
+      } catch (err) {
+        console.error("[Avatar Update] Failed to delete old avatar:", filePath, err.message);
+      }
+    }
+  }
+
   // Cleanup doorstep images for deleted addresses
   if (addresses !== undefined) {
     const oldAddresses = user.addresses || [];
@@ -119,6 +133,20 @@ const deleteAccount = async (db, userId) => {
     include: { wallet: true }
   });
   if (!user) throw new ApiError(404, "User not found");
+
+  // Clean up avatar image from filesystem
+  if (user.avatarUrl) {
+    const filename = path.basename(user.avatarUrl);
+    const filePath = path.join(__dirname, "../../../uploads/avatars", filename);
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+        console.log("[Account Delete] Cleaned up avatar image:", filePath);
+      } catch (err) {
+        console.error("[Account Delete] Failed to delete avatar image:", filePath, err.message);
+      }
+    }
+  }
 
   // Clean up doorstep images from filesystem
   const oldAddresses = user.addresses || [];
