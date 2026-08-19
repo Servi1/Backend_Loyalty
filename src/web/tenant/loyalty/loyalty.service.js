@@ -34,10 +34,10 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
         console.log(`[LOYALTY] Earning points blocked: Loyalty program is globally disabled for tenant ${tenant.name}`);
         return null;
       }
-      // Add Points toggle affects POS & Servi App only
+      // Add Points toggle affects POS Cashier channel only
       const source = (opts.source || "").toLowerCase();
-      if ((source === "pos" || source === "app" || !source) && tenant.loyaltyAddPoints === false) {
-        console.log(`[LOYALTY] Earning points blocked: Add Points toggle disabled for POS & App on tenant ${tenant.name}`);
+      if (source === "pos" && tenant.loyaltyAddPoints === false) {
+        console.log(`[LOYALTY] Earning points blocked: Add Points toggle disabled for POS on tenant ${tenant.name}`);
         return null;
       }
     }
@@ -85,10 +85,10 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
       if (tenant.loyaltyEnabled === false) {
         throw new ApiError(400, "Loyalty points program is currently disabled for this brand.");
       }
-      // Redeem Points toggle affects POS & Servi App only
+      // Redeem Points toggle affects POS Cashier channel only
       const source = (opts.source || "").toLowerCase();
-      if ((source === "pos" || source === "app" || !source) && tenant.loyaltyRedeemPoints === false) {
-        throw new ApiError(400, "Redeeming loyalty points is currently disabled for POS & Servi App.");
+      if (source === "pos" && tenant.loyaltyRedeemPoints === false) {
+        throw new ApiError(400, "Redeeming loyalty points is currently disabled for POS Cashier.");
       }
     }
   }
