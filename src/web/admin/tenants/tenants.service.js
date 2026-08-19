@@ -944,6 +944,7 @@ const getInvoices = async (filters = {}) => {
         const totalBilledAmount = invoiceAmount + totalTransactionFees;
         invoices.push({
           id: `INV-${tenant.slug.toUpperCase()}-${currentYear}${String(currentMonth + 1).padStart(2, "0")}`,
+          tenantId: tenant.id,
           tenantName: tenant.name,
           plan: planName,
           period: `${startPeriodStr} - ${endPeriodStr}`,
@@ -1663,6 +1664,8 @@ const toggleSlot = async (tenantId, serviceType, slotIndex, active, deviceId) =>
   const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
   if (!tenant) throw new ApiError(404, "Tenant not found");
 
+  const isBoolActive = active === true || active === "true";
+
   const qtyKeyMap = {
     pos: "posQuantity",
     qr_table: "qrTableQuantity",
@@ -1673,14 +1676,14 @@ const toggleSlot = async (tenantId, serviceType, slotIndex, active, deviceId) =>
   };
 
   const fieldKey = qtyKeyMap[serviceType?.toLowerCase()];
-  if (!fieldKey) return { tenantId, serviceType, slotIndex, active };
+  if (!fieldKey) return { tenantId, serviceType, slotIndex, active: isBoolActive };
 
   const currentQty = Number(tenant[fieldKey] || 1);
   let newQty = currentQty;
 
-  if (active === false && currentQty > 0) {
+  if (!isBoolActive && currentQty > 0) {
     newQty = Math.max(0, currentQty - 1);
-  } else if (active === true) {
+  } else if (isBoolActive) {
     newQty = currentQty + 1;
   }
 
@@ -1698,19 +1701,24 @@ const toggleSlot = async (tenantId, serviceType, slotIndex, active, deviceId) =>
       let targetDeviceId = deviceId;
       if (!targetDeviceId) {
         if (sType === "pos") {
-          const dev = await tenantPrisma.posDevice.findMany({ orderBy: { createdAt: "asc" }, take: slotIndex });
+          const dev = await tenantPrisma.posDevice.findMany({ orderBy: { createdAt: "asc" } });
           if (dev[slotIndex - 1]) targetDeviceId = dev[slotIndex - 1].id;
         } else if (sType === "kds") {
-          const dev = await tenantPrisma.kdsDevice.findMany({ orderBy: { createdAt: "asc" }, take: slotIndex });
+          const dev = await tenantPrisma.kdsDevice.findMany({ orderBy: { createdAt: "asc" } });
+          if (dev[slotIndex - 1]) targetDeviceId = dev[slotIndex - 1].id;
+        } else if (sType === "qr_table") {
+          const dev = await tenantPrisma.table.findMany({ orderBy: { createdAt: "asc" } });
           if (dev[slotIndex - 1]) targetDeviceId = dev[slotIndex - 1].id;
         }
       }
 
       if (targetDeviceId) {
         if (sType === "pos") {
-          await tenantPrisma.posDevice.update({ where: { id: targetDeviceId }, data: { isActive: active } }).catch(() => null);
+          await tenantPrisma.posDevice.update({ where: { id: targetDeviceId }, data: { isActive: isBoolActive } }).catch((err) => console.error("Error updating posDevice isActive:", err.message));
         } else if (sType === "kds") {
-          await tenantPrisma.kdsDevice.update({ where: { id: targetDeviceId }, data: { isActive: active } }).catch(() => null);
+          await tenantPrisma.kdsDevice.update({ where: { id: targetDeviceId }, data: { isActive: isBoolActive } }).catch((err) => console.error("Error updating kdsDevice isActive:", err.message));
+        } else if (sType === "qr_table") {
+          await tenantPrisma.table.update({ where: { id: targetDeviceId }, data: { isActive: isBoolActive } }).catch((err) => console.error("Error updating table isActive:", err.message));
         }
       }
     } catch (err) {
@@ -1722,7 +1730,7 @@ const toggleSlot = async (tenantId, serviceType, slotIndex, active, deviceId) =>
     tenantId,
     serviceType,
     slotIndex,
-    active,
+    active: isBoolActive,
     previousQuantity: currentQty,
     newQuantity: newQty,
   };
