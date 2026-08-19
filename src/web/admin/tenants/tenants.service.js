@@ -645,14 +645,19 @@ const getInvoices = async (filters = {}) => {
 
               for (let i = 0; i < quantity; i++) {
                 const singleCost = unitPrice * (daysActive / totalDays);
-                invoiceAmount += singleCost;
                 const assigned = regDevices[i] || null;
+                const isSlotCanceled = assigned ? assigned.isActive === false : (i >= Number(tenant[gsvc.qtyKey] || 0));
+                
+                if (!isSlotCanceled) {
+                  invoiceAmount += singleCost;
+                }
 
                 globalServices.push({
                   id: `${gsvc.typeKey}_slot_${i + 1}`,
                   typeKey: gsvc.typeKey,
                   slotIndex: i + 1,
                   name: `${gsvc.label} Slot #${i + 1}`,
+                  isCanceled: isSlotCanceled,
                   assignedDevice: assigned ? {
                     id: assigned.id,
                     name: assigned.name || assigned.label || `Device #${i + 1}`,
@@ -662,7 +667,7 @@ const getInvoices = async (filters = {}) => {
                   } : null,
                   price: unitPrice,
                   monthlyTotal: parseFloat(unitPrice.toFixed(2)),
-                  amount: parseFloat(singleCost.toFixed(2)),
+                  amount: isSlotCanceled ? 0.0 : parseFloat(singleCost.toFixed(2)),
                   quantity: 1,
                   daysActive,
                   totalDays,
@@ -680,6 +685,7 @@ const getInvoices = async (filters = {}) => {
                 typeKey: gsvc.typeKey,
                 slotIndex: 1,
                 name: gsvc.label,
+                isCanceled: false,
                 price: unitPrice,
                 monthlyTotal: parseFloat(monthlyPrice.toFixed(2)),
                 amount: parseFloat(cost.toFixed(2)),
@@ -723,17 +729,21 @@ const getInvoices = async (filters = {}) => {
 
             for (let i = 0; i < addonQty; i++) {
               const singleCost = unitPrice * (daysActive / totalDays);
-              invoiceAmount += singleCost;
-
               const globalIndex = (baseSlotCounts[typeKey] || 0);
               baseSlotCounts[typeKey] = globalIndex + 1;
               const assigned = regDevices[globalIndex] || null;
+              const isAddonCanceled = assigned ? assigned.isActive === false : false;
+
+              if (!isAddonCanceled) {
+                invoiceAmount += singleCost;
+              }
 
               globalServices.push({
                 id: `addon_${typeKey}_slot_${i + 1}_${addedDate.getTime()}`,
                 typeKey,
                 slotIndex: globalIndex + 1,
                 name: `Add-on: ${label} Slot #${i + 1}`,
+                isCanceled: isAddonCanceled,
                 assignedDevice: assigned ? {
                   id: assigned.id,
                   name: assigned.name || assigned.label || `Device #${globalIndex + 1}`,
@@ -743,7 +753,7 @@ const getInvoices = async (filters = {}) => {
                 } : null,
                 price: unitPrice,
                 monthlyTotal: parseFloat(unitPrice.toFixed(2)),
-                amount: parseFloat(singleCost.toFixed(2)),
+                amount: isAddonCanceled ? 0.0 : parseFloat(singleCost.toFixed(2)),
                 quantity: 1,
                 daysActive,
                 totalDays,
