@@ -712,6 +712,7 @@ const getInvoices = async (filters = {}) => {
       };
 
       const tenantAddons = tenant.slotAddons || [];
+      const addonCounts = {};
       for (const addon of tenantAddons) {
         const addedDate = new Date(addon.addedAt);
         if (addedDate.getFullYear() === currentYear && addedDate.getMonth() === currentMonth) {
@@ -731,6 +732,7 @@ const getInvoices = async (filters = {}) => {
               const singleCost = unitPrice * (daysActive / totalDays);
               const globalIndex = (baseSlotCounts[typeKey] || 0);
               baseSlotCounts[typeKey] = globalIndex + 1;
+              const addonSeq = (addonCounts[typeKey] = (addonCounts[typeKey] || 0) + 1);
               const assigned = regDevices[globalIndex] || null;
               const isAddonCanceled = assigned ? assigned.isActive === false : false;
 
@@ -739,10 +741,10 @@ const getInvoices = async (filters = {}) => {
               }
 
               globalServices.push({
-                id: `addon_${typeKey}_slot_${i + 1}_${addedDate.getTime()}`,
+                id: `addon_${typeKey}_slot_${addonSeq}_${addedDate.getTime()}`,
                 typeKey,
                 slotIndex: globalIndex + 1,
-                name: `Add-on: ${label} Slot #${i + 1}`,
+                name: `Add-on: ${label} Slot #${addonSeq}`,
                 isCanceled: isAddonCanceled,
                 assignedDevice: assigned ? {
                   id: assigned.id,
