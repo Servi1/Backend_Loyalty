@@ -233,7 +233,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       pointsCost,
       `Redeemed ${pointsCost} pts for order ${orderNumber}`,
       tenantId,
-      { orderId: null, orderNumber } // orderId filled after order creation below
+      { orderId: null, orderNumber, source: "app" } // orderId filled after order creation below
     );
     finalNotes = finalNotes ? `${finalNotes} | Points Payment` : "Points Payment";
   }
@@ -314,8 +314,8 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     },
   });
 
-  // Award points based on earnRate parameter (except if paid by points)
-  if (userId && earnRate && paymentMethod !== "points") {
+  // Award points only if order is already COMPLETED upon creation (except if paid by points)
+  if (initialStatus === "COMPLETED" && userId && earnRate && paymentMethod !== "points") {
     const rate = parseFloat(earnRate);
     if (rate > 0) {
       const pointsEarned = Math.round(subtotal * rate);
@@ -325,8 +325,9 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
             db,
             userId,
             pointsEarned,
-            `Points earned for Order #${orderNumber}`,
-            tenantId
+            `Earned on Order #${orderNumber}`,
+            tenantId,
+            { source: "app" }
           );
         } catch (err) {
           console.error("[APP ORDER] Failed to award loyalty points:", err.message);

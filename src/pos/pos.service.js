@@ -141,7 +141,8 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
           order.customerId,
           pointsToEarn,
           `Earned on Order #${order.orderNumber}`,
-          tenantId
+          tenantId,
+          { source: "pos" }
         );
       }
     } catch (err) {
@@ -307,7 +308,8 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
               updated.customerId,
               pointsToEarn,
               description,
-              tenantId
+              tenantId,
+              { source: "pos" }
             );
           }
         }
@@ -341,7 +343,7 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
             const pointsToEarn = Math.floor(updated.total * earnRate);
             if (pointsToEarn > 0) {
               const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
-              await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId);
+              await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId, { source: "pos" });
             }
           }
         }

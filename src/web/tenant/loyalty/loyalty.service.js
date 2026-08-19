@@ -23,9 +23,26 @@ const getWallet = async (db, customerId) => {
 
 /**
  * Award points to a user (e.g. after order completion).
- * @param {object} opts - Optional { orderId, orderNumber } to link transaction to an order
+ * @param {object} opts - Optional { orderId, orderNumber, source } to link transaction
  */
 const earnPoints = async (db, customerId, points, description, tenantId, opts = {}) => {
+  if (tenantId) {
+    const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+    if (tenant) {
+      // Main active toggle affects ALL channels
+      if (tenant.loyaltyEnabled === false) {
+        console.log(`[LOYALTY] Earning points blocked: Loyalty program is globally disabled for tenant ${tenant.name}`);
+        return null;
+      }
+      // Add Points toggle affects POS & Servi App only
+      const source = (opts.source || "").toLowerCase();
+      if ((source === "pos" || source === "app" || !source) && tenant.loyaltyAddPoints === false) {
+        console.log(`[LOYALTY] Earning points blocked: Add Points toggle disabled for POS & App on tenant ${tenant.name}`);
+        return null;
+      }
+    }
+  }
+
   const customer = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
   if (!customer) throw new ApiError(404, "Customer not found");
 
@@ -58,9 +75,24 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
 
 /**
  * Redeem points from a user's wallet.
- * @param {object} opts  - Optional { orderId, orderNumber } to link transaction to an order
+ * @param {object} opts - Optional { orderId, orderNumber, source } to link transaction
  */
 const redeemPoints = async (db, customerId, points, description, tenantId, opts = {}) => {
+  if (tenantId) {
+    const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+    if (tenant) {
+      // Main active toggle affects ALL channels
+      if (tenant.loyaltyEnabled === false) {
+        throw new ApiError(400, "Loyalty points program is currently disabled for this brand.");
+      }
+      // Redeem Points toggle affects POS & Servi App only
+      const source = (opts.source || "").toLowerCase();
+      if ((source === "pos" || source === "app" || !source) && tenant.loyaltyRedeemPoints === false) {
+        throw new ApiError(400, "Redeeming loyalty points is currently disabled for POS & Servi App.");
+      }
+    }
+  }
+
   const customer = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
   if (!customer) throw new ApiError(404, "Customer not found");
 

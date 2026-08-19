@@ -552,8 +552,12 @@ const getInvoices = async (filters = {}) => {
   };
 
   for (const tenant of tenants) {
-    // 1. Fetch branches from tenant DB
+    // 1. Fetch branches and registered devices from tenant DB
     let dbBranches = [];
+    let dbPosDevices = [];
+    let dbKdsDevices = [];
+    let dbTables = [];
+
     try {
       const tenantPrisma = getTenantClient(tenant.dbUrl);
       dbBranches = await tenantPrisma.branch.findMany({
@@ -575,8 +579,11 @@ const getInvoices = async (filters = {}) => {
           appServiSubscribedAt: true
         }
       });
+      dbPosDevices = await tenantPrisma.posDevice.findMany({ include: { branch: true }, orderBy: { createdAt: "asc" } }).catch(() => []);
+      dbKdsDevices = await tenantPrisma.kdsDevice.findMany({ include: { branch: true }, orderBy: { createdAt: "asc" } }).catch(() => []);
+      dbTables = await tenantPrisma.table.findMany({ include: { branch: true }, orderBy: { createdAt: "asc" } }).catch(() => []);
     } catch (err) {
-      console.error(`Failed to fetch branches for tenant ${tenant.slug} in getInvoices:`, err.message);
+      console.error(`Failed to fetch devices for tenant ${tenant.slug} in getInvoices:`, err.message);
     }
 
     // 2. Loop through calendar months since signup
@@ -609,6 +616,9 @@ const getInvoices = async (filters = {}) => {
         { flag: "subBranch", qtyKey: "branchLimit", priceKey: "priceBranch", defaultPrice: 19.0, label: "Branch Location", isSlot: true, typeKey: "branch" },
       ];
 
+      // Track base slot counts to align add-on slots with remaining registered devices
+      const baseSlotCounts = {};
+
       for (const gsvc of globalServiceConfigs) {
         if (tenant[gsvc.flag]) {
           const { daysActive, totalDays, period } = getDaysActiveInMonth(tenant.createdAt, currentMonthEnd, currentYear, currentMonth);
@@ -623,36 +633,36 @@ const getInvoices = async (filters = {}) => {
               })
               .reduce((sum, a) => sum + Number(a.quantity || 0), 0);
 
-            const rawCurrentQty = Number(tenant[gsvc.qtyKey] || 1);
-            const quantity = gsvc.isSlot ? Math.max(0, rawCurrentQty - monthAddonQty) : 1;
+            if (gsvc.isSlot) {
+              let regDevices = [];
+              if (gsvc.typeKey === "pos") regDevices = dbPosDevices;
+              else if (gsvc.typeKey === "kds") regDevices = dbKdsDevices;
+              else if (gsvc.typeKey === "qr_table") regDevices = dbTables;
 
-            if (quantity > 0) {
-              if (gsvc.isSlot) {
-                for (let i = 0; i < quantity; i++) {
-                  const singleCost = unitPrice * (daysActive / totalDays);
-                  invoiceAmount += singleCost;
-                  globalServices.push({
-                    name: `${gsvc.label} Slot`,
-                    price: unitPrice,
-                    monthlyTotal: parseFloat(unitPrice.toFixed(2)),
-                    amount: parseFloat(singleCost.toFixed(2)),
-                    quantity: 1,
-                    daysActive,
-                    totalDays,
-                    period,
-                    prorated: daysActive < totalDays
-                  });
-                }
-              } else {
-                const monthlyPrice = unitPrice * quantity;
-                const cost = monthlyPrice * (daysActive / totalDays);
+              const rawCurrentQty = Math.max(Number(tenant[gsvc.qtyKey] || 1), regDevices.length);
+              const quantity = Math.max(0, rawCurrentQty - monthAddonQty);
+              baseSlotCounts[gsvc.typeKey] = quantity;
 
-                invoiceAmount += cost;
+              for (let i = 0; i < quantity; i++) {
+                const singleCost = unitPrice * (daysActive / totalDays);
+                invoiceAmount += singleCost;
+                const assigned = regDevices[i] || null;
+
                 globalServices.push({
-                  name: gsvc.label,
+                  id: `${gsvc.typeKey}_slot_${i + 1}`,
+                  typeKey: gsvc.typeKey,
+                  slotIndex: i + 1,
+                  name: `${gsvc.label} Slot #${i + 1}`,
+                  assignedDevice: assigned ? {
+                    id: assigned.id,
+                    name: assigned.name || assigned.label || `Device #${i + 1}`,
+                    deviceKey: assigned.deviceKey || null,
+                    branchName: assigned.branch?.name || "Main Branch",
+                    isActive: assigned.isActive ?? true,
+                  } : null,
                   price: unitPrice,
-                  monthlyTotal: parseFloat(monthlyPrice.toFixed(2)),
-                  amount: parseFloat(cost.toFixed(2)),
+                  monthlyTotal: parseFloat(unitPrice.toFixed(2)),
+                  amount: parseFloat(singleCost.toFixed(2)),
                   quantity: 1,
                   daysActive,
                   totalDays,
@@ -660,6 +670,25 @@ const getInvoices = async (filters = {}) => {
                   prorated: daysActive < totalDays
                 });
               }
+            } else {
+              const monthlyPrice = unitPrice;
+              const cost = monthlyPrice * (daysActive / totalDays);
+
+              invoiceAmount += cost;
+              globalServices.push({
+                id: `${gsvc.typeKey}_license`,
+                typeKey: gsvc.typeKey,
+                slotIndex: 1,
+                name: gsvc.label,
+                price: unitPrice,
+                monthlyTotal: parseFloat(monthlyPrice.toFixed(2)),
+                amount: parseFloat(cost.toFixed(2)),
+                quantity: 1,
+                daysActive,
+                totalDays,
+                period,
+                prorated: daysActive < totalDays
+              });
             }
           }
         }
@@ -685,12 +714,33 @@ const getInvoices = async (filters = {}) => {
             const unitPrice = Number(addon.pricePerUnit || 0);
             const addonQty = Number(addon.quantity || 1);
             const label = serviceLabels[addon.serviceType.toLowerCase()] || addon.serviceType.toUpperCase();
+            const typeKey = addon.serviceType.toLowerCase();
+
+            let regDevices = [];
+            if (typeKey === "pos") regDevices = dbPosDevices;
+            else if (typeKey === "kds") regDevices = dbKdsDevices;
+            else if (typeKey === "qr_table") regDevices = dbTables;
 
             for (let i = 0; i < addonQty; i++) {
               const singleCost = unitPrice * (daysActive / totalDays);
               invoiceAmount += singleCost;
+
+              const globalIndex = (baseSlotCounts[typeKey] || 0);
+              baseSlotCounts[typeKey] = globalIndex + 1;
+              const assigned = regDevices[globalIndex] || null;
+
               globalServices.push({
-                name: `Add-on: +1 ${label} Slot`,
+                id: `addon_${typeKey}_slot_${i + 1}_${addedDate.getTime()}`,
+                typeKey,
+                slotIndex: globalIndex + 1,
+                name: `Add-on: ${label} Slot #${i + 1}`,
+                assignedDevice: assigned ? {
+                  id: assigned.id,
+                  name: assigned.name || assigned.label || `Device #${globalIndex + 1}`,
+                  deviceKey: assigned.deviceKey || null,
+                  branchName: assigned.branch?.name || "Main Branch",
+                  isActive: assigned.isActive ?? true,
+                } : null,
                 price: unitPrice,
                 monthlyTotal: parseFloat(unitPrice.toFixed(2)),
                 amount: parseFloat(singleCost.toFixed(2)),
@@ -1599,6 +1649,75 @@ const syncTenantOrders = async (tenantId) => {
   };
 };
 
+const toggleSlot = async (tenantId, serviceType, slotIndex, active, deviceId) => {
+  const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) throw new ApiError(404, "Tenant not found");
+
+  const qtyKeyMap = {
+    pos: "posQuantity",
+    qr_table: "qrTableQuantity",
+    qr_cashier: "qrCashierQuantity",
+    kds: "kdsQuantity",
+    cds: "cdsQuantity",
+    branch: "branchLimit",
+  };
+
+  const fieldKey = qtyKeyMap[serviceType?.toLowerCase()];
+  if (!fieldKey) return { tenantId, serviceType, slotIndex, active };
+
+  const currentQty = Number(tenant[fieldKey] || 1);
+  let newQty = currentQty;
+
+  if (active === false && currentQty > 0) {
+    newQty = Math.max(0, currentQty - 1);
+  } else if (active === true) {
+    newQty = currentQty + 1;
+  }
+
+  await mainPrisma.tenant.update({
+    where: { id: tenantId },
+    data: { [fieldKey]: newQty },
+  });
+
+  // Also update physical hardware device isActive status if assigned
+  if (tenant.dbUrl && (deviceId || slotIndex)) {
+    try {
+      const tenantPrisma = getTenantClient(tenant.dbUrl);
+      const sType = serviceType?.toLowerCase();
+      
+      let targetDeviceId = deviceId;
+      if (!targetDeviceId) {
+        if (sType === "pos") {
+          const dev = await tenantPrisma.posDevice.findMany({ orderBy: { createdAt: "asc" }, take: slotIndex });
+          if (dev[slotIndex - 1]) targetDeviceId = dev[slotIndex - 1].id;
+        } else if (sType === "kds") {
+          const dev = await tenantPrisma.kdsDevice.findMany({ orderBy: { createdAt: "asc" }, take: slotIndex });
+          if (dev[slotIndex - 1]) targetDeviceId = dev[slotIndex - 1].id;
+        }
+      }
+
+      if (targetDeviceId) {
+        if (sType === "pos") {
+          await tenantPrisma.posDevice.update({ where: { id: targetDeviceId }, data: { isActive: active } }).catch(() => null);
+        } else if (sType === "kds") {
+          await tenantPrisma.kdsDevice.update({ where: { id: targetDeviceId }, data: { isActive: active } }).catch(() => null);
+        }
+      }
+    } catch (err) {
+      console.error("[TOGGLE SLOT] Failed to update tenant device isActive:", err.message);
+    }
+  }
+
+  return {
+    tenantId,
+    serviceType,
+    slotIndex,
+    active,
+    previousQuantity: currentQty,
+    newQuantity: newQty,
+  };
+};
+
 module.exports = {
   getAll,
   getById,
@@ -1620,5 +1739,6 @@ module.exports = {
   getAllSystemUsers,
   getSyncStatus,
   syncTenantOrders,
+  toggleSlot,
 };
 
