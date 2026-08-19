@@ -308,7 +308,7 @@ const getLeaderboard = async (db) => {
     id: user.id,
     name: user.name || user.phone || "Loyal Customer",
     points: user.wallet?.points || 0,
-    avatar: user.avatarUrl || AVATARS[index % AVATARS.length]
+    avatar: user.avatarUrl || null
   }));
 };
 
