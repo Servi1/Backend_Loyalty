@@ -1,7 +1,8 @@
 const crypto = require("crypto");
 const axios = require("axios");
-const { getTenantClient, mainPrisma } = require("../../../shared/db/tenant-client");
-const { ApiError } = require("../../../shared/middleware/error-handler");
+const { getTenantClient } = require("../../../config/tenantManager");
+const mainPrisma = require("../../../config/prisma");
+const { ApiError } = require("../../../middlewares/errorHandler");
 
 const ZATCA_SANDBOX_URL = "https://sandbox.zatca.gov.sa";
 
