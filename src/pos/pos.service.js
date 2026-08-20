@@ -319,6 +319,18 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
     }
   }
 
+  // Trigger ZATCA Phase 2 E-Invoicing reporting if order is completed
+  if (upperStatus === "COMPLETED") {
+    try {
+      const { reportInvoiceToZatcaSandbox } = require("../web/tenant/zatca/zatca.service");
+      reportInvoiceToZatcaSandbox(tenantDb, updated.id).catch((err) =>
+        console.error("[POS ZATCA SYNC] Background reporting error:", err.message)
+      );
+    } catch (zErr) {
+      console.error("[POS ZATCA SYNC] Failed to trigger ZATCA reporting:", zErr.message);
+    }
+  }
+
   // If completed and customer exists, handle loyalty points auto-award
   if (upperStatus === "COMPLETED" && updated.customerId) {
     if (!(updated.notes && updated.notes.includes("Points Payment") || updated.paymentMethod === "points")) {

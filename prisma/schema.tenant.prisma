@@ -148,6 +148,18 @@ model Branch {
   locationGroup       LocationGroup?     @relation(fields: [locationGroupId], references: [id])
   customPaymentTypes CustomPaymentType[]
   customOrderTypes   CustomOrderType[]
+
+  // ZATCA Phase 2 Integration Fields
+  zatcaEnabled       Boolean   @default(false)
+  zatcaEnvironment   String?   @default("sandbox") // sandbox | simulation | production
+  zatcaVatNumber     String?
+  zatcaCrNumber      String?
+  zatcaCsidSecret    String?
+  zatcaPrivateKey    String?
+  zatcaCertificate   String?
+  zatcaStatus        String?   @default("UNREGISTERED") // UNREGISTERED | COMPLIANCE_PASSED | PRODUCTION_ACTIVE
+  zatcaLastSync      DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -265,6 +277,15 @@ model Order {
   selectedSlot     String?
   selectedSlotDate String?
   slotDetails      Json?
+
+  // ZATCA Phase 2 E-Invoicing Tracking Fields
+  zatcaXml        String?
+  zatcaQrCode     String?
+  zatcaHash       String?
+  zatcaIcv        Int?
+  zatcaPih        String?
+  zatcaReported   Boolean   @default(false)
+  zatcaReportedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
