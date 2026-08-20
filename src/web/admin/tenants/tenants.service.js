@@ -1711,6 +1711,9 @@ const toggleSlot = async (tenantId, serviceType, slotIndex, active, deviceId) =>
         } else if (sType === "qr_table") {
           const dev = await tenantPrisma.table.findMany({ orderBy: { createdAt: "asc" } });
           if (dev[slotIndex - 1]) targetDeviceId = dev[slotIndex - 1].id;
+        } else if (sType === "qr_cashier") {
+          const dev = await tenantPrisma.qrCashier.findMany({ orderBy: { createdAt: "asc" } });
+          if (dev[slotIndex - 1]) targetDeviceId = dev[slotIndex - 1].id;
         }
       }
 
@@ -1721,6 +1724,8 @@ const toggleSlot = async (tenantId, serviceType, slotIndex, active, deviceId) =>
           await tenantPrisma.kdsDevice.update({ where: { id: targetDeviceId }, data: { isActive: isBoolActive } }).catch((err) => console.error("Error updating kdsDevice isActive:", err.message));
         } else if (sType === "qr_table") {
           await tenantPrisma.table.update({ where: { id: targetDeviceId }, data: { isActive: isBoolActive } }).catch((err) => console.error("Error updating table isActive:", err.message));
+        } else if (sType === "qr_cashier") {
+          await tenantPrisma.qrCashier.update({ where: { id: targetDeviceId }, data: { isActive: isBoolActive } }).catch((err) => console.error("Error updating qrCashier isActive:", err.message));
         }
       }
     } catch (err) {
