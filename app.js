@@ -90,7 +90,7 @@ tenantRouter.get("/info", async (req, res, next) => {
     const tableCount = await req.tenantDb.table.count();
     const posCount = await req.tenantDb.posDevice.count();
     const branchCount = await req.tenantDb.branch.count();
-    const kdsCount = await req.tenantDb.user.count({ where: { role: "KITCHEN" } });
+    const kdsCount = await req.tenantDb.kdsDevice.count();
     const qrCashierCount = await req.tenantDb.qrCashier.count();
     const cdsCount = 0; // CDS doesn't map to a specific database entity yet
 
@@ -185,7 +185,7 @@ tenantRouter.post("/market/buy", async (req, res, next) => {
     const tableCount = await req.tenantDb.table.count();
     const posCount = await req.tenantDb.posDevice.count();
     const branchCount = await req.tenantDb.branch.count();
-    const kdsCount = await req.tenantDb.user.count({ where: { role: "KITCHEN" } });
+    const kdsCount = await req.tenantDb.kdsDevice.count();
     const qrCashierCount = await req.tenantDb.qrCashier.count();
     const cdsCount = 0;
 
