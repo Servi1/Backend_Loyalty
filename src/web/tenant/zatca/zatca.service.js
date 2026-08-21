@@ -329,6 +329,11 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
     throw new ApiError(400, "Valid ZATCA 6-digit OTP is required for POS device CSID onboarding");
   }
 
+  // Block fake OTP 123456 in Production Mode
+  if (environment === "production" && String(otp).trim() === "123456") {
+    throw new ApiError(400, "Live Production onboarding requires an official 6-digit OTP generated from the taxpayer Fatoora Portal (fatoora.zatca.gov.sa). Test OTP '123456' is strictly restricted to Demo / Sandbox mode.");
+  }
+
   // 1. Generate ECDSA secp256k1 keypair for this specific POS device
   const { privateKey, publicKey } = crypto.generateKeyPairSync("ec", {
     namedCurve: "secp256k1"
@@ -342,16 +347,20 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
   const csrSubject = `CN=${commonName}, OU=${branch.name || "Main"}, O=ServiTenant, C=SA, SN=1-Servi|2-1.0|3-${posDeviceId.slice(0, 8)}, UID=${cleanVat}, Title=1100`;
   const csrBase64 = Buffer.from(csrSubject + "\n" + publicKeyPem).toString("base64");
 
+  const targetZatcaUrl = environment === "production"
+    ? "https://gw-fatoora.zatca.gov.sa/e-invoicing/core/compliance"
+    : `${ZATCA_SANDBOX_URL}/compliance`;
+
   let csidResult = null;
 
-  // Attempt real ZATCA Sandbox API call
+  // Attempt real ZATCA API call
   try {
-    console.log("\n================ 📡 LIVE ZATCA API REQUEST ================");
-    console.log("Endpoint:", `${ZATCA_SANDBOX_URL}/compliance`);
+    console.log(`\n================ 📡 LIVE ZATCA ${environment.toUpperCase()} API REQUEST ================`);
+    console.log("Endpoint:", targetZatcaUrl);
     console.log("OTP Sent:", String(otp).trim());
     
     const zatcaRes = await axios.post(
-      `${ZATCA_SANDBOX_URL}/compliance`,
+      targetZatcaUrl,
       { csr: csrBase64 },
       {
         headers: {
@@ -377,8 +386,8 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
     console.log("ZATCA Error Body:", apiErr.response ? JSON.stringify(apiErr.response.data, null, 2) : apiErr.message);
     console.log("===========================================================\n");
 
-    if (String(otp).trim() === "123456") {
-      // Local developer test fallback
+    if (environment === "sandbox" && String(otp).trim() === "123456") {
+      // Local developer test fallback ONLY for sandbox mode
       csidResult = {
         requestID: `REQ-${Date.now()}`,
         binarySecurityToken: Buffer.from(`ZATCA-CERT-${Date.now()}-${posDeviceId}`).toString("base64"),
@@ -386,9 +395,9 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
         dispositionMessage: "ISSUED"
       };
     } else {
-      // Throw ZATCA API error so enrollment fails on bad OTP
+      // Reject enrollment on bad OTP or failed production call
       const errDetail = apiErr.response?.data?.errors?.[0]?.message || apiErr.response?.data?.message || apiErr.message;
-      throw new ApiError(400, `ZATCA Server Rejected OTP: ${errDetail}`);
+      throw new ApiError(400, `ZATCA ${environment.toUpperCase()} Onboarding Failed: ${errDetail}`);
     }
   }
 
