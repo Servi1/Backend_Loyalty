@@ -1,7 +1,19 @@
 const express = require("express");
-const { onboardZatcaSandbox, testZatcaCompliance, resyncOrdersZatca, reportInvoiceToZatcaSandbox } = require("./zatca.service");
+const { onboardZatcaSandbox, onboardPosZatcaSandbox, testZatcaCompliance, resyncOrdersZatca, reportInvoiceToZatcaSandbox } = require("./zatca.service");
 
 const zatcaRouter = express.Router({ mergeParams: true });
+
+// Onboard POS Device in ZATCA (Sandbox or Production)
+zatcaRouter.post("/pos-devices/:posDeviceId/zatca/onboard", async (req, res, next) => {
+  try {
+    const { posDeviceId } = req.params;
+    const { otp, environment } = req.body;
+    const result = await onboardPosZatcaSandbox(req.tenantDb, posDeviceId, { otp, environment });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Onboard Branch in ZATCA Sandbox (CSID generation)
 zatcaRouter.post("/branches/:branchId/zatca/onboard", async (req, res, next) => {

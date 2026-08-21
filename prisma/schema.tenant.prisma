@@ -336,6 +336,16 @@ model PosDevice {
   branchId  String
   branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
  
+  // Per-POS Device ZATCA Phase 2 Integration Fields
+  zatcaEnabled       Boolean   @default(false)
+  zatcaEnvironment   String?   @default("sandbox") // sandbox | production
+  zatcaCsidSecret    String?
+  zatcaPrivateKey    String?
+  zatcaCertificate   String?
+  zatcaOtp           String?
+  zatcaStatus        String?   @default("UNREGISTERED") // UNREGISTERED | COMPLIANCE_PASSED | PRODUCTION_ACTIVE
+  zatcaLastSync      DateTime?
+
   expiresAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
