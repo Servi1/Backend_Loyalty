@@ -169,7 +169,7 @@ async function reportInvoiceToZatcaSandbox(tenantDb, orderId) {
 
     const vatAmount = Number(order.total || 0) * (0.15 / 1.15); // 15% SAR VAT
     const sellerName = order.branch?.name || "Servi Merchant";
-    const vatNumber = order.branch?.zatcaVatNumber || order.branch?.vatId || "300000000000003";
+    const vatNumber = (order.branch?.zatcaVatNumber || order.branch?.vatId || "").trim();
 
     // Generate ZATCA Phase 2 TLV QR Code
     const qrBase64 = generateZatcaQrCode(
@@ -317,9 +317,13 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
   if (!posDevice) throw new ApiError(404, "POS Device not found");
 
   const branch = posDevice.branch || {};
-  // Automatically pull VAT ID & CR No from Branch or Tenant Database
-  const cleanVat = (branch.zatcaVatNumber || branch.vatId || "300000000000003").trim();
-  const cleanCr = (branch.zatcaCrNumber || branch.license || "1010000000").trim();
+  // Automatically pull VAT ID & CR No directly from Branch / Tenant Database
+  const cleanVat = (branch.zatcaVatNumber || branch.vatId || "").trim();
+  const cleanCr = (branch.zatcaCrNumber || branch.license || "").trim();
+
+  if (!cleanVat) {
+    throw new ApiError(400, "Branch VAT Registration Number (vatId) is not set in the database. Please configure branch VAT first.");
+  }
 
   if (!otp || String(otp).trim().length < 5) {
     throw new ApiError(400, "Valid ZATCA 6-digit OTP is required for POS device CSID onboarding");
