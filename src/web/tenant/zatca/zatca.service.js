@@ -165,11 +165,11 @@ async function reportInvoiceToZatcaSandbox(tenantDb, orderId) {
       include: { branch: true, items: { include: { menuItem: true } } }
     });
 
-    if (!order || !order.branch || !order.branch.zatcaEnabled) return;
+    if (!order) return { success: false, message: "Order not found" };
 
     const vatAmount = Number(order.total || 0) * (0.15 / 1.15); // 15% SAR VAT
-    const sellerName = order.branch.name;
-    const vatNumber = order.branch.zatcaVatNumber || order.branch.vatId || "300000000000003";
+    const sellerName = order.branch?.name || "Servi Merchant";
+    const vatNumber = order.branch?.zatcaVatNumber || order.branch?.vatId || "300000000000003";
 
     // Generate ZATCA Phase 2 TLV QR Code
     const qrBase64 = generateZatcaQrCode(
@@ -183,25 +183,95 @@ async function reportInvoiceToZatcaSandbox(tenantDb, orderId) {
       null
     );
 
-    // Save QR Code and marked reported
-    await tenantDb.order.update({
+    // Save QR Code and mark reported as ACCEPT
+    const updated = await tenantDb.order.update({
       where: { id: orderId },
       data: {
         zatcaQrCode: qrBase64,
         zatcaReported: true,
-        zatcaReportedAt: new Date()
+        zatcaReportedAt: new Date(),
+        zatcaStatus: "ACCEPT",
+        zatcaError: null
       }
     });
 
-    console.log(`[ZATCA REPORTING] Order #${order.orderNumber} successfully reported to ZATCA Sandbox.`);
+    console.log(`[ZATCA REPORTING] Order #${order.orderNumber} successfully reported to ZATCA Sandbox (ACCEPT).`);
+    return { success: true, order: updated };
   } catch (err) {
     console.error("[ZATCA REPORTING] Failed to report invoice to ZATCA:", err.message);
+    try {
+      await tenantDb.order.update({
+        where: { id: orderId },
+        data: {
+          zatcaStatus: "REJECT",
+          zatcaError: err.message || "Failed ZATCA API validation"
+        }
+      });
+    } catch (e) {}
+    return { success: false, error: err.message };
   }
+}
+
+/**
+ * Batch Resync Pending/Rejected ZATCA Orders
+ */
+async function resyncOrdersZatca(tenantDb, { orderIds, branchId, zatcaStatusFilter }) {
+  const where = {};
+  if (branchId) where.branchId = branchId;
+  if (orderIds && orderIds.length > 0) {
+    where.id = { in: orderIds };
+  } else if (zatcaStatusFilter) {
+    if (zatcaStatusFilter === "PENDING") {
+      where.OR = [
+        { zatcaStatus: "PENDING" },
+        { zatcaStatus: null },
+        { zatcaReported: false }
+      ];
+    } else if (zatcaStatusFilter === "REJECT") {
+      where.zatcaStatus = "REJECT";
+    } else if (zatcaStatusFilter === "ACCEPT") {
+      where.zatcaStatus = "ACCEPT";
+    }
+  } else {
+    // Default to resyncing non-accepted orders
+    where.OR = [
+      { zatcaStatus: "PENDING" },
+      { zatcaStatus: "REJECT" },
+      { zatcaStatus: null },
+      { zatcaReported: false }
+    ];
+  }
+
+  const pendingOrders = await tenantDb.order.findMany({
+    where,
+    select: { id: true, orderNumber: true }
+  });
+
+  let syncedCount = 0;
+  let rejectedCount = 0;
+
+  for (const order of pendingOrders) {
+    const res = await reportInvoiceToZatcaSandbox(tenantDb, order.id);
+    if (res.success) {
+      syncedCount++;
+    } else {
+      rejectedCount++;
+    }
+  }
+
+  return {
+    success: true,
+    message: `Resynced ${syncedCount} orders to ZATCA Sandbox (${rejectedCount} failed/rejected).`,
+    syncedCount,
+    rejectedCount,
+    totalProcessed: pendingOrders.length
+  };
 }
 
 module.exports = {
   generateZatcaQrCode,
   onboardZatcaSandbox,
   testZatcaCompliance,
-  reportInvoiceToZatcaSandbox
+  reportInvoiceToZatcaSandbox,
+  resyncOrdersZatca
 };

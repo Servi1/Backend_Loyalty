@@ -1,5 +1,5 @@
 const express = require("express");
-const { onboardZatcaSandbox, testZatcaCompliance } = require("./zatca.service");
+const { onboardZatcaSandbox, testZatcaCompliance, resyncOrdersZatca, reportInvoiceToZatcaSandbox } = require("./zatca.service");
 
 const zatcaRouter = express.Router({ mergeParams: true });
 
@@ -20,6 +20,28 @@ zatcaRouter.post("/branches/:branchId/zatca/test-compliance", async (req, res, n
   try {
     const { branchId } = req.params;
     const result = await testZatcaCompliance(req.tenantDb, branchId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Resync Batch ZATCA Orders
+zatcaRouter.post("/zatca/resync-orders", async (req, res, next) => {
+  try {
+    const { orderIds, branchId, zatcaStatusFilter } = req.body;
+    const result = await resyncOrdersZatca(req.tenantDb, { orderIds, branchId, zatcaStatusFilter });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Resync Single ZATCA Order
+zatcaRouter.post("/zatca/resync-order/:orderId", async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const result = await reportInvoiceToZatcaSandbox(req.tenantDb, orderId);
     res.json(result);
   } catch (err) {
     next(err);
