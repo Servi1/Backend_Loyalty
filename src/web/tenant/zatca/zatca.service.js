@@ -307,8 +307,12 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
     dispositionMessage: "ISSUED"
   };
 
-  // Attempt real ZATCA Sandbox API call if network available
+  // Attempt real ZATCA Sandbox API call
   try {
+    console.log("\n================ 📡 LIVE ZATCA API REQUEST ================");
+    console.log("Endpoint:", `${ZATCA_SANDBOX_URL}/compliance`);
+    console.log("OTP Sent:", String(otp).trim());
+    
     const zatcaRes = await axios.post(
       `${ZATCA_SANDBOX_URL}/compliance`,
       { csr: csrBase64 },
@@ -322,11 +326,19 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
       }
     );
 
+    console.log("================ ✅ LIVE ZATCA API RESPONSE ================");
+    console.log("HTTP Status:", zatcaRes.status);
+    console.log("ZATCA Data:", JSON.stringify(zatcaRes.data, null, 2));
+    console.log("===========================================================\n");
+
     if (zatcaRes.data && zatcaRes.data.binarySecurityToken) {
       csidResult = zatcaRes.data;
     }
   } catch (apiErr) {
-    console.warn(`[ZATCA SANDBOX] POS ${posDevice.name} API call simulated or timed out. Falling back to Compliant Test CSID:`, apiErr.message);
+    console.log("================ ❌ LIVE ZATCA API RESPONSE ================");
+    console.log("HTTP Status:", apiErr.response ? apiErr.response.status : "Network Error/Timeout");
+    console.log("ZATCA Error Body:", apiErr.response ? JSON.stringify(apiErr.response.data, null, 2) : apiErr.message);
+    console.log("===========================================================\n");
   }
 
   // 3. Save ZATCA credentials & status to PosDevice model
