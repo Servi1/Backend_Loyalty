@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const axios = require("axios");
 const { getTenantClient } = require("../../../config/tenantManager");
 const mainPrisma = require("../../../config/prisma");
-const { ApiError } = require("../../../middlewares/errorHandler");
+const ApiError = require("../../../utils/ApiError");
 
 const ZATCA_SANDBOX_URL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal";
 
@@ -183,31 +183,69 @@ async function reportInvoiceToZatcaSandbox(tenantDb, orderId) {
       null
     );
 
-    // Save QR Code and mark reported as ACCEPT
+    // Build ZATCA B2C Simplified Tax Invoice Payload
+    const invoicePayload = {
+      invoiceHash: crypto.createHash("sha256").update(`${order.id}-${order.createdAt}-${order.total}`).digest("base64"),
+      uuid: crypto.randomUUID ? crypto.randomUUID() : `uuid-${Date.now()}-${order.id.slice(0, 8)}`,
+      invoice: Buffer.from(`<Invoice><ID>${order.orderNumber}</ID><IssueDate>${new Date(order.createdAt).toISOString().split('T')[0]}</IssueDate><Total>${order.total}</Total></Invoice>`).toString("base64")
+    };
+
+    let reportedStatus = "ACCEPT";
+    let reportedError = null;
+
+    // Perform LIVE HTTPS call to ZATCA Invoice Reporting Endpoint
+    try {
+      console.log(`\n================ 📡 LIVE ZATCA INVOICE REPORTING REQUEST (#${order.orderNumber}) ================`);
+      console.log("Endpoint:", `${ZATCA_SANDBOX_URL}/invoices/reporting/single`);
+      console.log("Seller VAT:", vatNumber);
+      console.log("Invoice Total:", order.total, "SAR");
+
+      const zatcaRes = await axios.post(
+        `${ZATCA_SANDBOX_URL}/invoices/reporting/single`,
+        invoicePayload,
+        {
+          headers: {
+            "Accept-Version": "V2",
+            "Accept-Language": "en",
+            "Content-Type": "application/json"
+          },
+          timeout: 8000
+        }
+      );
+
+      console.log("================ ✅ LIVE ZATCA INVOICE RESPONSE ================");
+      console.log("HTTP Status:", zatcaRes.status);
+      console.log("ZATCA Response:", JSON.stringify(zatcaRes.data, null, 2));
+      console.log("===============================================================\n");
+
+      if (zatcaRes.data && zatcaRes.data.reportingStatus === "REPORTED") {
+        reportedStatus = "ACCEPT";
+      }
+    } catch (apiErr) {
+      console.log("================ ❌ LIVE ZATCA INVOICE RESPONSE ================");
+      console.log("HTTP Status:", apiErr.response ? apiErr.response.status : "Network Error/Timeout");
+      console.log("ZATCA Error Body:", apiErr.response ? JSON.stringify(apiErr.response.data, null, 2) : apiErr.message);
+      console.log("===============================================================\n");
+
+      reportedStatus = "REJECT";
+      reportedError = apiErr.response?.data?.validationResults?.errorMessages?.[0]?.message || apiErr.response?.data?.message || apiErr.message;
+    }
+
+    // Save QR Code and ZATCA reporting status in Database
     const updated = await tenantDb.order.update({
       where: { id: orderId },
       data: {
         zatcaQrCode: qrBase64,
-        zatcaReported: true,
+        zatcaReported: reportedStatus === "ACCEPT",
         zatcaReportedAt: new Date(),
-        zatcaStatus: "ACCEPT",
-        zatcaError: null
+        zatcaStatus: reportedStatus,
+        zatcaError: reportedError
       }
     });
 
-    console.log(`[ZATCA REPORTING] Order #${order.orderNumber} successfully reported to ZATCA Sandbox (ACCEPT).`);
-    return { success: true, order: updated };
+    return { success: reportedStatus === "ACCEPT", order: updated, error: reportedError };
   } catch (err) {
-    console.error("[ZATCA REPORTING] Failed to report invoice to ZATCA:", err.message);
-    try {
-      await tenantDb.order.update({
-        where: { id: orderId },
-        data: {
-          zatcaStatus: "REJECT",
-          zatcaError: err.message || "Failed ZATCA API validation"
-        }
-      });
-    } catch (e) {}
+    console.error("[ZATCA REPORTING] Failed to process invoice:", err.message);
     return { success: false, error: err.message };
   }
 }
