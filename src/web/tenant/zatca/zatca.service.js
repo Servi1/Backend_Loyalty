@@ -4,7 +4,7 @@ const { getTenantClient } = require("../../../config/tenantManager");
 const mainPrisma = require("../../../config/prisma");
 const { ApiError } = require("../../../middlewares/errorHandler");
 
-const ZATCA_SANDBOX_URL = "https://sandbox.zatca.gov.sa";
+const ZATCA_SANDBOX_URL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal";
 
 /**
  * Generate ZATCA Phase 2 TLV Base64 QR Code Buffer
@@ -300,12 +300,7 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
   const csrSubject = `CN=${commonName}, OU=${branch.name || "Main"}, O=ServiTenant, C=SA, SN=1-Servi|2-1.0|3-${posDeviceId.slice(0, 8)}, UID=${cleanVat}, Title=1100`;
   const csrBase64 = Buffer.from(csrSubject + "\n" + publicKeyPem).toString("base64");
 
-  let csidResult = {
-    requestID: `REQ-${Date.now()}`,
-    binarySecurityToken: Buffer.from(`ZATCA-CERT-${Date.now()}-${posDeviceId}`).toString("base64"),
-    secret: `SECRET-${crypto.randomBytes(16).toString("hex")}`,
-    dispositionMessage: "ISSUED"
-  };
+  let csidResult = null;
 
   // Attempt real ZATCA Sandbox API call
   try {
@@ -339,6 +334,20 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
     console.log("HTTP Status:", apiErr.response ? apiErr.response.status : "Network Error/Timeout");
     console.log("ZATCA Error Body:", apiErr.response ? JSON.stringify(apiErr.response.data, null, 2) : apiErr.message);
     console.log("===========================================================\n");
+
+    if (String(otp).trim() === "123456") {
+      // Local developer test fallback
+      csidResult = {
+        requestID: `REQ-${Date.now()}`,
+        binarySecurityToken: Buffer.from(`ZATCA-CERT-${Date.now()}-${posDeviceId}`).toString("base64"),
+        secret: `SECRET-${crypto.randomBytes(16).toString("hex")}`,
+        dispositionMessage: "ISSUED"
+      };
+    } else {
+      // Throw ZATCA API error so enrollment fails on bad OTP
+      const errDetail = apiErr.response?.data?.errors?.[0]?.message || apiErr.response?.data?.message || apiErr.message;
+      throw new ApiError(400, `ZATCA Server Rejected OTP: ${errDetail}`);
+    }
   }
 
   // 3. Save ZATCA credentials & status to PosDevice model
