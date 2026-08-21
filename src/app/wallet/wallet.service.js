@@ -157,6 +157,83 @@ const transferPoints = async (db, tenantId, senderId, { recipientPhone, points, 
   return getWallet(db, senderId);
 };
 
+// ─── sendGiftCard ─────────────────────────────────────────────────────────────
+
+const sendGiftCard = async (db, tenantId, senderId, { recipientPhone, points, theme, senderName, recipientName, message } = {}) => {
+  if (!points || points <= 0 || isNaN(points)) {
+    throw new ApiError(400, "Points must be a positive integer");
+  }
+
+  const sender = await mainPrisma.appUser.findUnique({
+    where: { id: senderId },
+    include: { wallet: true },
+  });
+
+  if (!sender || !sender.wallet) {
+    throw new ApiError(404, "Sender wallet not found");
+  }
+
+  if (sender.wallet.points < points) {
+    throw new ApiError(400, "Insufficient points in wallet");
+  }
+
+  const normalisedPhone = normalisePhone(recipientPhone);
+
+  const recipient = await mainPrisma.appUser.findUnique({
+    where: { phone: normalisedPhone },
+    include: { wallet: true },
+  });
+
+  if (!recipient) {
+    throw new ApiError(404, `Recipient user not found with phone ${normalisedPhone}`);
+  }
+
+  if (recipient.id === sender.id) {
+    throw new ApiError(400, "Cannot send a gift card to yourself");
+  }
+
+  if (!recipient.wallet) {
+    throw new ApiError(404, "Recipient wallet not found");
+  }
+
+  // Construct a gift card message that contains the gift card metadata
+  const giftCardPayload = {
+    isGiftCard: true,
+    theme,
+    senderName: senderName || sender.name || sender.phone,
+    recipientName: recipientName || recipient.name || normalisedPhone,
+    message: message || ""
+  };
+
+  const dbMessage = JSON.stringify(giftCardPayload);
+
+  await mainPrisma.$transaction([
+    mainPrisma.wallet.update({
+      where: { id: sender.wallet.id },
+      data: { points: { decrement: points } },
+    }),
+    mainPrisma.walletTransaction.create({
+      data: {
+        walletId: sender.wallet.id,
+        points: -points,
+        description: `Gift Card (${theme}) sent to ${recipientName || recipient.name || normalisedPhone}`,
+        tenantId: tenantId || null,
+      },
+    }),
+    mainPrisma.gift.create({
+      data: {
+        senderId: sender.id,
+        recipientId: recipient.id,
+        points,
+        message: dbMessage,
+        claimed: false
+      }
+    })
+  ]);
+
+  return getWallet(db, senderId);
+};
+
 // ─── getGifts ──────────────────────────────────────────────────────────────────
 
 const getGifts = async (db, userId) => {
@@ -173,14 +250,34 @@ const getGifts = async (db, userId) => {
     orderBy: { createdAt: "desc" },
   });
 
-  return gifts.map(g => ({
-    id: g.id,
-    name: g.sender.name || g.sender.phone,
-    date: _formatGiftDate(g.createdAt),
-    message: g.message || "",
-    points: g.points,
-    claimed: g.claimed,
-  }));
+  return gifts.map(g => {
+    let displayMessage = g.message || "";
+    let senderName = g.sender.name || g.sender.phone;
+    let theme = null;
+
+    if (g.message && g.message.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(g.message);
+        if (parsed.isGiftCard) {
+          displayMessage = parsed.message || "";
+          senderName = parsed.senderName || senderName;
+          theme = parsed.theme || null;
+        }
+      } catch (e) {
+        // Fallback to raw message if parsing fails
+      }
+    }
+
+    return {
+      id: g.id,
+      name: senderName,
+      date: _formatGiftDate(g.createdAt),
+      message: displayMessage,
+      points: g.points,
+      claimed: g.claimed,
+      theme,
+    };
+  });
 };
 
 // ─── claimGift ─────────────────────────────────────────────────────────────────
@@ -219,7 +316,17 @@ const claimGift = async (db, tenantId, userId, giftId) => {
       data: {
         walletId: recipientWallet.id,
         points: gift.points,
-        description: gift.message ? `Claimed gift from ${gift.sender.name || gift.sender.phone}: ${gift.message}` : `Claimed gift from ${gift.sender.name || gift.sender.phone}`,
+        description: (() => {
+          if (gift.message && gift.message.startsWith("{")) {
+            try {
+              const parsed = JSON.parse(gift.message);
+              if (parsed.isGiftCard) {
+                return `Claimed Gift Card (${parsed.theme || 'Special'}) from ${parsed.senderName || gift.sender.name || gift.sender.phone}${parsed.message ? ': ' + parsed.message : ''}`;
+              }
+            } catch (e) {}
+          }
+          return gift.message ? `Claimed gift from ${gift.sender.name || gift.sender.phone}: ${gift.message}` : `Claimed gift from ${gift.sender.name || gift.sender.phone}`;
+        })(),
         tenantId: tenantId || null,
       },
     }),
@@ -267,7 +374,17 @@ const claimAllGifts = async (db, tenantId, userId) => {
       data: {
         walletId: user.wallet.id,
         points: gift.points,
-        description: gift.message ? `Claimed gift from ${gift.sender.name || gift.sender.phone}: ${gift.message}` : `Claimed gift from ${gift.sender.name || gift.sender.phone}`,
+        description: (() => {
+          if (gift.message && gift.message.startsWith("{")) {
+            try {
+              const parsed = JSON.parse(gift.message);
+              if (parsed.isGiftCard) {
+                return `Claimed Gift Card (${parsed.theme || 'Special'}) from ${parsed.senderName || gift.sender.name || gift.sender.phone}${parsed.message ? ': ' + parsed.message : ''}`;
+              }
+            } catch (e) {}
+          }
+          return gift.message ? `Claimed gift from ${gift.sender.name || gift.sender.phone}: ${gift.message}` : `Claimed gift from ${gift.sender.name || gift.sender.phone}`;
+        })(),
         tenantId: tenantId || null,
       }
     }))
@@ -279,15 +396,30 @@ const claimAllGifts = async (db, tenantId, userId) => {
 };
 
 // ─── getLeaderboard ────────────────────────────────────────────────────────────
-const getLeaderboard = async (db) => {
+const getLeaderboard = async (db, sortBy = 'points') => {
+  let orderBy = {
+    wallet: {
+      points: "desc"
+    }
+  };
+
+  if (sortBy === 'orders') {
+    orderBy = {
+      orders: {
+        _count: "desc"
+      }
+    };
+  }
+
   const topUsers = await mainPrisma.appUser.findMany({
     take: 10,
-    include: { wallet: true },
-    orderBy: {
-      wallet: {
-        points: "desc"
+    include: {
+      wallet: true,
+      _count: {
+        select: { orders: true }
       }
-    }
+    },
+    orderBy
   });
 
   const AVATARS = [
@@ -308,6 +440,7 @@ const getLeaderboard = async (db) => {
     id: user.id,
     name: user.name || user.phone || "Loyal Customer",
     points: user.wallet?.points || 0,
+    orders: user._count?.orders || 0,
     avatar: user.avatarUrl || null
   }));
 };
@@ -354,6 +487,7 @@ module.exports = {
   getWallet,
   getTransactions,
   transferPoints,
+  sendGiftCard,
   getLeaderboard,
   getGifts,
   claimGift,

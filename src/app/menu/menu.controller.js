@@ -15,7 +15,11 @@ const getMenu = catchAsync(async (req, res) => {
     ...category,
     items: category.items ? category.items.map(item => ({
       ...item,
-      imageUrl: getAppImageURL(item.imageUrl)
+      imageUrl: getAppImageURL(item.imageUrl),
+      specialists: item.specialists ? item.specialists.map(s => ({
+        ...s,
+        avatarUrl: getAppImageURL(s.avatarUrl)
+      })) : []
     })) : []
   }));
   res.json({ success: true, data: resolvedMenu });
@@ -25,6 +29,12 @@ const getItem = catchAsync(async (req, res) => {
   const item = await menuService.getItem(req.tenantDb, req.params.itemId);
   if (item) {
     item.imageUrl = getAppImageURL(item.imageUrl);
+    if (item.specialists) {
+      item.specialists = item.specialists.map(s => ({
+        ...s,
+        avatarUrl: getAppImageURL(s.avatarUrl)
+      }));
+    }
   }
   res.json({ success: true, data: item });
 });

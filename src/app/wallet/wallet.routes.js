@@ -22,6 +22,7 @@ router.use(authenticateAppUser);
 router.get("/", ctrl.getWallet);
 router.get("/transactions", ctrl.getTransactions);
 router.post("/transfer", ctrl.transferPoints);
+router.post("/gift-card", ctrl.sendGiftCard);
 router.get("/leaderboard", ctrl.getLeaderboard);
 
 router.get("/gifts", ctrl.getGifts);

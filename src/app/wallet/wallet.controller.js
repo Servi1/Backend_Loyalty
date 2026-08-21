@@ -26,6 +26,20 @@ const transferPoints = catchAsync(async (req, res) => {
   res.json({ success: true, message: "Points transferred successfully", data: result });
 });
 
+// ─── POST /wallet/gift-card ───────────────────────────────────────────────────
+const sendGiftCard = catchAsync(async (req, res) => {
+  const { recipientPhone, points, theme, senderName, recipientName, message } = req.body;
+  const result = await walletService.sendGiftCard(req.tenantDb, req.tenantId, req.user.id, {
+    recipientPhone,
+    points: parseInt(points),
+    theme,
+    senderName,
+    recipientName,
+    message
+  });
+  res.json({ success: true, message: "Gift card sent successfully", data: result });
+});
+
 // ─── GET /wallet/gifts ────────────────────────────────────────────────────────
 const getGifts = catchAsync(async (req, res) => {
   const gifts = await walletService.getGifts(req.tenantDb, req.user.id);
@@ -46,7 +60,8 @@ const claimAllGifts = catchAsync(async (req, res) => {
 
 // ─── GET /wallet/leaderboard ──────────────────────────────────────────────────
 const getLeaderboard = catchAsync(async (req, res) => {
-  const result = await walletService.getLeaderboard(req.tenantDb);
+  const { sortBy } = req.query;
+  const result = await walletService.getLeaderboard(req.tenantDb, sortBy);
   res.json({ success: true, data: result });
 });
 
@@ -72,6 +87,7 @@ module.exports = {
   getWallet,
   getTransactions,
   transferPoints,
+  sendGiftCard,
   getLeaderboard,
   getGifts,
   claimGift,
