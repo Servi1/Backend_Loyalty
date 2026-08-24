@@ -397,30 +397,9 @@ const claimAllGifts = async (db, tenantId, userId) => {
 
 // ─── getLeaderboard ────────────────────────────────────────────────────────────
 const getLeaderboard = async (db, sortBy = 'points') => {
-  let orderBy = {
-    wallet: {
-      points: "desc"
-    }
-  };
-
-  if (sortBy === 'orders') {
-    orderBy = {
-      orders: {
-        _count: "desc"
-      }
-    };
-  }
-
-  const topUsers = await mainPrisma.appUser.findMany({
-    take: 10,
-    include: {
-      wallet: true,
-      _count: {
-        select: { orders: true }
-      }
-    },
-    orderBy
-  });
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
 
   const AVATARS = [
     "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop",
@@ -435,13 +414,164 @@ const getLeaderboard = async (db, sortBy = 'points') => {
     "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=100&h=100&fit=crop"
   ];
 
-  return topUsers.map((user, index) => ({
+  let rankedUsers = [];
+
+  if (sortBy === 'orders') {
+    // 1. Group completed orders in this month by user
+    const orderGroups = await mainPrisma.order.groupBy({
+      by: ['appUserId'],
+      where: {
+        appUserId: { not: null },
+        createdAt: { gte: startOfMonth },
+        status: 'COMPLETED',
+      },
+      _count: {
+        id: true,
+      },
+      orderBy: {
+        _count: {
+          id: 'desc',
+        },
+      },
+      take: 10,
+    });
+
+    const activeUserIds = orderGroups.map(g => g.appUserId);
+
+    // 2. Fetch user information
+    const users = await mainPrisma.appUser.findMany({
+      where: { id: { in: activeUserIds } },
+      include: { wallet: true },
+    });
+
+    rankedUsers = orderGroups.map(g => {
+      const user = users.find(u => u.id === g.appUserId);
+      return {
+        id: g.appUserId,
+        name: user?.name || user?.phone || "Loyal Customer",
+        points: user?.wallet?.points || 0, // Fallback to overall points
+        orders: g._count.id, // Monthly orders count
+        avatar: user?.avatarUrl || null,
+      };
+    });
+  } else {
+    // sortBy === 'points'
+    // 1. Group earned transactions in this month by wallet
+    const transactionGroups = await mainPrisma.walletTransaction.groupBy({
+      by: ['walletId'],
+      where: {
+        points: { gt: 0 },
+        createdAt: { gte: startOfMonth },
+      },
+      _sum: {
+        points: true,
+      },
+      orderBy: {
+        _sum: {
+          points: 'desc',
+        },
+      },
+      take: 10,
+    });
+
+    const walletIds = transactionGroups.map(g => g.walletId);
+
+    // 2. Fetch wallets and users
+    const wallets = await mainPrisma.wallet.findMany({
+      where: { id: { in: walletIds } },
+      include: {
+        appUser: {
+          include: {
+            _count: {
+              select: { orders: { where: { status: 'COMPLETED', createdAt: { gte: startOfMonth } } } }
+            }
+          }
+        }
+      },
+    });
+
+    rankedUsers = transactionGroups.map(g => {
+      const wallet = wallets.find(w => w.id === g.walletId);
+      const user = wallet?.appUser;
+      return {
+        id: user?.id || null,
+        name: user?.name || user?.phone || "Loyal Customer",
+        points: g._sum.points || 0, // Monthly points earned
+        orders: user?._count?.orders || 0, // Monthly orders count
+        avatar: user?.avatarUrl || null,
+      };
+    }).filter(item => item.id !== null);
+  }
+
+  // ── Fallback overall ranking if there is not enough monthly data ──
+  if (rankedUsers.length < 10) {
+    const existingIds = rankedUsers.map(u => u.id).filter(Boolean);
+    
+    let overallOrderBy = {
+      wallet: {
+        points: "desc"
+      }
+    };
+
+    if (sortBy === 'orders') {
+      overallOrderBy = {
+        orders: {
+          _count: "desc"
+        }
+      };
+    }
+
+    const remainingCount = 10 - rankedUsers.length;
+    const fallbackUsers = await mainPrisma.appUser.findMany({
+      where: {
+        id: { notIn: existingIds },
+      },
+      take: remainingCount,
+      include: {
+        wallet: true,
+        _count: {
+          select: { orders: { where: { status: 'COMPLETED', createdAt: { gte: startOfMonth } } } }
+        }
+      },
+      orderBy: overallOrderBy,
+    });
+
+    // Query monthly earned points for these fallback users to display consistent monthly values
+    const fallbackUserWallets = fallbackUsers.map(u => u.wallet?.id).filter(Boolean);
+    const fallbackMonthlyPoints = await mainPrisma.walletTransaction.groupBy({
+      by: ['walletId'],
+      where: {
+        walletId: { in: fallbackUserWallets },
+        points: { gt: 0 },
+        createdAt: { gte: startOfMonth },
+      },
+      _sum: {
+        points: true,
+      }
+    });
+
+    const fallbackRanked = fallbackUsers.map(user => {
+      const mPoints = fallbackMonthlyPoints.find(p => p.walletId === user.wallet?.id)?._sum?.points || 0;
+      return {
+        id: user.id,
+        name: user.name || user.phone || "Loyal Customer",
+        points: sortBy === 'orders' ? (user.wallet?.points || 0) : mPoints,
+        orders: user._count?.orders || 0,
+        avatar: user.avatarUrl || null,
+      };
+    });
+
+    rankedUsers = [...rankedUsers, ...fallbackRanked];
+  }
+
+  // Map rank indices and fallback avatars
+  return rankedUsers.map((user, index) => ({
     rank: index + 1,
     id: user.id,
-    name: user.name || user.phone || "Loyal Customer",
-    points: user.wallet?.points || 0,
-    orders: user._count?.orders || 0,
-    avatar: user.avatarUrl || null
+    name: user.name,
+    points: user.points,
+    orders: user.orders,
+    avatar: user.avatar || AVATARS[index % AVATARS.length],
   }));
 };
 
