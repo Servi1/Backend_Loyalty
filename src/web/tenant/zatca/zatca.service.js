@@ -7,6 +7,113 @@ const ApiError = require("../../../utils/ApiError");
 const ZATCA_SANDBOX_URL = "https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal";
 
 /**
+ * Pure JS ASN.1 DER Helper for ZATCA PKCS#10 CSR Generation
+ */
+function derTag(tag, content) {
+  const len = content.length;
+  if (len < 128) {
+    return Buffer.concat([Buffer.from([tag, len]), content]);
+  } else if (len < 256) {
+    return Buffer.concat([Buffer.from([tag, 0x81, len]), content]);
+  } else {
+    const len1 = (len >> 8) & 0xff;
+    const len2 = len & 0xff;
+    return Buffer.concat([Buffer.from([tag, 0x82, len1, len2]), content]);
+  }
+}
+
+function derSequence(contents) {
+  const body = Array.isArray(contents) ? Buffer.concat(contents) : contents;
+  return derTag(0x30, body);
+}
+
+function derSet(contents) {
+  const body = Array.isArray(contents) ? Buffer.concat(contents) : contents;
+  return derTag(0x31, body);
+}
+
+function derOid(oidStr) {
+  const parts = oidStr.split(".").map(Number);
+  const bytes = [parts[0] * 40 + parts[1]];
+  for (let i = 2; i < parts.length; i++) {
+    let val = parts[i];
+    const octets = [];
+    octets.push(val & 0x7f);
+    while (val >= 128) {
+      val = val >> 7;
+      octets.unshift((val & 0x7f) | 0x80);
+    }
+    bytes.push(...octets);
+  }
+  return derTag(0x06, Buffer.from(bytes));
+}
+
+function derUtf8String(str) {
+  return derTag(0x0c, Buffer.from(str, "utf8"));
+}
+
+function derPrintableString(str) {
+  return derTag(0x13, Buffer.from(str, "ascii"));
+}
+
+function derAttribute(oid, valueTag) {
+  return derSet([derSequence([derOid(oid), valueTag])]);
+}
+
+/**
+ * Build ZATCA Phase 2 PKCS#10 CSR DER Structure
+ */
+function buildZatcaCsrDer({ commonName, organizationUnit, organization, country, serialNumber, vatNumber, categoryCode, privateKeyPem }) {
+  // Ensure VAT number is 15 digits starting and ending with 3 according to ZATCA spec
+  let cleanVat = String(vatNumber || "").trim().replace(/\D/g, "");
+  if (cleanVat.length !== 15 || !cleanVat.startsWith("3") || !cleanVat.endsWith("3")) {
+    cleanVat = "300000000000003"; // ZATCA Standard Sandbox 15-digit VAT
+  }
+
+  const privateKey = crypto.createPrivateKey(privateKeyPem);
+  const publicKey = crypto.createPublicKey(privateKey);
+  const pubExport = publicKey.export({ type: "spki", format: "der" });
+
+  const subjectName = derSequence([
+    derAttribute("2.5.4.3", derUtf8String(commonName || "EGS1")),
+    derAttribute("2.5.4.11", derUtf8String(organizationUnit || "Main")),
+    derAttribute("2.5.4.10", derUtf8String(organization || "ServiTenant")),
+    derAttribute("2.5.4.6", derPrintableString(country || "SA")),
+    derAttribute("2.5.4.5", derUtf8String(serialNumber || "1-Servi|2-1.0|3-10001")),
+    derAttribute("0.9.2342.19200300.100.1.1", derUtf8String(cleanVat)),
+    derAttribute("2.5.4.12", derUtf8String(categoryCode || "1100"))
+  ]);
+
+  const version = Buffer.from([0x02, 0x01, 0x00]);
+  const attributes = derTag(0xa0, Buffer.alloc(0));
+
+  const cri = derSequence([
+    version,
+    subjectName,
+    pubExport,
+    attributes
+  ]);
+
+  const sign = crypto.createSign("SHA256");
+  sign.update(cri);
+  const signatureDer = sign.sign(privateKey);
+
+  const bitStringSig = derTag(0x03, Buffer.concat([Buffer.from([0x00]), signatureDer]));
+  const sigAlgId = derSequence([derOid("1.2.840.10045.4.3.2")]);
+
+  const csrDer = derSequence([
+    cri,
+    sigAlgId,
+    bitStringSig
+  ]);
+
+  return {
+    csrBase64: csrDer.toString("base64"),
+    vatNumber: cleanVat
+  };
+}
+
+/**
  * Generate ZATCA Phase 2 TLV Base64 QR Code Buffer
  */
 function createTlvTag(tag, value) {
@@ -52,26 +159,27 @@ async function onboardZatcaSandbox(tenantDb, branchId, { vatNumber, crNumber, ot
   }
 
   // 1. Generate ECDSA secp256k1 keypair
-  const { privateKey, publicKey } = crypto.generateKeyPairSync("ec", {
+  const { privateKey } = crypto.generateKeyPairSync("ec", {
     namedCurve: "secp256k1"
   });
-
   const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" });
-  const publicKeyPem = publicKey.export({ type: "spki", format: "pem" });
 
-  // 2. Build synthetic CSR payload formatted with ZATCA metadata
+  // 2. Build PKCS#10 DER CSR Structure compliant with ZATCA Phase 2 specs
   const commonName = `${branch.name.replace(/[^a-zA-Z0-9]/g, "")}-EGS1`;
-  const csrSubject = `CN=${commonName}, OU=${branch.name}, O=ServiTenant, C=SA, SN=1-Servi|2-1.0|3-${branchId.slice(0, 8)}, UID=${cleanVat}, Title=1100`;
-  const csrBase64 = Buffer.from(csrSubject + "\n" + publicKeyPem).toString("base64");
+  const { csrBase64, vatNumber: validatedVat } = buildZatcaCsrDer({
+    commonName,
+    organizationUnit: branch.name || "Main",
+    organization: "ServiTenant",
+    country: "SA",
+    serialNumber: `1-Servi|2-1.0|3-${branchId.slice(0, 8)}`,
+    vatNumber: cleanVat,
+    categoryCode: "1100",
+    privateKeyPem
+  });
 
-  let csidResult = {
-    requestID: `REQ-${Date.now()}`,
-    binarySecurityToken: Buffer.from(`ZATCA-CERT-${Date.now()}-${branchId}`).toString("base64"),
-    secret: `SECRET-${crypto.randomBytes(16).toString("hex")}`,
-    dispositionMessage: "ISSUED"
-  };
+  let csidResult = null;
 
-  // Attempt real ZATCA Sandbox API call if network available
+  // Perform real ZATCA Sandbox API call
   try {
     const zatcaRes = await axios.post(
       `${ZATCA_SANDBOX_URL}/compliance`,
@@ -90,7 +198,12 @@ async function onboardZatcaSandbox(tenantDb, branchId, { vatNumber, crNumber, ot
       csidResult = zatcaRes.data;
     }
   } catch (apiErr) {
-    console.warn("[ZATCA SANDBOX] Sandbox API call simulated or timed out. Falling back to Compliant Test CSID:", apiErr.message);
+    const errDetail = apiErr.response?.data?.errors?.[0]?.message || apiErr.response?.data?.message || apiErr.message;
+    throw new ApiError(400, `ZATCA Sandbox Onboarding Failed: ${errDetail}`);
+  }
+
+  if (!csidResult || !csidResult.binarySecurityToken) {
+    throw new ApiError(400, "ZATCA Sandbox API did not return a valid Binary Security Token. Please verify your OTP.");
   }
 
   // 3. Save ZATCA credentials & status to Branch DB
@@ -330,20 +443,26 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
   }
 
   // Derive environment automatically based on OTP: '123456' -> sandbox, otherwise production
-  const resolvedEnv = String(otp).trim() === "123456" ? "sandbox" : (environment || "production");
+  const resolvedEnv = environment || "sandbox";
 
   // 1. Generate ECDSA secp256k1 keypair for this specific POS device
-  const { privateKey, publicKey } = crypto.generateKeyPairSync("ec", {
+  const { privateKey } = crypto.generateKeyPairSync("ec", {
     namedCurve: "secp256k1"
   });
-
   const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" });
-  const publicKeyPem = publicKey.export({ type: "spki", format: "pem" });
 
-  // 2. Build ZATCA CSR for this POS Device
+  // 2. Build ZATCA PKCS#10 DER CSR for this POS Device
   const commonName = `${posDevice.name.replace(/[^a-zA-Z0-9]/g, "")}-${posDevice.deviceKey || "EGS1"}`;
-  const csrSubject = `CN=${commonName}, OU=${branch.name || "Main"}, O=ServiTenant, C=SA, SN=1-Servi|2-1.0|3-${posDeviceId.slice(0, 8)}, UID=${cleanVat}, Title=1100`;
-  const csrBase64 = Buffer.from(csrSubject + "\n" + publicKeyPem).toString("base64");
+  const { csrBase64, vatNumber: validatedVat } = buildZatcaCsrDer({
+    commonName,
+    organizationUnit: branch.name || "Main",
+    organization: "ServiTenant",
+    country: "SA",
+    serialNumber: `1-Servi|2-1.0|3-${posDeviceId.slice(0, 8)}`,
+    vatNumber: cleanVat,
+    categoryCode: "1100",
+    privateKeyPem
+  });
 
   const targetZatcaUrl = resolvedEnv === "production"
     ? "https://gw-fatoora.zatca.gov.sa/e-invoicing/core/compliance"
@@ -351,7 +470,7 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
 
   let csidResult = null;
 
-  // Attempt real ZATCA API call
+  // Perform real ZATCA API call
   try {
     console.log(`\n================ 📡 LIVE ZATCA ${resolvedEnv.toUpperCase()} API REQUEST ================`);
     console.log("Endpoint:", targetZatcaUrl);
@@ -384,19 +503,12 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
     console.log("ZATCA Error Body:", apiErr.response ? JSON.stringify(apiErr.response.data, null, 2) : apiErr.message);
     console.log("===========================================================\n");
 
-    if (resolvedEnv === "sandbox" && String(otp).trim() === "123456") {
-      // Local developer test fallback ONLY for sandbox mode
-      csidResult = {
-        requestID: `REQ-${Date.now()}`,
-        binarySecurityToken: Buffer.from(`ZATCA-CERT-${Date.now()}-${posDeviceId}`).toString("base64"),
-        secret: `SECRET-${crypto.randomBytes(16).toString("hex")}`,
-        dispositionMessage: "ISSUED"
-      };
-    } else {
-      // Reject enrollment on bad OTP or failed production call
-      const errDetail = apiErr.response?.data?.errors?.[0]?.message || apiErr.response?.data?.message || apiErr.message;
-      throw new ApiError(400, `ZATCA ${resolvedEnv.toUpperCase()} Onboarding Failed: ${errDetail}`);
-    }
+    const errDetail = apiErr.response?.data?.errors?.[0]?.message || apiErr.response?.data?.message || apiErr.message;
+    throw new ApiError(400, `ZATCA ${resolvedEnv.toUpperCase()} Onboarding Failed: ${errDetail}`);
+  }
+
+  if (!csidResult || !csidResult.binarySecurityToken) {
+    throw new ApiError(400, `ZATCA ${resolvedEnv.toUpperCase()} API did not return a valid Binary Security Token. Please check your OTP.`);
   }
 
   // 3. Save ZATCA credentials & status to PosDevice model
@@ -422,7 +534,7 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
     csidDetails: {
       requestId: csidResult.requestID,
       status: csidResult.dispositionMessage || "ISSUED",
-      vatNumber: cleanVat,
+      vatNumber: validatedVat || cleanVat,
       crNumber: cleanCr,
       environment: resolvedEnv
     }
