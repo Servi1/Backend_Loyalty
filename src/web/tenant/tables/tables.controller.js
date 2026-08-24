@@ -8,16 +8,18 @@ const getAll = catchAsync(async (req, res) => {
 });
 
 const create = catchAsync(async (req, res) => {
-  const limit = req.tenant.qrTableQuantity || 10;
-  const currentCount = await req.tenantDb.table.count({
-    where: { branchId: req.body.branchId }
-  });
+  const table = await tablesService.create(req.tenantDb, req.body, req.tenant.cycleQrTable);
   
-  if (currentCount >= limit) {
-    throw new ApiError(400, `You have reached the limit of ${limit} QR tables for this branch.`);
+  // Sync qrTableQuantity in main database if registered count exceeds quota
+  const count = await req.tenantDb.table.count({});
+  if (count > (req.tenant.qrTableQuantity || 0)) {
+    const mainPrisma = require("../../../config/prisma");
+    await mainPrisma.tenant.update({
+      where: { id: req.tenant.id },
+      data: { qrTableQuantity: count }
+    }).catch(() => null);
   }
 
-  const table = await tablesService.create(req.tenantDb, req.body, req.tenant.cycleQrTable);
   res.status(201).json({ success: true, data: table });
 });
 

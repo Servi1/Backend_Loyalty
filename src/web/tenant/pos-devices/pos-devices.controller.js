@@ -8,17 +8,18 @@ const getAll = catchAsync(async (req, res) => {
 });
 
 const create = catchAsync(async (req, res) => {
-  // Check POS quantity limit per branch from main registry
-  const limit = req.tenant.posQuantity || 1;
-  const currentCount = await req.tenantDb.posDevice.count({
-    where: { branchId: req.body.branchId }
-  });
+  const device = await posDevicesService.create(req.tenantDb, req.body, req.tenant.cyclePos);
   
-  if (currentCount >= limit) {
-    throw new ApiError(400, `You have reached the limit of ${limit} POS terminals for this branch.`);
+  // Sync posQuantity in main database if registered count exceeds quota
+  const count = await req.tenantDb.posDevice.count({});
+  if (count > (req.tenant.posQuantity || 0)) {
+    const mainPrisma = require("../../../config/prisma");
+    await mainPrisma.tenant.update({
+      where: { id: req.tenant.id },
+      data: { posQuantity: count }
+    }).catch(() => null);
   }
 
-  const device = await posDevicesService.create(req.tenantDb, req.body, req.tenant.cyclePos);
   res.status(201).json({ success: true, data: device });
 });
 

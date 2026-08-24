@@ -8,17 +8,18 @@ const getAll = catchAsync(async (req, res) => {
 });
 
 const create = catchAsync(async (req, res) => {
-  // Check KDS quantity limit per branch from main registry (default 1)
-  const limit = req.tenant.kdsQuantity || 1;
-  const currentCount = await req.tenantDb.kdsDevice.count({
-    where: { branchId: req.body.branchId }
-  });
-
-  if (currentCount >= limit) {
-    throw new ApiError(400, `You have reached the limit of ${limit} KDS screens for this branch.`);
+  const device = await kdsDevicesService.create(req.tenantDb, req.body, req.tenant.cycleKds || "monthly");
+  
+  // Sync kdsQuantity in main database if registered count exceeds quota
+  const count = await req.tenantDb.kdsDevice.count({});
+  if (count > (req.tenant.kdsQuantity || 0)) {
+    const mainPrisma = require("../../../config/prisma");
+    await mainPrisma.tenant.update({
+      where: { id: req.tenant.id },
+      data: { kdsQuantity: count }
+    }).catch(() => null);
   }
 
-  const device = await kdsDevicesService.create(req.tenantDb, req.body, req.tenant.cycleKds || "monthly");
   res.status(201).json({ success: true, data: device });
 });
 

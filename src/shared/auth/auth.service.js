@@ -126,6 +126,9 @@ const loginWithEmail = async (db, email, password) => {
     }
   });
   if (posDevice) {
+    if (posDevice.isActive === false) {
+      throw new ApiError(403, "This POS terminal slot has been cancelled or deactivated by administration.");
+    }
     if (posDevice.expiresAt && new Date(posDevice.expiresAt) < new Date()) {
       throw new ApiError(403, "This POS terminal subscription has expired. Please contact administration.");
     }
@@ -244,6 +247,10 @@ const kdsLogin = async (db, deviceKey) => {
   });
   if (!kdsDevice) {
     throw new ApiError(401, "Invalid KDS device key");
+  }
+
+  if (kdsDevice.isActive === false) {
+    throw new ApiError(403, "This KDS terminal slot has been cancelled or deactivated by administration.");
   }
 
   if (kdsDevice.expiresAt && new Date(kdsDevice.expiresAt) < new Date()) {
