@@ -148,6 +148,18 @@ model Branch {
   locationGroup       LocationGroup?     @relation(fields: [locationGroupId], references: [id])
   customPaymentTypes CustomPaymentType[]
   customOrderTypes   CustomOrderType[]
+
+  // ZATCA Phase 2 Integration Fields
+  zatcaEnabled       Boolean   @default(false)
+  zatcaEnvironment   String?   @default("sandbox") // sandbox | simulation | production
+  zatcaVatNumber     String?
+  zatcaCrNumber      String?
+  zatcaCsidSecret    String?
+  zatcaPrivateKey    String?
+  zatcaCertificate   String?
+  zatcaStatus        String?   @default("UNREGISTERED") // UNREGISTERED | COMPLIANCE_PASSED | PRODUCTION_ACTIVE
+  zatcaLastSync      DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -268,6 +280,17 @@ model Order {
   rating           Int?
   comment          String?
 
+  // ZATCA Phase 2 E-Invoicing Tracking Fields
+  zatcaXml        String?
+  zatcaQrCode     String?
+  zatcaHash       String?
+  zatcaIcv        Int?
+  zatcaPih        String?
+  zatcaReported   Boolean   @default(false)
+  zatcaReportedAt DateTime?
+  zatcaStatus     String?   @default("PENDING") // PENDING | ACCEPT | REJECT
+  zatcaError      String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -315,6 +338,16 @@ model PosDevice {
   branchId  String
   branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
  
+  // Per-POS Device ZATCA Phase 2 Integration Fields
+  zatcaEnabled       Boolean   @default(false)
+  zatcaEnvironment   String?   @default("sandbox") // sandbox | production
+  zatcaCsidSecret    String?
+  zatcaPrivateKey    String?
+  zatcaCertificate   String?
+  zatcaOtp           String?
+  zatcaStatus        String?   @default("UNREGISTERED") // UNREGISTERED | COMPLIANCE_PASSED | PRODUCTION_ACTIVE
+  zatcaLastSync      DateTime?
+
   expiresAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

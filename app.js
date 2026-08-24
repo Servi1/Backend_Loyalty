@@ -37,6 +37,7 @@ const customPaymentTypesRoutes = require("./src/web/tenant/custom-payment-types/
 const locationGroupsRoutes = require("./src/web/tenant/location-groups/locationGroups.routes");
 const customOrderTypesRoutes = require("./src/web/tenant/custom-order-types/customOrderTypes.routes");
 const notificationsRoutes = require("./src/web/tenant/notifications/notifications.routes");
+const zatcaRoutes = require("./src/web/tenant/zatca/zatca.routes");
 
 // ─── Mobile App Routes ────────────────────────────────
 // ─── Mobile App Routes ────────────────────────────────
@@ -90,7 +91,7 @@ tenantRouter.get("/info", async (req, res, next) => {
     const tableCount = await req.tenantDb.table.count();
     const posCount = await req.tenantDb.posDevice.count();
     const branchCount = await req.tenantDb.branch.count();
-    const kdsCount = await req.tenantDb.user.count({ where: { role: "KITCHEN" } });
+    const kdsCount = await req.tenantDb.kdsDevice.count();
     const qrCashierCount = await req.tenantDb.qrCashier.count();
     const cdsCount = 0; // CDS doesn't map to a specific database entity yet
 
@@ -125,24 +126,68 @@ tenantRouter.post("/market/buy", async (req, res, next) => {
     if (globalMarketEnabled === false) {
       return next(new ApiError(403, "Market purchases are deactivated globally. Please contact system support."));
     }
-    const { addPosCount, addTableCount, addBranchCount, addKdsCount, addCdsCount } = req.body;
+    const { addPosCount, addTableCount, addBranchCount, addKdsCount, addCdsCount, addQrCashierCount } = req.body;
     const tenantId = req.tenantId;
+
+    const currentTenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!currentTenant) return next(new ApiError(404, "Tenant not found"));
+
+    const posInc = Number(addPosCount) || 0;
+    const tableInc = Number(addTableCount) || 0;
+    const branchInc = Number(addBranchCount) || 0;
+    const kdsInc = Number(addKdsCount) || 0;
+    const cdsInc = Number(addCdsCount) || 0;
+    const qrCashierInc = Number(addQrCashierCount) || 0;
 
     const updated = await mainPrisma.tenant.update({
       where: { id: tenantId },
       data: {
-        posQuantity: { increment: Number(addPosCount) || 0 },
-        qrTableQuantity: { increment: Number(addTableCount) || 0 },
-        branchLimit: { increment: Number(addBranchCount) || 0 },
-        kdsQuantity: { increment: Number(addKdsCount) || 0 },
-        cdsQuantity: { increment: Number(addCdsCount) || 0 }
+        posQuantity: { increment: posInc },
+        qrTableQuantity: { increment: tableInc },
+        branchLimit: { increment: branchInc },
+        kdsQuantity: { increment: kdsInc },
+        cdsQuantity: { increment: cdsInc },
+        qrCashierQuantity: { increment: qrCashierInc }
       }
     });
+
+    // Record TenantSlotAddon entries so mid-month purchases sync with Super Admin Billing
+    const purchases = [
+      { serviceType: "pos", quantity: posInc, priceKey: "pricePos", defaultPrice: 49.0 },
+      { serviceType: "qr_table", quantity: tableInc, priceKey: "priceQrTable", defaultPrice: 19.0 },
+      { serviceType: "branch", quantity: branchInc, priceKey: "priceBranch", defaultPrice: 19.0 },
+      { serviceType: "kds", quantity: kdsInc, priceKey: "priceKds", defaultPrice: 19.0 },
+      { serviceType: "cds", quantity: cdsInc, priceKey: "priceCds", defaultPrice: 9.0 },
+      { serviceType: "qr_cashier", quantity: qrCashierInc, priceKey: "priceQrCashier", defaultPrice: 9.0 }
+    ];
+
+    for (const p of purchases) {
+      if (p.quantity > 0) {
+        const unitPrice = currentTenant[p.priceKey] !== undefined && currentTenant[p.priceKey] !== null
+          ? Number(currentTenant[p.priceKey])
+          : p.defaultPrice;
+
+        try {
+          await mainPrisma.tenantSlotAddon.create({
+            data: {
+              tenantId,
+              serviceType: p.serviceType,
+              quantity: p.quantity,
+              pricePerUnit: unitPrice,
+              notes: `Purchased +${p.quantity} ${p.serviceType.toUpperCase()} slot(s) via Brand Market`
+            }
+          });
+        } catch (err) {
+          console.error(`Failed to record slot addon for tenant ${tenantId}:`, err.message);
+        }
+      }
+    }
 
     const tableCount = await req.tenantDb.table.count();
     const posCount = await req.tenantDb.posDevice.count();
     const branchCount = await req.tenantDb.branch.count();
-    const kdsCount = await req.tenantDb.user.count({ where: { role: "KITCHEN" } });
+    const kdsCount = await req.tenantDb.kdsDevice.count();
+    const qrCashierCount = await req.tenantDb.qrCashier.count();
     const cdsCount = 0;
 
     res.json({
@@ -154,7 +199,8 @@ tenantRouter.post("/market/buy", async (req, res, next) => {
         activePosCount: posCount,
         activeBranchesCount: branchCount,
         activeKdsCount: kdsCount,
-        activeCdsCount: cdsCount
+        activeCdsCount: cdsCount,
+        activeQrCashiersCount: qrCashierCount
       }
     });
   } catch (error) {
@@ -181,6 +227,7 @@ tenantRouter.use("/custom-payment-types", customPaymentTypesRoutes);
 tenantRouter.use("/location-groups", locationGroupsRoutes);
 tenantRouter.use("/custom-order-types", customOrderTypesRoutes);
 tenantRouter.use("/notifications", notificationsRoutes);
+tenantRouter.use("/", zatcaRoutes);
 
 app.use("/api/tenant/:tenantId", tenantRouter);
 

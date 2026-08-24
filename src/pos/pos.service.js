@@ -141,7 +141,8 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
           order.customerId,
           pointsToEarn,
           `Earned on Order #${order.orderNumber}`,
-          tenantId
+          tenantId,
+          { source: "pos" }
         );
       }
     } catch (err) {
@@ -307,13 +308,26 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
               updated.customerId,
               pointsToEarn,
               description,
-              tenantId
+              tenantId,
+              { source: "pos" }
             );
           }
         }
       }
     } catch (err) {
       console.error("[POS ORDER] Failed to award points on halted order accept:", err.message);
+    }
+  }
+
+  // Trigger ZATCA Phase 2 E-Invoicing reporting if order is completed
+  if (upperStatus === "COMPLETED") {
+    try {
+      const { reportInvoiceToZatcaSandbox } = require("../web/tenant/zatca/zatca.service");
+      reportInvoiceToZatcaSandbox(tenantDb, updated.id).catch((err) =>
+        console.error("[POS ZATCA SYNC] Background reporting error:", err.message)
+      );
+    } catch (zErr) {
+      console.error("[POS ZATCA SYNC] Failed to trigger ZATCA reporting:", zErr.message);
     }
   }
 
@@ -341,7 +355,7 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
             const pointsToEarn = Math.floor(updated.total * earnRate);
             if (pointsToEarn > 0) {
               const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
-              await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId);
+              await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId, { source: "pos" });
             }
           }
         }

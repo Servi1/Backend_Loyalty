@@ -131,6 +131,13 @@ const syncTenantOrders = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+const toggleSlot = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { serviceType, slotIndex, active, deviceId } = req.body;
+  const result = await tenantsService.toggleSlot(id, serviceType, slotIndex, active, deviceId);
+  res.json({ success: true, data: result });
+});
+
 module.exports = {
   getAll,
   getById,
@@ -153,4 +160,5 @@ module.exports = {
   getAllSystemUsers,
   getSyncStatus,
   syncTenantOrders,
+  toggleSlot,
 };
