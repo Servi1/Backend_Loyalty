@@ -726,8 +726,18 @@ const submitReview = async (db, orderId, userId, rating, comment) => {
 
   // 3. Update rating and comment in tenant DB Order
   let updatedTenantOrder = null;
-  if (db) {
-    updatedTenantOrder = await db.order.update({
+  let activeDb = db;
+
+  if (!activeDb && mainOrder.tenantId) {
+    const tenant = await mainPrisma.tenant.findUnique({ where: { id: mainOrder.tenantId } });
+    if (tenant) {
+      const { getTenantClient } = require("../../config/tenantManager");
+      activeDb = getTenantClient(tenant.dbUrl);
+    }
+  }
+
+  if (activeDb) {
+    updatedTenantOrder = await activeDb.order.update({
       where: { id: orderId },
       data: { rating, comment },
       include: {
@@ -738,7 +748,7 @@ const submitReview = async (db, orderId, userId, rating, comment) => {
     });
 
     // 4. Sync to aggregated order for Super Admin / POS view
-    await syncToAggregatedOrder(db, mainOrder.tenantId, updatedTenantOrder);
+    await syncToAggregatedOrder(activeDb, mainOrder.tenantId, updatedTenantOrder);
   }
 
   return updatedTenantOrder || updatedMainOrder;
