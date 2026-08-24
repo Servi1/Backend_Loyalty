@@ -25,5 +25,6 @@ router.get("/", ctrl.myOrders);
 router.get("/:orderId", ctrl.getOne);
 router.post("/:orderId/pay", ctrl.payOrder);
 router.post("/:orderId/notify-arrived", ctrl.notifyArrived);
+router.post("/:orderId/review", ctrl.submitReview);
 
 module.exports = router;

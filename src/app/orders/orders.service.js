@@ -66,6 +66,8 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         selectedSlot: order.selectedSlot || null,
         selectedSlotDate: order.selectedSlotDate || null,
         slotDetails: order.slotDetails || null,
+        rating: order.rating || null,
+        comment: order.comment || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       },
@@ -83,6 +85,8 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         selectedSlot: order.selectedSlot || null,
         selectedSlotDate: order.selectedSlotDate || null,
         slotDetails: order.slotDetails || null,
+        rating: order.rating || null,
+        comment: order.comment || null,
         updatedAt: order.updatedAt,
       },
     });
@@ -644,4 +648,45 @@ const notifyArrived = async (db, orderId, userId, io) => {
   return { notified: true, orderNumber: order.orderNumber };
 };
 
-module.exports = { placeOrder, getMyOrders, getOrder, payHaltedOrder, notifyArrived };
+const submitReview = async (db, orderId, userId, rating, comment) => {
+  if (rating === undefined || rating < 1 || rating > 5) {
+    throw new ApiError(400, "Rating must be an integer between 1 and 5");
+  }
+
+  // 1. Verify order exists and belongs to user in main DB
+  const mainOrder = await mainPrisma.order.findFirst({
+    where: { id: orderId, appUserId: userId },
+  });
+  if (!mainOrder) throw new ApiError(404, "Order not found");
+
+  if (mainOrder.status !== "COMPLETED") {
+    throw new ApiError(400, "Only completed orders can be reviewed");
+  }
+
+  // 2. Update rating and comment in main registry Order
+  const updatedMainOrder = await mainPrisma.order.update({
+    where: { id: orderId },
+    data: { rating, comment },
+  });
+
+  // 3. Update rating and comment in tenant DB Order
+  let updatedTenantOrder = null;
+  if (db) {
+    updatedTenantOrder = await db.order.update({
+      where: { id: orderId },
+      data: { rating, comment },
+      include: {
+        items: { include: { menuItem: true } },
+        branch: true,
+        table: true,
+      },
+    });
+
+    // 4. Sync to aggregated order for Super Admin / POS view
+    await syncToAggregatedOrder(db, mainOrder.tenantId, updatedTenantOrder);
+  }
+
+  return updatedTenantOrder || updatedMainOrder;
+};
+
+module.exports = { placeOrder, getMyOrders, getOrder, payHaltedOrder, notifyArrived, submitReview };

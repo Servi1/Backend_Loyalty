@@ -198,6 +198,8 @@ model AggregatedOrder {
   selectedSlot     String?
   selectedSlotDate String?
   slotDetails      Json?
+  rating           Int?
+  comment          String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
  
@@ -279,6 +281,8 @@ model Order {
   selectedSlot     String?
   selectedSlotDate String?
   slotDetails      Json?
+  rating           Int?
+  comment          String?
 
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt

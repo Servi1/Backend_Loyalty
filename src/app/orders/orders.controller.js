@@ -69,4 +69,17 @@ const notifyArrived = catchAsync(async (req, res) => {
   res.json({ success: true, ...result });
 });
 
-module.exports = { place, placePublic, myOrders, getOne, payOrder, notifyArrived };
+// ─── POST /orders/:orderId/review ─────────────────────────────────────────────
+const submitReview = catchAsync(async (req, res) => {
+  const { rating, comment } = req.body;
+  const order = await ordersService.submitReview(
+    req.tenantDb,
+    req.params.orderId,
+    req.user.id,
+    rating,
+    comment
+  );
+  res.json({ success: true, data: order });
+});
+
+module.exports = { place, placePublic, myOrders, getOne, payOrder, notifyArrived, submitReview };
