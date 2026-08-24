@@ -91,6 +91,56 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
   }
 };
 
+const isBranchOpenNow = (branch) => {
+  if (!branch) return { isOpen: false, reason: "Branch location not found." };
+  if (branch.isOpen === false) {
+    return { isOpen: false, reason: "Branch is currently marked as closed." };
+  }
+  if (!branch.openingTime || !branch.closingTime) {
+    return { isOpen: true };
+  }
+
+  const parseTimeToMinutes = (tStr) => {
+    if (!tStr) return 0;
+    const parts = tStr.trim().split(" ");
+    let [h, m] = parts[0].split(":").map(Number);
+    if (isNaN(h)) h = 0;
+    if (isNaN(m)) m = 0;
+    if (parts[1]) {
+      const period = parts[1].toUpperCase();
+      if (period === "PM" && h < 12) h += 12;
+      if (period === "AM" && h === 12) h = 0;
+    }
+    return h * 60 + m;
+  };
+
+  const openMin = parseTimeToMinutes(branch.openingTime);
+  const closeMin = parseTimeToMinutes(branch.closingTime);
+
+  if (openMin === closeMin) return { isOpen: true };
+
+  const now = new Date();
+  const saudiTimeStr = now.toLocaleTimeString("en-US", { timeZone: branch.timezone || "Asia/Riyadh", hour12: false });
+  const [hStr, mStr] = saudiTimeStr.split(":");
+  const nowMin = parseInt(hStr, 10) * 60 + parseInt(mStr, 10);
+
+  let open = false;
+  if (openMin < closeMin) {
+    open = nowMin >= openMin && nowMin < closeMin;
+  } else {
+    open = nowMin >= openMin || nowMin < closeMin;
+  }
+
+  if (!open) {
+    return {
+      isOpen: false,
+      reason: `Branch is closed. Operating hours are ${branch.openingTime} to ${branch.closingTime}.`
+    };
+  }
+
+  return { isOpen: true };
+};
+
 // ─── placeOrder ───────────────────────────────────────────────────────────────
 
 const placeOrder = async (db, userId, body, tenantId, tenant) => {
@@ -101,10 +151,14 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     throw new ApiError(400, "Order must contain at least one item");
   }
 
-  // Validate branch exists and is open
+  // Validate branch exists and is open according to operating hours
   const branch = await db.branch.findUnique({ where: { id: branchId } });
   if (!branch) throw new ApiError(404, "Branch not found");
-  if (!branch.isOpen) throw new ApiError(400, "Branch is currently closed");
+  
+  const openCheck = isBranchOpenNow(branch);
+  if (!openCheck.isOpen) {
+    throw new ApiError(400, openCheck.reason);
+  }
 
   // Validate branch features are enabled for app ordering
   const isDineIn = (type && type.toUpperCase() === "DINE_IN") || !!tableId;

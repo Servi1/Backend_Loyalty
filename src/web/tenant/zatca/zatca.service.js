@@ -309,7 +309,7 @@ async function resyncOrdersZatca(tenantDb, { orderIds, branchId, zatcaStatusFilt
 /**
  * Per-POS Device ZATCA CSID Sandbox/Production Onboarding
  */
-async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment = "sandbox" }) {
+async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment }) {
   const posDevice = await tenantDb.posDevice.findUnique({
     where: { id: posDeviceId },
     include: { branch: true }
@@ -329,10 +329,8 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
     throw new ApiError(400, "Valid ZATCA 6-digit OTP is required for POS device CSID onboarding");
   }
 
-  // Block fake OTP 123456 in Production Mode
-  if (environment === "production" && String(otp).trim() === "123456") {
-    throw new ApiError(400, "Live Production onboarding requires an official 6-digit OTP generated from the taxpayer Fatoora Portal (fatoora.zatca.gov.sa). Test OTP '123456' is strictly restricted to Demo / Sandbox mode.");
-  }
+  // Derive environment automatically based on OTP: '123456' -> sandbox, otherwise production
+  const resolvedEnv = String(otp).trim() === "123456" ? "sandbox" : (environment || "production");
 
   // 1. Generate ECDSA secp256k1 keypair for this specific POS device
   const { privateKey, publicKey } = crypto.generateKeyPairSync("ec", {
@@ -347,7 +345,7 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
   const csrSubject = `CN=${commonName}, OU=${branch.name || "Main"}, O=ServiTenant, C=SA, SN=1-Servi|2-1.0|3-${posDeviceId.slice(0, 8)}, UID=${cleanVat}, Title=1100`;
   const csrBase64 = Buffer.from(csrSubject + "\n" + publicKeyPem).toString("base64");
 
-  const targetZatcaUrl = environment === "production"
+  const targetZatcaUrl = resolvedEnv === "production"
     ? "https://gw-fatoora.zatca.gov.sa/e-invoicing/core/compliance"
     : `${ZATCA_SANDBOX_URL}/compliance`;
 
@@ -355,7 +353,7 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
 
   // Attempt real ZATCA API call
   try {
-    console.log(`\n================ 📡 LIVE ZATCA ${environment.toUpperCase()} API REQUEST ================`);
+    console.log(`\n================ 📡 LIVE ZATCA ${resolvedEnv.toUpperCase()} API REQUEST ================`);
     console.log("Endpoint:", targetZatcaUrl);
     console.log("OTP Sent:", String(otp).trim());
     
@@ -386,7 +384,7 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
     console.log("ZATCA Error Body:", apiErr.response ? JSON.stringify(apiErr.response.data, null, 2) : apiErr.message);
     console.log("===========================================================\n");
 
-    if (environment === "sandbox" && String(otp).trim() === "123456") {
+    if (resolvedEnv === "sandbox" && String(otp).trim() === "123456") {
       // Local developer test fallback ONLY for sandbox mode
       csidResult = {
         requestID: `REQ-${Date.now()}`,
@@ -397,7 +395,7 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
     } else {
       // Reject enrollment on bad OTP or failed production call
       const errDetail = apiErr.response?.data?.errors?.[0]?.message || apiErr.response?.data?.message || apiErr.message;
-      throw new ApiError(400, `ZATCA ${environment.toUpperCase()} Onboarding Failed: ${errDetail}`);
+      throw new ApiError(400, `ZATCA ${resolvedEnv.toUpperCase()} Onboarding Failed: ${errDetail}`);
     }
   }
 
@@ -406,12 +404,12 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
     where: { id: posDeviceId },
     data: {
       zatcaEnabled: true,
-      zatcaEnvironment: environment,
+      zatcaEnvironment: resolvedEnv,
       zatcaOtp: String(otp).trim(),
       zatcaPrivateKey: privateKeyPem,
       zatcaCertificate: csidResult.binarySecurityToken,
       zatcaCsidSecret: csidResult.secret,
-      zatcaStatus: environment === "production" ? "PRODUCTION_ACTIVE" : "COMPLIANCE_PASSED",
+      zatcaStatus: resolvedEnv === "production" ? "PRODUCTION_ACTIVE" : "COMPLIANCE_PASSED",
       zatcaLastSync: new Date()
     },
     include: { branch: true }
@@ -419,14 +417,14 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
 
   return {
     success: true,
-    message: `ZATCA ${environment.toUpperCase()} CSID onboarding successful for POS "${posDevice.name}"!`,
+    message: `ZATCA ${resolvedEnv.toUpperCase()} CSID onboarding successful for POS "${posDevice.name}"!`,
     posDevice: updatedDevice,
     csidDetails: {
       requestId: csidResult.requestID,
       status: csidResult.dispositionMessage || "ISSUED",
       vatNumber: cleanVat,
       crNumber: cleanCr,
-      environment
+      environment: resolvedEnv
     }
   };
 }

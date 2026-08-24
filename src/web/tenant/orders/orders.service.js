@@ -95,7 +95,67 @@ const generateOrderNumber = () => {
   return `SRV-${hex}`;
 };
 
+const isBranchOpenNow = (branch) => {
+  if (!branch) return { isOpen: false, reason: "Branch location not found." };
+  if (branch.isOpen === false) {
+    return { isOpen: false, reason: "Branch is currently marked as closed." };
+  }
+  if (!branch.openingTime || !branch.closingTime) {
+    return { isOpen: true };
+  }
+
+  const parseTimeToMinutes = (tStr) => {
+    if (!tStr) return 0;
+    const parts = tStr.trim().split(" ");
+    let [h, m] = parts[0].split(":").map(Number);
+    if (isNaN(h)) h = 0;
+    if (isNaN(m)) m = 0;
+    if (parts[1]) {
+      const period = parts[1].toUpperCase();
+      if (period === "PM" && h < 12) h += 12;
+      if (period === "AM" && h === 12) h = 0;
+    }
+    return h * 60 + m;
+  };
+
+  const openMin = parseTimeToMinutes(branch.openingTime);
+  const closeMin = parseTimeToMinutes(branch.closingTime);
+
+  if (openMin === closeMin) return { isOpen: true };
+
+  const now = new Date();
+  const saudiTimeStr = now.toLocaleTimeString("en-US", { timeZone: branch.timezone || "Asia/Riyadh", hour12: false });
+  const [hStr, mStr] = saudiTimeStr.split(":");
+  const nowMin = parseInt(hStr, 10) * 60 + parseInt(mStr, 10);
+
+  let open = false;
+  if (openMin < closeMin) {
+    open = nowMin >= openMin && nowMin < closeMin;
+  } else {
+    open = nowMin >= openMin || nowMin < closeMin;
+  }
+
+  if (!open) {
+    return {
+      isOpen: false,
+      reason: `Branch is closed. Operating hours are ${branch.openingTime} to ${branch.closingTime}.`
+    };
+  }
+
+  return { isOpen: true };
+};
+
 const create = async (db, { userId, customerId, customerPhone, status, branchId, tableId, qrCashierId, type, items, notes, total, posUnit, source, staffId, staffName, selectedSlot, selectedSlotDate, customOrderTypeId }, tenantId) => {
+  if (branchId) {
+    const branch = await db.branch.findUnique({ where: { id: branchId } });
+    if (branch) {
+      const openCheck = isBranchOpenNow(branch);
+      if (!openCheck.isOpen) {
+        throw new ApiError(400, openCheck.reason);
+      }
+    }
+  }
+
   let finalCustomerId = customerId;
   if (customerPhone) {
     const cleanedPhone = customerPhone.trim();
