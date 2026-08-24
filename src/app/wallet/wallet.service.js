@@ -571,7 +571,7 @@ const getLeaderboard = async (db, sortBy = 'points') => {
     name: user.name,
     points: user.points,
     orders: user.orders,
-    avatar: user.avatar || AVATARS[index % AVATARS.length],
+    avatar: user.avatar || null,
   }));
 };
 
