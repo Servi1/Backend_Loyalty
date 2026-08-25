@@ -96,6 +96,7 @@ const getBrands = async (userId) => {
       bannerUrl2: getAppImageURL(t.bannerUrl2),
       bannerUrl3: getAppImageURL(t.bannerUrl3),
       cuisine: details.cuisine,
+      category: t.category || details.cuisine,
       slug: t.slug,
 
       isFavorite: favBrands.includes(t.id) || favBrands.includes(t.slug),
