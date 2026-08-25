@@ -373,7 +373,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   });
 
   // Award points only if order is already COMPLETED upon creation (except if paid by points)
-  if (initialStatus === "COMPLETED" && userId && earnRate && paymentMethod !== "points") {
+  if (order.status === "COMPLETED" && userId && earnRate && paymentMethod !== "points") {
     const rate = parseFloat(earnRate);
     if (rate > 0) {
       const pointsEarned = Math.round(subtotal * rate);
