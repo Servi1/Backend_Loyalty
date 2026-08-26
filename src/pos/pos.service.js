@@ -123,7 +123,7 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
   });
 
   if (tenantId) {
-    syncToAggregatedOrder(db, tenantId, order).catch(console.error);
+    await syncToAggregatedOrder(db, tenantId, order).catch(console.error);
   }
 
   // Award loyalty points immediately at order creation if customer is present and not halted
@@ -365,8 +365,8 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
     }
   }
 
-  // Sync to super admin aggregated orders asynchronously
-  syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
+  // Sync to super admin aggregated orders synchronously
+  await syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
 
   return updated;
 };

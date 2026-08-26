@@ -333,8 +333,8 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
     console.error("[TENANT ORDER] Failed to create main database order:", err.message);
   }
 
-  // Sync to super admin aggregated orders asynchronously
-  syncToAggregatedOrder(db, tenantId, order).catch(console.error);
+  // Sync to super admin aggregated orders synchronously
+  await syncToAggregatedOrder(db, tenantId, order).catch(console.error);
 
   return order;
 };
@@ -581,8 +581,8 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
 
   await handleOrderStatusLoyalty(db, updated, status, tenantId);
 
-  // Sync to super admin aggregated orders asynchronously
-  syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
+  // Sync to super admin aggregated orders synchronously
+  await syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
 
   return updated;
 };

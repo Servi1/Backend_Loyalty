@@ -116,6 +116,7 @@ model Tenant {
   subCds           Boolean          @default(false)
   cdsQuantity      Int              @default(1)
   subBranch        Boolean          @default(false)
+  subBrandStory    Boolean          @default(false)
 
   priceAppServi    Float            @default(29.0)
   cycleAppServi    String           @default("monthly")
@@ -123,6 +124,9 @@ model Tenant {
   priceAppBrand    Float            @default(99.0)
   cycleAppBrand    String           @default("monthly")
   feeAppBrand      Float            @default(0.0)
+  priceBrandStory  Float            @default(0.0)
+  cycleBrandStory  String           @default("monthly")
+  feeBrandStory    Float            @default(0.0)
   pricePos         Float            @default(49.0)
   cyclePos         String           @default("monthly")
   feePos           Float            @default(0.0)
