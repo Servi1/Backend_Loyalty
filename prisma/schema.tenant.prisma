@@ -279,6 +279,8 @@ model Order {
   slotDetails      Json?
   rating           Int?
   comment          String?
+  staffRating      Int?
+  staffComment     String?
 
   // ZATCA Phase 2 E-Invoicing Tracking Fields
   zatcaXml        String?

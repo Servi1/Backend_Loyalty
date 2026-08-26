@@ -68,6 +68,8 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         slotDetails: order.slotDetails || null,
         rating: order.rating || null,
         comment: order.comment || null,
+        staffRating: order.staffRating || null,
+        staffComment: order.staffComment || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       },
@@ -87,6 +89,8 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         slotDetails: order.slotDetails || null,
         rating: order.rating || null,
         comment: order.comment || null,
+        staffRating: order.staffRating || null,
+        staffComment: order.staffComment || null,
         updatedAt: order.updatedAt,
       },
     });
@@ -703,10 +707,8 @@ const notifyArrived = async (db, orderId, userId, io) => {
   return { notified: true, orderNumber: order.orderNumber };
 };
 
-const submitReview = async (db, orderId, userId, rating, comment) => {
-  if (rating === undefined || rating < 1 || rating > 5) {
-    throw new ApiError(400, "Rating must be an integer between 1 and 5");
-  }
+const submitReview = async (db, orderId, userId, reviewData = {}) => {
+  const { rating, comment, staffRating, staffComment } = reviewData;
 
   // 1. Verify order exists and belongs to user in main DB
   const mainOrder = await mainPrisma.order.findFirst({
@@ -718,10 +720,27 @@ const submitReview = async (db, orderId, userId, rating, comment) => {
     throw new ApiError(400, "Only completed orders can be reviewed");
   }
 
+  // Build update object
+  const updateData = {};
+  if (rating !== undefined) {
+    if (rating < 1 || rating > 5) throw new ApiError(400, "Rating must be between 1 and 5");
+    updateData.rating = rating;
+  }
+  if (comment !== undefined) updateData.comment = comment;
+  if (staffRating !== undefined) {
+    if (staffRating < 1 || staffRating > 5) throw new ApiError(400, "Staff rating must be between 1 and 5");
+    updateData.staffRating = staffRating;
+  }
+  if (staffComment !== undefined) updateData.staffComment = staffComment;
+
+  if (Object.keys(updateData).length === 0) {
+    throw new ApiError(400, "No review fields provided");
+  }
+
   // 2. Update rating and comment in main registry Order
   const updatedMainOrder = await mainPrisma.order.update({
     where: { id: orderId },
-    data: { rating, comment },
+    data: updateData,
   });
 
   // 3. Update rating and comment in tenant DB Order
@@ -739,7 +758,7 @@ const submitReview = async (db, orderId, userId, rating, comment) => {
   if (activeDb) {
     updatedTenantOrder = await activeDb.order.update({
       where: { id: orderId },
-      data: { rating, comment },
+      data: updateData,
       include: {
         items: { include: { menuItem: true } },
         branch: true,

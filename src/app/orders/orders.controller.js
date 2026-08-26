@@ -69,15 +69,12 @@ const notifyArrived = catchAsync(async (req, res) => {
   res.json({ success: true, ...result });
 });
 
-// ─── POST /orders/:orderId/review ─────────────────────────────────────────────
 const submitReview = catchAsync(async (req, res) => {
-  const { rating, comment } = req.body;
   const order = await ordersService.submitReview(
     req.tenantDb,
     req.params.orderId,
     req.user.id,
-    rating,
-    comment
+    req.body
   );
   res.json({ success: true, data: order });
 });
