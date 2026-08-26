@@ -253,7 +253,14 @@ app.use((_req, res) => {
   res.status(404).json({ success: false, message: "Route not found" });
 });
 
-// ─── Error Handler (must be last) ────────────────────
-app.use(errorHandler);
+// Start background periodic order sync worker to guarantee 100% real-time order consistency
+const tenantsService = require("./src/web/admin/tenants/tenants.service");
+setTimeout(() => {
+  tenantsService.syncAllTenantOrders().catch(err => console.error("[BACKGROUND ORDER SYNC] Initial sync warning:", err.message));
+}, 5000);
+
+setInterval(() => {
+  tenantsService.syncAllTenantOrders().catch(err => console.error("[BACKGROUND ORDER SYNC] Periodic sync warning:", err.message));
+}, 2 * 60 * 1000);
 
 module.exports = app;

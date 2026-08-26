@@ -448,8 +448,8 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     console.error("[APP ORDER] Failed to create order in main database:", err.message);
   }
 
-  // Fire-and-forget — non-blocking side effects
-  syncToAggregatedOrder(db, tenantId, order).catch(console.error);
+  // Sync to super admin aggregated orders synchronously
+  await syncToAggregatedOrder(db, tenantId, order).catch(console.error);
 
   return order;
 };
