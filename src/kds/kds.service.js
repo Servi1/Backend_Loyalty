@@ -197,7 +197,7 @@ const bumpOrder = async (db, orderId, tenantId) => {
   }
 
   // Sync status to main aggregatedOrder
-  syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
+  await syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
 
   return mapDbOrderToKds(updated);
 };
@@ -245,7 +245,7 @@ const recallOrder = async (db, orderId, tenantId) => {
   }
 
   // Sync status to main aggregatedOrder
-  syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
+  await syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
 
   return mapDbOrderToKds(updated);
 };

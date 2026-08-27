@@ -123,7 +123,7 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
   });
 
   if (tenantId) {
-    syncToAggregatedOrder(db, tenantId, order).catch(console.error);
+    await syncToAggregatedOrder(db, tenantId, order).catch(console.error);
   }
 
   // Award loyalty points immediately at order creation if customer is present and not halted
@@ -142,7 +142,7 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
           pointsToEarn,
           `Earned on Order #${order.orderNumber}`,
           tenantId,
-          { source: "pos" }
+          { source: "pos", orderId: order.id, orderNumber: order.orderNumber }
         );
       }
     } catch (err) {
@@ -355,7 +355,7 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
             const pointsToEarn = Math.floor(updated.total * earnRate);
             if (pointsToEarn > 0) {
               const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
-              await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId, { source: "pos" });
+              await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId, { source: "pos", orderId: updated.id, orderNumber: updated.orderNumber });
             }
           }
         }
@@ -365,8 +365,8 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
     }
   }
 
-  // Sync to super admin aggregated orders asynchronously
-  syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
+  // Sync to super admin aggregated orders synchronously
+  await syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
 
   return updated;
 };

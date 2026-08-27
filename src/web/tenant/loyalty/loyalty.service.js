@@ -53,6 +53,26 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
     });
   }
 
+  // Prevent duplicate points earning for the exact same order
+  if (opts.orderId || opts.orderNumber) {
+    const existingTx = await mainPrisma.walletTransaction.findFirst({
+      where: {
+        walletId: wallet.id,
+        points: { gt: 0 },
+        OR: [
+          opts.orderId ? { orderId: opts.orderId } : undefined,
+          opts.orderNumber ? { orderNumber: opts.orderNumber } : undefined,
+          opts.orderNumber ? { description: { contains: opts.orderNumber } } : undefined,
+        ].filter(Boolean),
+      },
+    });
+
+    if (existingTx) {
+      console.log(`[LOYALTY] Earning points skipped: Points already awarded for order ${opts.orderNumber || opts.orderId}`);
+      return wallet;
+    }
+  }
+
   const [updatedWallet] = await mainPrisma.$transaction([
     mainPrisma.wallet.update({
       where: { appUserId: customerId },
@@ -99,6 +119,26 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
   const wallet = await mainPrisma.wallet.findUnique({ where: { appUserId: customerId } });
   if (!wallet) throw new ApiError(404, "Wallet not found");
   if (wallet.points < points) throw new ApiError(400, "Insufficient points");
+
+  // Prevent duplicate points redemption for the exact same order
+  if (opts.orderId || opts.orderNumber) {
+    const existingRedeemTx = await mainPrisma.walletTransaction.findFirst({
+      where: {
+        walletId: wallet.id,
+        points: { lt: 0 },
+        OR: [
+          opts.orderId ? { orderId: opts.orderId } : undefined,
+          opts.orderNumber ? { orderNumber: opts.orderNumber } : undefined,
+          opts.orderNumber ? { description: { contains: opts.orderNumber } } : undefined,
+        ].filter(Boolean),
+      },
+    });
+
+    if (existingRedeemTx) {
+      console.log(`[LOYALTY] Points redemption skipped: Points already redeemed for order ${opts.orderNumber || opts.orderId}`);
+      return wallet;
+    }
+  }
 
   const [updatedWallet] = await mainPrisma.$transaction([
     mainPrisma.wallet.update({

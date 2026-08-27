@@ -389,7 +389,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
             pointsEarned,
             `Earned on Order #${orderNumber}`,
             tenantId,
-            { source: "app" }
+            { source: "app", orderId: order.id, orderNumber: orderNumber }
           );
         } catch (err) {
           console.error("[APP ORDER] Failed to award loyalty points:", err.message);
@@ -448,8 +448,8 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     console.error("[APP ORDER] Failed to create order in main database:", err.message);
   }
 
-  // Fire-and-forget — non-blocking side effects
-  syncToAggregatedOrder(db, tenantId, order).catch(console.error);
+  // Sync to super admin aggregated orders synchronously
+  await syncToAggregatedOrder(db, tenantId, order).catch(console.error);
 
   return order;
 };

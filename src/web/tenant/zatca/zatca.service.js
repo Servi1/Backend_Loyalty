@@ -466,6 +466,8 @@ async function onboardPosZatcaSandbox(tenantDb, posDeviceId, { otp, environment 
 
   const targetZatcaUrl = resolvedEnv === "production"
     ? "https://gw-fatoora.zatca.gov.sa/e-invoicing/core/compliance"
+    : (resolvedEnv === "simulation" || resolvedEnv === "uat")
+    ? "https://gw-fatoora.zatca.gov.sa/e-invoicing/simulation/compliance"
     : `${ZATCA_SANDBOX_URL}/compliance`;
 
   let csidResult = null;

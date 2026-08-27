@@ -176,6 +176,32 @@ const update = async (id, data) => {
     }
   }
 
+  // Track mid-month global feature license activations
+  const toggleFields = [
+    { key: "subBrandStory", serviceType: "brand_story", priceKey: "priceBrandStory", defaultPrice: 0.0 },
+    { key: "subAppBrand", serviceType: "app_brand", priceKey: "priceAppBrand", defaultPrice: 99.0 },
+    { key: "subAppServi", serviceType: "app_servi", priceKey: "priceAppServi", defaultPrice: 29.0 },
+  ];
+
+  for (const tf of toggleFields) {
+    if (data[tf.key] === true && !existingTenant[tf.key]) {
+      const pricePerUnit = data[tf.priceKey] !== undefined ? Number(data[tf.priceKey]) : Number(existingTenant[tf.priceKey] || tf.defaultPrice);
+      try {
+        await mainPrisma.tenantSlotAddon.create({
+          data: {
+            tenantId: id,
+            serviceType: tf.serviceType,
+            quantity: 1,
+            pricePerUnit,
+            notes: `Super Admin activated ${tf.serviceType.toUpperCase()} feature license mid-month`
+          }
+        });
+      } catch (err) {
+        console.error(`Failed to record feature addon for tenant ${id}:`, err.message);
+      }
+    }
+  }
+
   return mainPrisma.tenant.update({ where: { id }, data });
 };
 
@@ -264,13 +290,21 @@ const getSubscriptions = async () => {
   for (const tenant of tenants) {
     let amount = 0;
     const activeFeatures = [];
-    if (tenant.subAppServi) { amount += tenant.priceAppServi !== undefined ? tenant.priceAppServi : 29.0; activeFeatures.push("APP servi"); }
-    if (tenant.subAppBrand) { amount += tenant.priceAppBrand !== undefined ? tenant.priceAppBrand : 99.0; activeFeatures.push("APP brand"); }
-    if (tenant.subPos) { amount += tenant.pricePos !== undefined ? tenant.pricePos : 49.0; activeFeatures.push("POS"); }
-    if (tenant.subQrTable) { amount += tenant.priceQrTable !== undefined ? tenant.priceQrTable : 19.0; activeFeatures.push("QR Table"); }
-    if (tenant.subQrCashier) { amount += tenant.priceQrCashier !== undefined ? tenant.priceQrCashier : 9.0; activeFeatures.push("QR Cashier"); }
-    if (tenant.subKds) { amount += tenant.priceKds !== undefined ? tenant.priceKds : 19.0; activeFeatures.push("KDS"); }
-    if (tenant.subCds) { amount += tenant.priceCds !== undefined ? tenant.priceCds : 9.0; activeFeatures.push("CDS"); }
+    
+    const getMonthlyEquivalent = (price, cycleKey) => {
+      const p = price !== undefined && price !== null ? Number(price) : 0.0;
+      const cycle = tenant[cycleKey] || tenant.billingCycle || "monthly";
+      return cycle === "yearly" ? (p / 12) : p;
+    };
+
+    if (tenant.subAppServi) { amount += getMonthlyEquivalent(tenant.priceAppServi, "cycleAppServi"); activeFeatures.push("APP servi"); }
+    if (tenant.subAppBrand) { amount += getMonthlyEquivalent(tenant.priceAppBrand, "cycleAppBrand"); activeFeatures.push("APP brand"); }
+    if (tenant.subPos) { amount += getMonthlyEquivalent(tenant.pricePos, "cyclePos"); activeFeatures.push("POS"); }
+    if (tenant.subQrTable) { amount += getMonthlyEquivalent(tenant.priceQrTable, "cycleQrTable"); activeFeatures.push("QR Table"); }
+    if (tenant.subQrCashier) { amount += getMonthlyEquivalent(tenant.priceQrCashier, "cycleQrCashier"); activeFeatures.push("QR Cashier"); }
+    if (tenant.subKds) { amount += getMonthlyEquivalent(tenant.priceKds, "cycleKds"); activeFeatures.push("KDS"); }
+    if (tenant.subCds) { amount += getMonthlyEquivalent(tenant.priceCds, "cycleCds"); activeFeatures.push("CDS"); }
+    if (tenant.subBranch) { amount += getMonthlyEquivalent(tenant.priceBranch, "cycleBranch"); activeFeatures.push("Physical Branches"); }
 
     const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
 
@@ -279,10 +313,8 @@ const getSubscriptions = async () => {
     const cycleDays = isYearly ? 365 : 30;
     const endsAt = new Date(startedAt.getTime() + cycleDays * 24 * 60 * 60 * 1000);
 
-    // Compute monthly equivalent for MRR
-    const monthlyEquivalent = isYearly ? Math.round(amount / 12) : amount;
     if (tenant.isActive) {
-      totalMRR += monthlyEquivalent;
+      totalMRR += amount;
     }
 
     // Check if expiring in 30 days
@@ -607,13 +639,15 @@ const getInvoices = async (filters = {}) => {
 
       // A. Global & Slot-based Subscription Services
       const globalServiceConfigs = [
-        { flag: "subAppBrand", priceKey: "priceAppBrand", defaultPrice: 99.0, label: "App Brand License", isSlot: false, typeKey: "app_brand" },
-        { flag: "subPos", qtyKey: "posQuantity", priceKey: "pricePos", defaultPrice: 49.0, label: "POS Terminal", isSlot: true, typeKey: "pos" },
-        { flag: "subQrTable", qtyKey: "qrTableQuantity", priceKey: "priceQrTable", defaultPrice: 19.0, label: "QR Table Dining", isSlot: true, typeKey: "qr_table" },
-        { flag: "subQrCashier", qtyKey: "qrCashierQuantity", priceKey: "priceQrCashier", defaultPrice: 9.0, label: "QR Cashier Counter", isSlot: true, typeKey: "qr_cashier" },
-        { flag: "subKds", qtyKey: "kdsQuantity", priceKey: "priceKds", defaultPrice: 19.0, label: "KDS Kitchen Screen", isSlot: true, typeKey: "kds" },
-        { flag: "subCds", qtyKey: "cdsQuantity", priceKey: "priceCds", defaultPrice: 9.0, label: "CDS Customer Display", isSlot: true, typeKey: "cds" },
-        { flag: "subBranch", qtyKey: "branchLimit", priceKey: "priceBranch", defaultPrice: 19.0, label: "Branch Location", isSlot: true, typeKey: "branch" },
+        { flag: "subAppServi", priceKey: "priceAppServi", cycleKey: "cycleAppServi", defaultPrice: 0.0, label: "App Servi License", isSlot: false, typeKey: "app_servi" },
+        { flag: "subAppBrand", priceKey: "priceAppBrand", cycleKey: "cycleAppBrand", defaultPrice: 0.0, label: "App Brand License", isSlot: false, typeKey: "app_brand" },
+        { flag: "subPos", qtyKey: "posQuantity", priceKey: "pricePos", cycleKey: "cyclePos", defaultPrice: 0.0, label: "POS Terminal", isSlot: true, typeKey: "pos" },
+        { flag: "subQrTable", qtyKey: "qrTableQuantity", priceKey: "priceQrTable", cycleKey: "cycleQrTable", defaultPrice: 0.0, label: "QR Table Dining", isSlot: true, typeKey: "qr_table" },
+        { flag: "subQrCashier", qtyKey: "qrCashierQuantity", priceKey: "priceQrCashier", cycleKey: "cycleQrCashier", defaultPrice: 0.0, label: "QR Cashier Counter", isSlot: true, typeKey: "qr_cashier" },
+        { flag: "subKds", qtyKey: "kdsQuantity", priceKey: "priceKds", cycleKey: "cycleKds", defaultPrice: 0.0, label: "KDS Kitchen Screen", isSlot: true, typeKey: "kds" },
+        { flag: "subCds", qtyKey: "cdsQuantity", priceKey: "priceCds", cycleKey: "cycleCds", defaultPrice: 0.0, label: "CDS Customer Display", isSlot: true, typeKey: "cds" },
+        { flag: "subBranch", qtyKey: "branchLimit", priceKey: "priceBranch", cycleKey: "cycleBranch", defaultPrice: 0.0, label: "Branch Location", isSlot: true, typeKey: "branch" },
+        { flag: "subBrandStory", priceKey: "priceBrandStory", cycleKey: "cycleBrandStory", defaultPrice: 0.0, label: "Brand Story Feature", isSlot: false, typeKey: "brand_story" },
       ];
 
       // Track base slot counts to align add-on slots with remaining registered devices
@@ -621,9 +655,20 @@ const getInvoices = async (filters = {}) => {
 
       for (const gsvc of globalServiceConfigs) {
         if (tenant[gsvc.flag]) {
-          const { daysActive, totalDays, period } = getDaysActiveInMonth(tenant.createdAt, currentMonthEnd, currentYear, currentMonth);
+          const featureAddon = (tenant.slotAddons || [])
+            .filter(a => a.serviceType.toLowerCase() === gsvc.typeKey)
+            .sort((a, b) => new Date(a.addedAt).getTime() - new Date(b.addedAt).getTime())[0];
+
+          const featureSubscribedAt = featureAddon ? new Date(featureAddon.addedAt) : tenant.createdAt;
+          const { daysActive, totalDays, period } = getDaysActiveInMonth(featureSubscribedAt, currentMonthEnd, currentYear, currentMonth);
+
           if (daysActive > 0) {
             const unitPrice = tenant[gsvc.priceKey] !== undefined && tenant[gsvc.priceKey] !== null ? Number(tenant[gsvc.priceKey]) : gsvc.defaultPrice;
+            const serviceCycle = tenant[gsvc.cycleKey] || tenant.billingCycle || "monthly";
+            const isYearly = String(serviceCycle).toLowerCase() === "yearly";
+
+            // Monthly base price for monthly invoice calculations
+            const effectiveMonthlyPrice = isYearly ? (unitPrice / 12) : unitPrice;
             
             // Subtract mid-month add-ons added in this month to get initial base slots
             const monthAddonQty = (tenant.slotAddons || [])
@@ -633,23 +678,44 @@ const getInvoices = async (filters = {}) => {
               })
               .reduce((sum, a) => sum + Number(a.quantity || 0), 0);
 
+            let yearlyDaysActive = daysActive;
+            let yearlyDaysRemaining = 365 - daysActive;
+            let yearlyPeriod = period;
+            let yearlyTotalDays = 365;
+            if (isYearly) {
+              const subStart = featureSubscribedAt;
+              const calendarYearEnd = new Date(currentYear, 11, 31, 23, 59, 59, 999);
+              const activeStart = new Date(Math.max(new Date(currentYear, 0, 1).getTime(), subStart.getTime()));
+              
+              const totalMs = Math.max(0, calendarYearEnd.getTime() - activeStart.getTime());
+              yearlyTotalDays = Math.max(1, Math.ceil(totalMs / (24 * 60 * 60 * 1000)));
+
+              const remainingMs = Math.max(0, calendarYearEnd.getTime() - now.getTime());
+              yearlyDaysRemaining = Math.max(0, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
+              yearlyDaysActive = Math.max(0, yearlyTotalDays - yearlyDaysRemaining);
+
+              const startStr = activeStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+              const endStr = calendarYearEnd.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+              yearlyPeriod = `${startStr} - ${endStr}`;
+            }
+
             if (gsvc.isSlot) {
               let regDevices = [];
               if (gsvc.typeKey === "pos") regDevices = dbPosDevices;
               else if (gsvc.typeKey === "kds") regDevices = dbKdsDevices;
               else if (gsvc.typeKey === "qr_table") regDevices = dbTables;
 
-              const rawCurrentQty = Math.max(Number(tenant[gsvc.qtyKey] || 1), regDevices.length);
+              const rawCurrentQty = Math.max(Number(tenant[gsvc.qtyKey] || 0), regDevices.length);
               const quantity = Math.max(0, rawCurrentQty - monthAddonQty);
               baseSlotCounts[gsvc.typeKey] = quantity;
 
               for (let i = 0; i < quantity; i++) {
-                const singleCost = unitPrice * (daysActive / totalDays);
+                const singleCost = effectiveMonthlyPrice * (daysActive / totalDays);
                 const assigned = regDevices[i] || null;
                 const isSlotCanceled = assigned ? assigned.isActive === false : (i >= Number(tenant[gsvc.qtyKey] || 0));
-                
+                const itemCharge = isSlotCanceled ? 0.0 : parseFloat(singleCost.toFixed(2));
                 if (!isSlotCanceled) {
-                  invoiceAmount += singleCost;
+                  invoiceAmount += itemCharge;
                 }
 
                 globalServices.push({
@@ -666,17 +732,22 @@ const getInvoices = async (filters = {}) => {
                     isActive: assigned.isActive ?? true,
                   } : null,
                   price: unitPrice,
-                  monthlyTotal: parseFloat(unitPrice.toFixed(2)),
-                  amount: isSlotCanceled ? 0.0 : parseFloat(singleCost.toFixed(2)),
+                  billingCycle: serviceCycle,
+                  isYearly,
+                  monthlyTotal: parseFloat(effectiveMonthlyPrice.toFixed(2)),
+                  amount: itemCharge,
                   quantity: 1,
                   daysActive,
                   totalDays,
-                  period,
+                  yearlyDaysActive,
+                  yearlyTotalDays: isYearly ? yearlyTotalDays : 365,
+                  yearlyDaysRemaining,
+                  period: isYearly ? yearlyPeriod : period,
                   prorated: daysActive < totalDays
                 });
               }
             } else {
-              const monthlyPrice = unitPrice;
+              const monthlyPrice = effectiveMonthlyPrice;
               const cost = monthlyPrice * (daysActive / totalDays);
 
               invoiceAmount += cost;
@@ -687,12 +758,17 @@ const getInvoices = async (filters = {}) => {
                 name: gsvc.label,
                 isCanceled: false,
                 price: unitPrice,
+                billingCycle: serviceCycle,
+                isYearly,
                 monthlyTotal: parseFloat(monthlyPrice.toFixed(2)),
                 amount: parseFloat(cost.toFixed(2)),
                 quantity: 1,
                 daysActive,
                 totalDays,
-                period,
+                yearlyDaysActive,
+                yearlyTotalDays: isYearly ? yearlyTotalDays : 365,
+                yearlyDaysRemaining,
+                period: isYearly ? yearlyPeriod : period,
                 prorated: daysActive < totalDays
               });
             }
@@ -728,16 +804,53 @@ const getInvoices = async (filters = {}) => {
             else if (typeKey === "kds") regDevices = dbKdsDevices;
             else if (typeKey === "qr_table") regDevices = dbTables;
 
+            const cycleKeyMap = {
+              pos: "cyclePos",
+              qr_table: "cycleQrTable",
+              qr_cashier: "cycleQrCashier",
+              kds: "cycleKds",
+              cds: "cycleCds",
+              branch: "cycleBranch",
+              app_servi: "cycleAppServi",
+              app_brand: "cycleAppBrand"
+            };
+            const cycleKey = cycleKeyMap[typeKey];
+            const serviceCycle = tenant[cycleKey] || tenant.billingCycle || "monthly";
+            const isYearly = String(serviceCycle).toLowerCase() === "yearly";
+            const effectiveMonthlyPrice = isYearly ? (unitPrice / 12) : unitPrice;
+
+            let yearlyDaysActive = daysActive;
+            let yearlyDaysRemaining = 365 - daysActive;
+            let yearlyPeriod = period;
+            let yearlyTotalDays = 365;
+            if (isYearly) {
+              const subStart = new Date(addedDate);
+              const calendarYearEnd = new Date(currentYear, 11, 31, 23, 59, 59, 999);
+              const activeStart = new Date(Math.max(new Date(currentYear, 0, 1).getTime(), subStart.getTime()));
+              
+              const totalMs = Math.max(0, calendarYearEnd.getTime() - activeStart.getTime());
+              yearlyTotalDays = Math.max(1, Math.ceil(totalMs / (24 * 60 * 60 * 1000)));
+
+              const remainingMs = Math.max(0, calendarYearEnd.getTime() - now.getTime());
+              yearlyDaysRemaining = Math.max(0, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
+              yearlyDaysActive = Math.max(0, yearlyTotalDays - yearlyDaysRemaining);
+
+              const startStr = activeStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+              const endStr = calendarYearEnd.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+              yearlyPeriod = `${startStr} - ${endStr}`;
+            }
+
             for (let i = 0; i < addonQty; i++) {
-              const singleCost = unitPrice * (daysActive / totalDays);
+              const singleCost = effectiveMonthlyPrice * (daysActive / totalDays);
               const globalIndex = (baseSlotCounts[typeKey] || 0);
               baseSlotCounts[typeKey] = globalIndex + 1;
               const addonSeq = (addonCounts[typeKey] = (addonCounts[typeKey] || 0) + 1);
               const assigned = regDevices[globalIndex] || null;
               const isAddonCanceled = assigned ? assigned.isActive === false : false;
+              const itemCharge = isAddonCanceled ? 0.0 : parseFloat(singleCost.toFixed(2));
 
               if (!isAddonCanceled) {
-                invoiceAmount += singleCost;
+                invoiceAmount += itemCharge;
               }
 
               globalServices.push({
@@ -754,12 +867,17 @@ const getInvoices = async (filters = {}) => {
                   isActive: assigned.isActive ?? true,
                 } : null,
                 price: unitPrice,
-                monthlyTotal: parseFloat(unitPrice.toFixed(2)),
-                amount: isAddonCanceled ? 0.0 : parseFloat(singleCost.toFixed(2)),
+                billingCycle: serviceCycle,
+                isYearly,
+                monthlyTotal: parseFloat(effectiveMonthlyPrice.toFixed(2)),
+                amount: itemCharge,
                 quantity: 1,
                 daysActive,
                 totalDays,
-                period,
+                yearlyDaysActive,
+                yearlyTotalDays: isYearly ? yearlyTotalDays : 365,
+                yearlyDaysRemaining,
+                period: isYearly ? yearlyPeriod : period,
                 prorated: daysActive < totalDays
               });
             }
@@ -793,78 +911,7 @@ const getInvoices = async (filters = {}) => {
           }
         }
 
-        // II. Individual branch services
-        const serviceConfigs = [
-          {
-            enabledField: "tablesEnabled",
-            subField: "tablesSubscribedAt",
-            tenantFlag: "subQrTable",
-            priceField: "priceQrTable",
-            defaultPrice: 19.0,
-            name: "QR Table Dining"
-          },
-          {
-            enabledField: "posEnabled",
-            subField: "posSubscribedAt",
-            tenantFlag: "subPos",
-            priceField: "pricePos",
-            defaultPrice: 49.0,
-            name: "POS Integration"
-          },
-          {
-            enabledField: "qrEnabled",
-            subField: "qrSubscribedAt",
-            tenantFlag: "subQrCashier",
-            priceField: "priceQrCashier",
-            defaultPrice: 9.0,
-            name: "QR Cashier"
-          },
-          {
-            enabledField: "kdsEnabled",
-            subField: "kdsSubscribedAt",
-            tenantFlag: "subKds",
-            priceField: "priceKds",
-            defaultPrice: 19.0,
-            name: "KDS Screen"
-          },
-          {
-            enabledField: "cdsEnabled",
-            subField: "cdsSubscribedAt",
-            tenantFlag: "subCds",
-            priceField: "priceCds",
-            defaultPrice: 9.0,
-            name: "CDS Screen"
-          },
-          {
-            enabledField: "appServiEnabled",
-            subField: "appServiSubscribedAt",
-            tenantFlag: "subAppServi",
-            priceField: "priceAppServi",
-            defaultPrice: 29.0,
-            name: "App Servi"
-          }
-        ];
-
-        for (const svc of serviceConfigs) {
-          if (tenant[svc.tenantFlag] && branch[svc.enabledField]) {
-            const subscribedAt = branch[svc.subField] || branch.createdAt;
-            const { daysActive, totalDays, period } = getDaysActiveInMonth(subscribedAt, currentMonthEnd, currentYear, currentMonth);
-            if (daysActive > 0) {
-              const price = tenant[svc.priceField] !== undefined ? tenant[svc.priceField] : svc.defaultPrice;
-              const cost = price * (daysActive / totalDays);
-              branchTotal += cost;
-              servicesList.push({
-                name: svc.name,
-                price,
-                amount: parseFloat(cost.toFixed(2)),
-                daysActive,
-                totalDays,
-                period,
-                prorated: daysActive < totalDays
-              });
-            }
-          }
-        }
+        // II. Branch Feature Toggles are enabled/disabled per branch, but slot pricing is managed globally in Section A to prevent double-billing.
 
         if (servicesList.length > 0) {
           invoiceAmount += branchTotal;
@@ -978,6 +1025,9 @@ const getInvoices = async (filters = {}) => {
 };
 
 const getSuperAdminOrders = async ({ tenantId, startDate, endDate, status, page = 1, limit = 20 }) => {
+  // Ensure 100% real-time accuracy by reconciling any un-synced tenant orders
+  await syncAllTenantOrders().catch(err => console.error("[REAL-TIME SYNC] Order reconciliation warning:", err.message));
+
   const where = {};
   if (status) where.status = status;
   if (tenantId) {
@@ -1265,7 +1315,9 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
 
   const orderHistory = orders.map((o) => {
     const earnPointsTx = (wallet?.transactions || []).find(
-      (tx) => tx.description && tx.description.includes(o.orderNumber)
+      (tx) => (tx.orderNumber && tx.orderNumber === o.orderNumber) ||
+              (tx.orderId && tx.orderId === o.id) ||
+              (tx.description && tx.description.includes(o.orderNumber))
     );
     const pointsEarned = earnPointsTx ? Math.abs(earnPointsTx.points) : Math.floor(o.total * (tenant?.loyaltyEarnRate || 1.0));
 
