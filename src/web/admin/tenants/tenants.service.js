@@ -176,6 +176,32 @@ const update = async (id, data) => {
     }
   }
 
+  // Track mid-month global feature license activations
+  const toggleFields = [
+    { key: "subBrandStory", serviceType: "brand_story", priceKey: "priceBrandStory", defaultPrice: 0.0 },
+    { key: "subAppBrand", serviceType: "app_brand", priceKey: "priceAppBrand", defaultPrice: 99.0 },
+    { key: "subAppServi", serviceType: "app_servi", priceKey: "priceAppServi", defaultPrice: 29.0 },
+  ];
+
+  for (const tf of toggleFields) {
+    if (data[tf.key] === true && !existingTenant[tf.key]) {
+      const pricePerUnit = data[tf.priceKey] !== undefined ? Number(data[tf.priceKey]) : Number(existingTenant[tf.priceKey] || tf.defaultPrice);
+      try {
+        await mainPrisma.tenantSlotAddon.create({
+          data: {
+            tenantId: id,
+            serviceType: tf.serviceType,
+            quantity: 1,
+            pricePerUnit,
+            notes: `Super Admin activated ${tf.serviceType.toUpperCase()} feature license mid-month`
+          }
+        });
+      } catch (err) {
+        console.error(`Failed to record feature addon for tenant ${id}:`, err.message);
+      }
+    }
+  }
+
   return mainPrisma.tenant.update({ where: { id }, data });
 };
 
@@ -629,7 +655,13 @@ const getInvoices = async (filters = {}) => {
 
       for (const gsvc of globalServiceConfigs) {
         if (tenant[gsvc.flag]) {
-          const { daysActive, totalDays, period } = getDaysActiveInMonth(tenant.createdAt, currentMonthEnd, currentYear, currentMonth);
+          const featureAddon = (tenant.slotAddons || [])
+            .filter(a => a.serviceType.toLowerCase() === gsvc.typeKey)
+            .sort((a, b) => new Date(a.addedAt).getTime() - new Date(b.addedAt).getTime())[0];
+
+          const featureSubscribedAt = featureAddon ? new Date(featureAddon.addedAt) : tenant.createdAt;
+          const { daysActive, totalDays, period } = getDaysActiveInMonth(featureSubscribedAt, currentMonthEnd, currentYear, currentMonth);
+
           if (daysActive > 0) {
             const unitPrice = tenant[gsvc.priceKey] !== undefined && tenant[gsvc.priceKey] !== null ? Number(tenant[gsvc.priceKey]) : gsvc.defaultPrice;
             const serviceCycle = tenant[gsvc.cycleKey] || tenant.billingCycle || "monthly";
@@ -651,7 +683,7 @@ const getInvoices = async (filters = {}) => {
             let yearlyPeriod = period;
             let yearlyTotalDays = 365;
             if (isYearly) {
-              const subStart = new Date(tenant.createdAt);
+              const subStart = featureSubscribedAt;
               const calendarYearEnd = new Date(currentYear, 11, 31, 23, 59, 59, 999);
               const activeStart = new Date(Math.max(new Date(currentYear, 0, 1).getTime(), subStart.getTime()));
               
@@ -1283,7 +1315,9 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
 
   const orderHistory = orders.map((o) => {
     const earnPointsTx = (wallet?.transactions || []).find(
-      (tx) => tx.description && tx.description.includes(o.orderNumber)
+      (tx) => (tx.orderNumber && tx.orderNumber === o.orderNumber) ||
+              (tx.orderId && tx.orderId === o.id) ||
+              (tx.description && tx.description.includes(o.orderNumber))
     );
     const pointsEarned = earnPointsTx ? Math.abs(earnPointsTx.points) : Math.floor(o.total * (tenant?.loyaltyEarnRate || 1.0));
 
