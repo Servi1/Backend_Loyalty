@@ -381,7 +381,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
             pointsEarned,
             `Earned on Order #${orderNumber}`,
             tenantId,
-            { source: "app" }
+            { source: "app", orderId: order.id, orderNumber: orderNumber }
           );
         } catch (err) {
           console.error("[APP ORDER] Failed to award loyalty points:", err.message);
