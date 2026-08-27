@@ -7,6 +7,49 @@
 
 const ApiError = require("../../utils/ApiError");
 
+// Helper functions to parse and calculate dynamic isOpen and hours status
+const parseTimeToMinutes = (tStr) => {
+  if (!tStr) return 0;
+  const parts = tStr.trim().split(" ");
+  let [h, m] = parts[0].split(":").map(Number);
+  if (isNaN(h)) h = 0;
+  if (isNaN(m)) m = 0;
+  if (parts[1]) {
+    const period = parts[1].toUpperCase();
+    if (period === "PM" && h < 12) h += 12;
+    if (period === "AM" && h === 12) h = 0;
+  }
+  return h * 60 + m;
+};
+
+const checkIsOpen = (branch) => {
+  if (branch.isOpen === false) return false;
+  if (!branch.openingTime || !branch.closingTime) return true;
+
+  const openMin = parseTimeToMinutes(branch.openingTime);
+  const closeMin = parseTimeToMinutes(branch.closingTime);
+
+  if (openMin === closeMin) return true;
+
+  const now = new Date();
+  const saudiTimeStr = now.toLocaleTimeString("en-US", { timeZone: branch.timezone || "Asia/Riyadh", hour12: false });
+  const [hStr, mStr] = saudiTimeStr.split(":");
+  const nowMin = parseInt(hStr, 10) * 60 + parseInt(mStr, 10);
+
+  if (openMin < closeMin) {
+    return nowMin >= openMin && nowMin < closeMin;
+  } else {
+    return nowMin >= openMin || nowMin < closeMin;
+  }
+};
+
+const formatBranchHours = (branch) => {
+  if (branch.openingTime && branch.closingTime) {
+    return `${branch.openingTime} - ${branch.closingTime}`;
+  }
+  return branch.hours || "08:00 AM - 11:00 PM";
+};
+
 // ─── getBranches ──────────────────────────────────────────────────────────────
 
 const getBranches = async (db) => {
@@ -25,6 +68,9 @@ const getBranches = async (db) => {
       lng: true,
       isOpen: true,
       hours: true,
+      openingTime: true,
+      closingTime: true,
+      timezone: true,
       rating: true,
       imageUrl: true,
       menuBannerUrl: true,
@@ -36,7 +82,12 @@ const getBranches = async (db) => {
       },
     },
   });
-  return branches;
+
+  return branches.map(b => ({
+    ...b,
+    isOpen: checkIsOpen(b),
+    hours: formatBranchHours(b),
+  }));
 };
 
 // ─── getBranch ────────────────────────────────────────────────────────────────
@@ -56,7 +107,12 @@ const getBranch = async (db, branchId) => {
     },
   });
   if (!branch) throw new ApiError(404, "Branch not found");
-  return branch;
+  
+  return {
+    ...branch,
+    isOpen: checkIsOpen(branch),
+    hours: formatBranchHours(branch),
+  };
 };
 
 // ─── getBranchScheduleSlots ────────────────────────────────────────────────────
@@ -64,34 +120,69 @@ const getBranch = async (db, branchId) => {
 const getBranchScheduleSlots = async (db, branchId, dateStr, durationMin = 60) => {
   const branch = await db.branch.findUnique({
     where: { id: branchId },
-    select: { hours: true }
+    select: { hours: true, openingTime: true, closingTime: true }
   });
 
-  // Try to parse branch hours string e.g. "9am - 9pm", "10am - 11pm"
+  // Try to parse business hours
   let startHour = 9;
+  let startMinute = 0;
   let endHour = 21;
-  if (branch?.hours) {
-    const match = branch.hours.match(/(\d+)\s*(am|pm)?\s*-\s*(\d+)\s*(am|pm)?/i);
+  let endMinute = 0;
+
+  if (branch?.openingTime && branch?.closingTime) {
+    const parseTime = (tStr) => {
+      const parts = tStr.trim().split(" ");
+      let [h, m] = parts[0].split(":").map(Number);
+      if (isNaN(h)) h = 0;
+      if (isNaN(m)) m = 0;
+      if (parts[1]) {
+        const period = parts[1].toUpperCase();
+        if (period === "PM" && h < 12) h += 12;
+        if (period === "AM" && h === 12) h = 0;
+      }
+      return { hour: h, minute: m };
+    };
+
+    const start = parseTime(branch.openingTime);
+    const end = parseTime(branch.closingTime);
+    startHour = start.hour;
+    startMinute = start.minute;
+    endHour = end.hour;
+    endMinute = end.minute;
+  } else if (branch?.hours) {
+    const match = branch.hours.match(/(\d+)(?::(\d+))?\s*(am|pm)?\s*-\s*(\d+)(?::(\d+))?\s*(am|pm)?/i);
     if (match) {
       let sh = parseInt(match[1]);
-      let eh = parseInt(match[3]);
-      const samSuffix = (match[2] || "").toLowerCase();
-      const eamSuffix = (match[4] || "").toLowerCase();
+      let sm = match[2] ? parseInt(match[2]) : 0;
+      let eh = parseInt(match[4]);
+      let em = match[5] ? parseInt(match[5]) : 0;
+      const samSuffix = (match[3] || "").toLowerCase();
+      const eamSuffix = (match[6] || "").toLowerCase();
       if (samSuffix === "pm" && sh !== 12) sh += 12;
       if (samSuffix === "am" && sh === 12) sh = 0;
       if (eamSuffix === "pm" && eh !== 12) eh += 12;
       if (eamSuffix === "am" && eh === 12) eh = 0;
       startHour = sh;
+      startMinute = sm;
       endHour = eh;
+      endMinute = em;
     }
   }
 
   // Generate time slot strings every durationMin minutes
   const slots = [];
-  const totalMinutes = (endHour - startHour) * 60;
-  for (let offset = 0; offset < totalMinutes; offset += durationMin) {
-    const h = startHour + Math.floor(offset / 60);
-    const m = offset % 60;
+  const startTotalMin = startHour * 60 + startMinute;
+  let endTotalMin = endHour * 60 + endMinute;
+  if (endTotalMin < startTotalMin) {
+    // handles overnight branches if any (e.g. 10pm to 2am)
+    endTotalMin += 24 * 60;
+  }
+  const totalMinutesDiff = endTotalMin - startTotalMin;
+
+  for (let offset = 0; offset < totalMinutesDiff; offset += durationMin) {
+    const totalMin = startTotalMin + offset;
+    const h = Math.floor((totalMin % (24 * 60)) / 60);
+    const m = totalMin % 60;
     slots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
   }
 
