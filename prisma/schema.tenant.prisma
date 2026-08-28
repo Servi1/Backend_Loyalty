@@ -55,6 +55,8 @@ model User {
   avatarUrl String?
   pinCode   String?
   isActive  Boolean  @default(true)
+  rating    Float?   @default(5.0)
+  ratingCount Int    @default(0)
  
   // Relations
   branchId  String?
@@ -133,6 +135,7 @@ model Branch {
   appServiSubscribedAt DateTime? @default(now())
   hours     String? @default("10am - 11pm")
   rating    Float?  @default(4.8)
+  ratingCount Int   @default(0)
   imageUrl  String?
   menuBannerUrl String?
   tables    Table[]

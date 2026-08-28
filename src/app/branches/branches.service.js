@@ -72,6 +72,7 @@ const getBranches = async (db) => {
       closingTime: true,
       timezone: true,
       rating: true,
+      ratingCount: true,
       imageUrl: true,
       menuBannerUrl: true,
       tablesEnabled: true,
@@ -250,7 +251,9 @@ const getBranchStaff = async (db, branchId) => {
       name: true,
       role: true,
       customRole: true,
-      avatarUrl: true
+      avatarUrl: true,
+      rating: true,
+      ratingCount: true
     }
   });
 
@@ -268,7 +271,7 @@ const getBranchStaff = async (db, branchId) => {
   return dbStaff.map(staff => ({
     ...staff,
     hasSchedule: scheduledStaffIds.has(staff.id),
-    rating: 4.5 // Default; can be extended to a real ratings model later
+    rating: staff.rating !== null ? staff.rating : 5.0
   }));
 };
 
