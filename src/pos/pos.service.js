@@ -126,8 +126,8 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
     await syncToAggregatedOrder(db, tenantId, order).catch(console.error);
   }
 
-  // Award loyalty points immediately at order creation if customer is present and not halted
-  if (order.customerId && order.status !== "HALTED" && orderData.paymentMethod !== "points") {
+  // Award loyalty points immediately at order creation if completed (except if paid by points)
+  if (order.customerId && order.status === "COMPLETED" && orderData.paymentMethod !== "points") {
     try {
       const mainPrisma = require("../config/prisma");
       const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
