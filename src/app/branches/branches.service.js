@@ -104,6 +104,9 @@ const getBranch = async (db, branchId) => {
         where: { isActive: true },
         select: { id: true, name: true, description: true },
       },
+      qrCashiers: {
+        select: { id: true, name: true, isActive: true },
+      },
     },
   });
   if (!branch) throw new ApiError(404, "Branch not found");
@@ -219,30 +222,10 @@ const getBranchScheduleSlots = async (db, branchId, dateStr, durationMin = 60) =
 };
 
 const getBranchStaff = async (db, branchId) => {
-  const mockStaffs = [
-    {
-      id: "chefAhmed",
-      name: "Chef Ahmed",
-      role: "WAITER",
-      customRole: "Head Chef",
-      avatarUrl: "https://images.unsplash.com/photo-1577219491135-ce391730fb2c?w=120&fit=crop",
-      rating: 4.8,
-      hasSchedule: true
-    },
-    {
-      id: "chefJohn",
-      name: "Chef John",
-      role: "WAITER",
-      customRole: "Pastry Chef",
-      avatarUrl: "https://images.unsplash.com/photo-1583394838336-acd977736f90?w=120&fit=crop",
-      rating: 4.7,
-      hasSchedule: true
-    }
-  ];
-
   const dbStaff = await db.user.findMany({
     where: {
       branchId,
+      isActive: true,
       role: { in: ["BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM"] }
     },
     select: {
@@ -255,7 +238,7 @@ const getBranchStaff = async (db, branchId) => {
   });
 
   if (dbStaff.length === 0) {
-    return mockStaffs;
+    return [];
   }
 
   // Check which staff have actual schedule entries in the staffSchedule table
@@ -265,11 +248,13 @@ const getBranchStaff = async (db, branchId) => {
   });
   const scheduledStaffIds = new Set(scheduleEntries.map(e => e.userId));
 
-  return dbStaff.map(staff => ({
-    ...staff,
-    hasSchedule: scheduledStaffIds.has(staff.id),
-    rating: 4.5 // Default; can be extended to a real ratings model later
-  }));
+  return dbStaff
+    .filter(staff => scheduledStaffIds.has(staff.id))
+    .map(staff => ({
+      ...staff,
+      hasSchedule: true,
+      rating: 4.5
+    }));
 };
 
 const getStaffSlots = async (db, staffId, dateStr, durationStr) => {

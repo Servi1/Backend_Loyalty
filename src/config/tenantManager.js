@@ -28,11 +28,45 @@ const getTenantClient = (dbUrl) => {
     },
   });
 
+  // Automatically patch schema for newly added tenant columns
+  ensureTenantColumns(client).catch((err) => {
+    console.warn(`[Tenant DB Schema Patch] Warning updating schema for ${dbUrl.slice(-15)}:`, err.message);
+  });
+
   // Store it in the cache
   tenantClients.set(dbUrl, client);
 
   return client;
 };
+
+/**
+ * Safely ensures newly defined tenant columns exist on existing tenant databases.
+ */
+async function ensureTenantColumns(client) {
+  try {
+    const patches = [
+      'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "rating" INTEGER;',
+      'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "comment" TEXT;',
+      'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "staffRating" INTEGER;',
+      'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "staffComment" TEXT;',
+      'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "zatcaXml" TEXT;',
+      'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "zatcaQrCode" TEXT;',
+      'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "zatcaHash" TEXT;',
+      'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "zatcaIcv" INTEGER;',
+      'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "zatcaPih" TEXT;',
+      'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "zatcaReported" BOOLEAN DEFAULT false;',
+      'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "zatcaReportedAt" TIMESTAMP(3);',
+      'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "zatcaStatus" TEXT DEFAULT \'PENDING\';',
+      'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "zatcaError" TEXT;',
+      'ALTER TABLE "Branch" ADD COLUMN IF NOT EXISTS "googleMapsUrl" TEXT;'
+    ];
+    for (const patch of patches) {
+      await client.$executeRawUnsafe(patch).catch(() => null);
+    }
+  } catch (e) {
+    // Ignore migration warning if tenant DB is unavailable
+  }
+}
 
 /**
  * Disconnect and remove a client from the cache (useful for cleanup or when a tenant is deleted).

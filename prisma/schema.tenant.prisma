@@ -105,6 +105,7 @@ model Branch {
   buildingNumber        String?
   shortAddress          String?
   coordinates           String?
+  googleMapsUrl         String?
   timezone              String?   @default("Asia/Riyadh")
   openingTime           String?   @default("08:00 AM")
   closingTime           String?   @default("11:00 PM")
