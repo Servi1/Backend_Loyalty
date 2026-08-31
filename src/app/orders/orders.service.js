@@ -773,6 +773,74 @@ const submitReview = async (db, orderId, userId, reviewData = {}) => {
       },
     });
 
+    // Aggregate Branch Rating
+    if (rating !== undefined && updatedTenantOrder.branchId) {
+      const branch = await activeDb.branch.findUnique({
+        where: { id: updatedTenantOrder.branchId },
+      });
+      if (branch) {
+        const oldRating = mainOrder.rating;
+        let newRatingAvg = branch.rating || 0.0;
+        let newCount = branch.ratingCount || 0;
+
+        if (oldRating !== null && oldRating !== undefined) {
+          if (newCount > 0) {
+            newRatingAvg = (newRatingAvg * newCount - oldRating + rating) / newCount;
+          } else {
+            newRatingAvg = rating;
+            newCount = 1;
+          }
+        } else {
+          newCount += 1;
+          newRatingAvg = (newRatingAvg * (newCount - 1) + rating) / newCount;
+        }
+
+        newRatingAvg = Math.round(newRatingAvg * 10) / 10;
+
+        await activeDb.branch.update({
+          where: { id: updatedTenantOrder.branchId },
+          data: {
+            rating: newRatingAvg,
+            ratingCount: newCount,
+          },
+        });
+      }
+    }
+
+    // Aggregate Staff Rating
+    if (staffRating !== undefined && updatedTenantOrder.staffId) {
+      const staffUser = await activeDb.user.findUnique({
+        where: { id: updatedTenantOrder.staffId },
+      });
+      if (staffUser) {
+        const oldStaffRating = mainOrder.staffRating;
+        let newRatingAvg = staffUser.rating || 0.0;
+        let newCount = staffUser.ratingCount || 0;
+
+        if (oldStaffRating !== null && oldStaffRating !== undefined) {
+          if (newCount > 0) {
+            newRatingAvg = (newRatingAvg * newCount - oldStaffRating + staffRating) / newCount;
+          } else {
+            newRatingAvg = staffRating;
+            newCount = 1;
+          }
+        } else {
+          newCount += 1;
+          newRatingAvg = (newRatingAvg * (newCount - 1) + staffRating) / newCount;
+        }
+
+        newRatingAvg = Math.round(newRatingAvg * 10) / 10;
+
+        await activeDb.user.update({
+          where: { id: updatedTenantOrder.staffId },
+          data: {
+            rating: newRatingAvg,
+            ratingCount: newCount,
+          },
+        });
+      }
+    }
+
     // 4. Sync to aggregated order for Super Admin / POS view
     await syncToAggregatedOrder(activeDb, mainOrder.tenantId, updatedTenantOrder);
   }
