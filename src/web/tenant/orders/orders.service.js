@@ -492,7 +492,7 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
   if (!updated || !updated.customerId) return;
 
   if (status === "COMPLETED") {
-    if (updated.notes && updated.notes.includes("Paid by Loyalty Points")) {
+    if ((updated.paymentMethod || "").toLowerCase() === "points" || (updated.notes && (updated.notes.includes("Paid by Loyalty Points") || updated.notes.includes("Points Payment")))) {
       return;
     }
 
@@ -532,12 +532,12 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
     }
   }
 
-  if (status === "REFUNDED") {
+  if (status === "REFUNDED" || status === "CANCELLED") {
     try {
       const loyaltyService = require("../loyalty/loyalty.service");
       await loyaltyService.reverseOrderPoints(db, updated.customerId, updated.orderNumber, updated.pointsRedeemed, tenantId, updated.id);
     } catch (err) {
-      console.error("Failed to reverse points on order refund:", err.message);
+      console.error("Failed to reverse points on order cancel/refund:", err.message);
     }
   }
 };

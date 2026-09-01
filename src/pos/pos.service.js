@@ -88,6 +88,27 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
     attempts++;
   }
 
+  // Lookup or auto-create customer by phone if customerId is missing
+  let resolvedCustomerId = orderData.customerId || null;
+  if (!resolvedCustomerId && orderData.customerPhone) {
+    try {
+      const mainPrisma = require("../config/prisma");
+      const cleanedPhone = orderData.customerPhone.trim();
+      let appUser = await mainPrisma.appUser.findUnique({ where: { phone: cleanedPhone } });
+      if (!appUser) {
+        appUser = await mainPrisma.appUser.create({
+          data: {
+            phone: cleanedPhone,
+            name: orderData.customerName || "POS Customer"
+          }
+        });
+      }
+      resolvedCustomerId = appUser.id;
+    } catch (err) {
+      console.error("[POS CREATE ORDER] Customer lookup error:", err.message);
+    }
+  }
+
   const order = await db.order.create({
     data: {
       orderNumber,
@@ -99,7 +120,7 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
       userId,
       tableId,
       customOrderTypeId: orderData.customOrderTypeId || undefined,
-      customerId: orderData.customerId || undefined,
+      customerId: resolvedCustomerId || undefined,
       paymentMethod: paymentMethod || "cash",
       // optional mobile number from POS client
       customerPhone: orderData.customerPhone || undefined,
@@ -362,6 +383,16 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
       } catch (err) {
         console.error("Failed to auto-award points on order completion:", err.message);
       }
+    }
+  }
+
+  // Reverse points if POS order is cancelled or refunded
+  if ((upperStatus === "CANCELLED" || upperStatus === "REFUNDED") && updated.customerId) {
+    try {
+      const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
+      await loyaltyService.reverseOrderPoints(db, updated.customerId, updated.orderNumber, updated.pointsRedeemed, tenantId, updated.id);
+    } catch (err) {
+      console.error("[POS ORDER] Failed to reverse points on cancel/refund:", err.message);
     }
   }
 

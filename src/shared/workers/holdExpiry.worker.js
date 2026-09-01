@@ -24,6 +24,10 @@ async function checkAndExpireHoldOrders() {
           where: {
             status: "HALTED",
             createdAt: { lt: cutoffTime }
+          },
+          select: {
+            id: true,
+            orderNumber: true
           }
         });
 

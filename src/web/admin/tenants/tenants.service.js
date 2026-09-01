@@ -589,6 +589,8 @@ const getInvoices = async (filters = {}) => {
     let dbPosDevices = [];
     let dbKdsDevices = [];
     let dbTables = [];
+    let dbQrCashiers = [];
+    let dbCdsDevices = [];
 
     try {
       const tenantPrisma = getTenantClient(tenant.dbUrl);
@@ -614,6 +616,8 @@ const getInvoices = async (filters = {}) => {
       dbPosDevices = await tenantPrisma.posDevice.findMany({ include: { branch: true }, orderBy: { createdAt: "asc" } }).catch(() => []);
       dbKdsDevices = await tenantPrisma.kdsDevice.findMany({ include: { branch: true }, orderBy: { createdAt: "asc" } }).catch(() => []);
       dbTables = await tenantPrisma.table.findMany({ include: { branch: true }, orderBy: { createdAt: "asc" } }).catch(() => []);
+      dbQrCashiers = await tenantPrisma.qrCashier.findMany({ include: { branch: true }, orderBy: { createdAt: "asc" } }).catch(() => []);
+      dbCdsDevices = tenantPrisma.cdsDevice ? await tenantPrisma.cdsDevice.findMany({ include: { branch: true }, orderBy: { createdAt: "asc" } }).catch(() => []) : [];
     } catch (err) {
       console.error(`Failed to fetch devices for tenant ${tenant.slug} in getInvoices:`, err.message);
     }
@@ -704,6 +708,8 @@ const getInvoices = async (filters = {}) => {
               if (gsvc.typeKey === "pos") regDevices = dbPosDevices;
               else if (gsvc.typeKey === "kds") regDevices = dbKdsDevices;
               else if (gsvc.typeKey === "qr_table") regDevices = dbTables;
+              else if (gsvc.typeKey === "qr_cashier") regDevices = dbQrCashiers;
+              else if (gsvc.typeKey === "cds") regDevices = dbCdsDevices;
 
               const rawCurrentQty = Math.max(Number(tenant[gsvc.qtyKey] || 0), regDevices.length);
               const quantity = Math.max(0, rawCurrentQty - monthAddonQty);
@@ -1093,6 +1099,20 @@ const resolveTenantFeeRate = (tenant, source) => {
   return 0.0;
 };
 
+const resolveCustomerName = (order) => {
+  if (order.notes) {
+    const match = order.notes.match(/Customer:\s*([^|]+)/i);
+    if (match && match[1].trim()) return match[1].trim();
+  }
+  const userName = order.user?.name;
+  if (userName && userName.trim() && userName.trim().toLowerCase() !== "test" && userName.trim().toLowerCase() !== "guest customer") {
+    return userName.trim();
+  }
+  if (order.customerPhone) return order.customerPhone;
+  if (order.user?.phone) return order.user.phone;
+  return "Customer Walk-in";
+};
+
 const syncAllTenantOrders = async () => {
   console.log("🔄 Starting aggregated orders synchronization...");
   try {
@@ -1111,6 +1131,8 @@ const syncAllTenantOrders = async () => {
             ? Number(order.feeRate)
             : resolveTenantFeeRate(tenant, order.source);
 
+          const cName = resolveCustomerName(order);
+
           await mainPrisma.aggregatedOrder.upsert({
             where: { id: `${tenant.id}_${order.id}` },
             create: {
@@ -1122,11 +1144,13 @@ const syncAllTenantOrders = async () => {
               type: order.type,
               total: order.total,
               notes: order.notes,
-              customerName: order.user?.name || order.user?.phone || order.customerPhone || "Customer Walk-in",
+              customerName: cName,
               customerPhone: order.customerPhone || order.user?.phone || null,
               branchName: order.branch?.name || "Register Terminal",
               feeRate: resolvedFee,
               source: order.source || "pos",
+              paymentMethod: order.paymentMethod || null,
+              pointsRedeemed: order.pointsRedeemed ?? null,
               staffId: order.staffId || null,
               staffName: order.staffName || null,
               selectedSlot: order.selectedSlot || null,
@@ -1138,11 +1162,13 @@ const syncAllTenantOrders = async () => {
               status: order.status,
               total: order.total,
               notes: order.notes,
-              customerName: order.user?.name || order.user?.phone || order.customerPhone || "Customer Walk-in",
+              customerName: cName,
               customerPhone: order.customerPhone || order.user?.phone || null,
               branchName: order.branch?.name || "Register Terminal",
               feeRate: resolvedFee,
               source: order.source || "pos",
+              paymentMethod: order.paymentMethod || null,
+              pointsRedeemed: order.pointsRedeemed ?? null,
               staffId: order.staffId || null,
               staffName: order.staffName || null,
               selectedSlot: order.selectedSlot || null,
@@ -1270,7 +1296,12 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     try {
       const tenantPrisma = getTenantClient(tenant.dbUrl);
       const tenantOrders = await tenantPrisma.order.findMany({
-        where: { customerId },
+        where: {
+          OR: [
+            { customerId },
+            customer.phone ? { customerPhone: customer.phone } : undefined,
+          ].filter(Boolean)
+        },
         include: {
           items: { include: { menuItem: true } },
           branch: true,
@@ -1319,7 +1350,10 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
               (tx.orderId && tx.orderId === o.id) ||
               (tx.description && tx.description.includes(o.orderNumber))
     );
-    const pointsEarned = earnPointsTx ? Math.abs(earnPointsTx.points) : Math.floor(o.total * (tenant?.loyaltyEarnRate || 1.0));
+    let pointsEarned = 0;
+    if ((o.status || "").toUpperCase() === "COMPLETED" && (o.paymentMethod || "").toLowerCase() !== "points") {
+      pointsEarned = earnPointsTx ? Math.abs(earnPointsTx.points) : Math.floor(o.total * (tenant?.loyaltyEarnRate || 1.0));
+    }
 
     return {
       id: o.id,
@@ -1660,6 +1694,7 @@ const syncTenantOrders = async (tenantId) => {
 
   let syncedCount = 0;
   for (const order of orders) {
+    const cName = resolveCustomerName(order);
     await mainPrisma.aggregatedOrder.upsert({
       where: { id: `${tenant.id}_${order.id}` },
       create: {
@@ -1671,11 +1706,13 @@ const syncTenantOrders = async (tenantId) => {
         type: order.type,
         total: order.total,
         notes: order.notes,
-        customerName: order.user?.name || order.user?.phone || order.customerPhone || "Walk-in Customer",
+        customerName: cName,
         customerPhone: order.customerPhone || order.user?.phone || null,
         branchName: order.branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
         source: order.source || "pos",
+        paymentMethod: order.paymentMethod || null,
+        pointsRedeemed: order.pointsRedeemed ?? null,
         staffId: order.staffId || null,
         staffName: order.staffName || null,
         selectedSlot: order.selectedSlot || null,
@@ -1687,11 +1724,13 @@ const syncTenantOrders = async (tenantId) => {
         status: order.status,
         total: order.total,
         notes: order.notes,
-        customerName: order.user?.name || order.user?.phone || order.customerPhone || "Walk-in Customer",
+        customerName: cName,
         customerPhone: order.customerPhone || order.user?.phone || null,
         branchName: order.branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
         source: order.source || "pos",
+        paymentMethod: order.paymentMethod || null,
+        pointsRedeemed: order.pointsRedeemed ?? null,
         staffId: order.staffId || null,
         staffName: order.staffName || null,
         selectedSlot: order.selectedSlot || null,

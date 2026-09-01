@@ -194,6 +194,15 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       throw new ApiError(403, "Table ordering subscription is expired. Please contact restaurant staff.");
     }
   }
+
+  const activeQrCashierId = qrCashierId || cashierId;
+  if (activeQrCashierId) {
+    const qrStation = await db.qrCashier.findUnique({ where: { id: activeQrCashierId } });
+    if (qrStation && !qrStation.isActive) {
+      throw new ApiError(403, "This QR Cashier station is currently inactive. Please contact restaurant staff.");
+    }
+  }
+
   if (!isDineIn && branch.qrEnabled === false) {
     throw new ApiError(403, "Mobile ordering is currently disabled for this branch.");
   }
@@ -268,7 +277,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
             name: customerName ? customerName.trim() : "Guest Customer"
           }
         });
-      } else if (customerName && (!appUser.name || appUser.name === "Guest Customer")) {
+      } else if (customerName && customerName.trim() && customerName.trim().toLowerCase() !== "test" && appUser.name !== customerName.trim()) {
         await mainPrisma.appUser.update({
           where: { id: appUser.id },
           data: { name: customerName.trim() }
@@ -380,7 +389,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
 
   // Award points only if order is already COMPLETED upon creation (except if paid by points)
   const effectiveEarnRate = earnRate !== undefined && earnRate !== null ? parseFloat(earnRate) : Number(tenant?.loyaltyEarnRate || 1.0);
-  if (initialStatus === "COMPLETED" && (userId || finalCustomerId) && effectiveEarnRate > 0 && paymentMethod !== "points") {
+  if (order.status === "COMPLETED" && (userId || finalCustomerId) && effectiveEarnRate > 0 && paymentMethod !== "points") {
     const pointsEarned = Math.floor(subtotal * effectiveEarnRate);
     if (pointsEarned > 0) {
       try {
