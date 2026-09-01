@@ -12,6 +12,8 @@ const ctrl = require("./branches.controller");
 
 const router = Router();
 
+router.get("/qr/resolve", ctrl.resolveQrToken);
+router.post("/qr/encode", ctrl.encodeQrTokenEndpoint);
 router.get("/", ctrl.getAll);
 router.get("/:branchId", ctrl.getOne);
 router.get("/:branchId/staff", ctrl.getStaff);

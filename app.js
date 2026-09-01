@@ -232,6 +232,10 @@ tenantRouter.use("/", zatcaRoutes);
 app.use("/api/tenant/:tenantId", tenantRouter);
 
 // 3. Mobile App API
+const branchCtrl = require("./src/app/branches/branches.controller");
+app.get("/api/app/qr/resolve", branchCtrl.resolveQrToken);
+app.post("/api/app/qr/encode", branchCtrl.encodeQrTokenEndpoint);
+
 // Global app auth router (tenant-independent)
 const globalAuthRouter = require("./src/app/auth/globalAuth.routes");
 app.use("/api/app/auth", globalAuthRouter);

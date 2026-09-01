@@ -58,7 +58,11 @@ async function ensureTenantColumns(client) {
       'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "zatcaReportedAt" TIMESTAMP(3);',
       'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "zatcaStatus" TEXT DEFAULT \'PENDING\';',
       'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "zatcaError" TEXT;',
-      'ALTER TABLE "Branch" ADD COLUMN IF NOT EXISTS "googleMapsUrl" TEXT;'
+      'ALTER TABLE "Branch" ADD COLUMN IF NOT EXISTS "googleMapsUrl" TEXT;',
+      'ALTER TABLE "Branch" ADD COLUMN IF NOT EXISTS "rating" DOUBLE PRECISION DEFAULT 4.8;',
+      'ALTER TABLE "Branch" ADD COLUMN IF NOT EXISTS "ratingCount" INTEGER DEFAULT 0;',
+      'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "rating" DOUBLE PRECISION DEFAULT 5.0;',
+      'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "ratingCount" INTEGER DEFAULT 0;'
     ];
     for (const patch of patches) {
       await client.$executeRawUnsafe(patch).catch(() => null);

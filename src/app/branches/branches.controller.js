@@ -1,6 +1,7 @@
 const catchAsync = require("../../utils/catchAsync");
 const branchesService = require("./branches.service");
 const { getAppImageURL } = require("../../config");
+const { encodeQrToken, decodeQrToken } = require("../../utils/qrToken.utils");
 
 const getAll = catchAsync(async (req, res) => {
   const branches = await branchesService.getBranches(req.tenantDb);
@@ -93,5 +94,28 @@ const getScheduleSlots = catchAsync(async (req, res) => {
   res.json({ success: true, data });
 });
 
-module.exports = { getAll, getOne, getStaff, getStaffSlots, getScheduleSlots };
+const resolveQrToken = catchAsync(async (req, res) => {
+  const token = req.query.token || req.body.token;
+  if (!token) {
+    return res.status(400).json({ success: false, message: "Token parameter is required" });
+  }
+  try {
+    const payload = decodeQrToken(token);
+    res.json({ success: true, data: payload });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+const encodeQrTokenEndpoint = catchAsync(async (req, res) => {
+  const { tenantId, branchId, tableId, qrCashierId, orderTypeId } = req.body;
+  if (!tenantId || !branchId) {
+    return res.status(400).json({ success: false, message: "tenantId and branchId are required" });
+  }
+  const token = encodeQrToken({ tenantId, branchId, tableId, qrCashierId, orderTypeId });
+  res.json({ success: true, token });
+});
+
+module.exports = { getAll, getOne, getStaff, getStaffSlots, getScheduleSlots, resolveQrToken, encodeQrTokenEndpoint };
+
 
