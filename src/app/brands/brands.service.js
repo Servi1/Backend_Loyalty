@@ -101,7 +101,9 @@ const getBrands = async (userId) => {
 
       isFavorite: favBrands.includes(t.id) || favBrands.includes(t.slug),
       loyaltyEarnRate: Number(t.loyaltyEarnRate || 1.0),
-      loyaltyRedeemRate: Number(t.loyaltyRedeemRate || 100.0)
+      loyaltyRedeemRate: Number(t.loyaltyRedeemRate || 100.0),
+      subBrandStory: Boolean(t.subBrandStory),
+      loyaltyRedeemPoints: Boolean(t.loyaltyEnabled && t.loyaltyRedeemPoints)
     };
   });
 };
