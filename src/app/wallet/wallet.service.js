@@ -530,7 +530,9 @@ const getLeaderboard = async (db, sortBy = 'points') => {
       include: {
         wallet: true,
         _count: {
-          select: { orders: { where: { status: 'COMPLETED', createdAt: { gte: startOfMonth } } } }
+          select: {
+            orders: { where: { status: 'COMPLETED' } },
+          }
         }
       },
       orderBy: overallOrderBy,
@@ -552,11 +554,14 @@ const getLeaderboard = async (db, sortBy = 'points') => {
 
     const fallbackRanked = fallbackUsers.map(user => {
       const mPoints = fallbackMonthlyPoints.find(p => p.walletId === user.wallet?.id)?._sum?.points || 0;
+      const points = mPoints > 0 ? mPoints : (user.wallet?.points || 0);
+      const orders = user._count?.orders || 0;
+
       return {
         id: user.id,
         name: user.name || user.phone || "Loyal Customer",
-        points: sortBy === 'orders' ? (user.wallet?.points || 0) : mPoints,
-        orders: user._count?.orders || 0,
+        points,
+        orders,
         avatar: user.avatarUrl || null,
       };
     });
