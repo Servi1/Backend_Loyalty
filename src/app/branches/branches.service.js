@@ -235,8 +235,13 @@ const getBranchStaff = async (db, branchId) => {
       role: true,
       customRole: true,
       avatarUrl: true,
-      rating: true,
-      ratingCount: true
+      schedules: {
+        select: {
+          dayOfWeek: true,
+          startTime: true,
+          endTime: true
+        }
+      }
     }
   });
 
