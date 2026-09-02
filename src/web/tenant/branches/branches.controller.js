@@ -23,7 +23,51 @@ const create = catchAsync(async (req, res) => {
   res.status(201).json({ success: true, data: branch });
 });
 
+const mainPrisma = require("../../../config/prisma");
+
 const update = catchAsync(async (req, res) => {
+  const userRole = (req.user?.role || "").toUpperCase();
+  const isSuperAdmin = userRole === "SUPER_ADMIN" || userRole === "SUPER_ADMINISTRATOR";
+
+  if (isSuperAdmin && req.tenant?.id) {
+    const tenantUpdateData = {};
+    if (req.body.posEnabled === true) tenantUpdateData.subPos = true;
+    if (req.body.tablesEnabled === true) tenantUpdateData.subQrTable = true;
+    if (req.body.qrEnabled === true) tenantUpdateData.subQrCashier = true;
+    if (req.body.kdsEnabled === true) tenantUpdateData.subKds = true;
+    if (req.body.cdsEnabled === true) tenantUpdateData.subCds = true;
+    if (req.body.appServiEnabled === true) tenantUpdateData.subAppServi = true;
+
+    if (Object.keys(tenantUpdateData).length > 0) {
+      await mainPrisma.tenant.update({
+        where: { id: req.tenant.id },
+        data: tenantUpdateData
+      });
+    }
+  } else if (!isSuperAdmin) {
+    const existingBranch = await branchesService.getById(req.tenantDb, req.params.id);
+    if (existingBranch) {
+      if (req.body.posEnabled === true && (req.tenant?.subPos === false || existingBranch.posEnabled === false)) {
+        throw new ApiError(403, "POS feature is disabled by Super Admin billing.");
+      }
+      if (req.body.tablesEnabled === true && (req.tenant?.subQrTable === false || existingBranch.tablesEnabled === false)) {
+        throw new ApiError(403, "Tables feature is disabled by Super Admin billing.");
+      }
+      if (req.body.qrEnabled === true && (req.tenant?.subQrCashier === false || existingBranch.qrEnabled === false)) {
+        throw new ApiError(403, "QR Cashier feature is disabled by Super Admin billing.");
+      }
+      if (req.body.kdsEnabled === true && (req.tenant?.subKds === false || existingBranch.kdsEnabled === false)) {
+        throw new ApiError(403, "KDS feature is disabled by Super Admin billing.");
+      }
+      if (req.body.cdsEnabled === true && (req.tenant?.subCds === false || existingBranch.cdsEnabled === false)) {
+        throw new ApiError(403, "CDS feature is disabled by Super Admin billing.");
+      }
+      if (req.body.appServiEnabled === true && (req.tenant?.subAppServi === false || existingBranch.appServiEnabled === false)) {
+        throw new ApiError(403, "App Servi feature is disabled by Super Admin billing.");
+      }
+    }
+  }
+
   const branch = await branchesService.update(req.tenantDb, req.params.id, req.body);
   res.json({ success: true, data: branch });
 });

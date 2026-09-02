@@ -308,10 +308,20 @@ const getSubscriptions = async () => {
 
     const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
 
-    const startedAt = tenant.createdAt;
-    const isYearly = tenant.billingCycle === "yearly";
-    const cycleDays = isYearly ? 365 : 30;
-    const endsAt = new Date(startedAt.getTime() + cycleDays * 24 * 60 * 60 * 1000);
+    // Calculate current month's active subscription range (e.g., September 1 to September 30)
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    let monthStartedAt = new Date(currentYear, currentMonth, 1);
+    const tenantCreatedAt = new Date(tenant.createdAt);
+    if (tenantCreatedAt > monthStartedAt) {
+      monthStartedAt = tenantCreatedAt;
+    }
+    const monthEndsAt = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999);
+
+    const startedAt = monthStartedAt;
+    const endsAt = monthEndsAt;
 
     if (tenant.isActive) {
       totalMRR += amount;
@@ -402,30 +412,73 @@ const getSubscriptions = async () => {
         }
       }
 
-      branchesList = dbBranches.map(b => ({
-        id: b.id,
-        name: b.name,
-        city: b.city || "Unknown",
-        startedAt: b.createdAt,
-        endsAt: endsAt,
-        status: b.isOpen ? "open" : "closed",
-        ordersEnabled: b.ordersEnabled,
-        menuEnabled: b.menuEnabled,
-        tablesEnabled: b.tablesEnabled,
-        staffEnabled: b.staffEnabled,
-        qrEnabled: b.qrEnabled,
-        posEnabled: b.posEnabled,
-        kdsEnabled: b.kdsEnabled,
-        cdsEnabled: b.cdsEnabled,
-        appServiEnabled: b.appServiEnabled,
-        tablesCount: b._count?.tables || 0,
-        posDevicesCount: b._count?.posDevices || 0,
-        staffCount: b._count?.staff || 0,
-        qrCashiersCount: b._count?.qrCashiers || 0,
-        tables: b.tables,
-        posDevices: b.posDevices,
-        qrCashiers: b.qrCashiers
-      }));
+      branchesList = dbBranches.map(b => {
+        let bStart = new Date(currentYear, currentMonth, 1);
+        if (b.createdAt && new Date(b.createdAt) > bStart) {
+          bStart = new Date(b.createdAt);
+        }
+
+        const mappedTables = (b.tables || []).map(t => {
+          let tStart = new Date(currentYear, currentMonth, 1);
+          if (t.createdAt && new Date(t.createdAt) > tStart) {
+            tStart = new Date(t.createdAt);
+          }
+          return {
+            ...t,
+            createdAt: tStart,
+            expiresAt: monthEndsAt,
+          };
+        });
+
+        const mappedPosDevices = (b.posDevices || []).map(p => {
+          let pStart = new Date(currentYear, currentMonth, 1);
+          if (p.createdAt && new Date(p.createdAt) > pStart) {
+            pStart = new Date(p.createdAt);
+          }
+          return {
+            ...p,
+            createdAt: pStart,
+            expiresAt: monthEndsAt,
+          };
+        });
+
+        const mappedQrCashiers = (b.qrCashiers || []).map(q => {
+          let qStart = new Date(currentYear, currentMonth, 1);
+          if (q.createdAt && new Date(q.createdAt) > qStart) {
+            qStart = new Date(q.createdAt);
+          }
+          return {
+            ...q,
+            createdAt: qStart,
+            expiresAt: monthEndsAt,
+          };
+        });
+
+        return {
+          id: b.id,
+          name: b.name,
+          city: b.city || "Unknown",
+          startedAt: bStart,
+          endsAt: monthEndsAt,
+          status: b.isOpen ? "open" : "closed",
+          ordersEnabled: b.ordersEnabled,
+          menuEnabled: b.menuEnabled,
+          tablesEnabled: b.tablesEnabled,
+          staffEnabled: b.staffEnabled,
+          qrEnabled: b.qrEnabled,
+          posEnabled: b.posEnabled,
+          kdsEnabled: b.kdsEnabled,
+          cdsEnabled: b.cdsEnabled,
+          appServiEnabled: b.appServiEnabled,
+          tablesCount: b._count?.tables || 0,
+          posDevicesCount: b._count?.posDevices || 0,
+          staffCount: b._count?.staff || 0,
+          qrCashiersCount: b._count?.qrCashiers || 0,
+          tables: mappedTables,
+          posDevices: mappedPosDevices,
+          qrCashiers: mappedQrCashiers
+        };
+      });
     } catch (err) {
       console.error(`Failed to fetch branches for tenant ${tenant.slug} sub:`, err.message);
     }
@@ -1598,12 +1651,26 @@ const getSuperAdminOrderDetail = async (tenantId, orderId) => {
 
   if (!order) throw new ApiError(404, "Order not found");
 
+  // Calculate points earned for this order if paid via Cash, Card, Apple Pay, etc.
+  let pointsEarned = 0;
+  const pm = (order.paymentMethod || "").toLowerCase();
+  const isPointsPayment = pm === "points" || (order.notes && (order.notes.includes("Paid by Loyalty Points") || order.notes.includes("Points Payment")));
+
+  if (!isPointsPayment && (order.status || "").toUpperCase() !== "CANCELLED" && (order.status || "").toUpperCase() !== "REFUNDED") {
+    const earnRate = Number(tenant.loyaltyEarnRate || 1.0);
+    pointsEarned = Math.floor(Number(order.total || 0) * earnRate);
+  }
+
   return {
     ...order,
+    pointsEarned,
+    pointsRedeemed: order.pointsRedeemed ?? (isPointsPayment ? Math.ceil(Number(order.total || 0) * 10) : null),
     tenant: {
       id: tenant.id,
       name: tenant.name,
-      slug: tenant.slug
+      slug: tenant.slug,
+      loyaltyEnabled: tenant.loyaltyEnabled ?? true,
+      loyaltyEarnRate: Number(tenant.loyaltyEarnRate || 1.0)
     }
   };
 };
