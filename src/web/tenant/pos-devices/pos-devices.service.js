@@ -57,6 +57,9 @@ const getAll = async (db, branchId) => {
 const create = async (db, data, cycle) => {
   const branch = await db.branch.findUnique({ where: { id: data.branchId } });
   if (!branch) throw new ApiError(404, "Branch not found");
+  if (branch.posEnabled === false) {
+    throw new ApiError(400, "POS Devices feature is deactivated for this branch via Super Admin Billing.");
+  }
 
   // Generate unique 8-digit random number
   let deviceKey = "";

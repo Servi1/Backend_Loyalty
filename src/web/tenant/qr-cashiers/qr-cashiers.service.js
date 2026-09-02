@@ -20,6 +20,9 @@ const getAll = async (db, branchId) => {
 const create = async (db, data) => {
   const branch = await db.branch.findUnique({ where: { id: data.branchId } });
   if (!branch) throw new ApiError(404, "Branch not found");
+  if (branch.qrEnabled === false) {
+    throw new ApiError(400, "QR Cashier feature is deactivated for this branch via Super Admin Billing.");
+  }
 
   // Auto generate unique qrCode string if not provided
   const qrCode = data.qrCode || `cashier_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
