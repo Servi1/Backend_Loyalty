@@ -1,3 +1,6 @@
+const ApiError = require("../../../utils/ApiError");
+const mainPrisma = require("../../../config/prisma");
+
 const DEFAULT_LOYALTY_TIERS = [
   {
     id: "starter",
