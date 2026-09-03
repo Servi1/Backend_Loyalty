@@ -29,22 +29,7 @@ const update = catchAsync(async (req, res) => {
   const userRole = (req.user?.role || "").toUpperCase();
   const isSuperAdmin = userRole === "SUPER_ADMIN" || userRole === "SUPER_ADMINISTRATOR";
 
-  if (isSuperAdmin && req.tenant?.id) {
-    const tenantUpdateData = {};
-    if (req.body.posEnabled !== undefined) tenantUpdateData.subPos = Boolean(req.body.posEnabled);
-    if (req.body.tablesEnabled !== undefined) tenantUpdateData.subQrTable = Boolean(req.body.tablesEnabled);
-    if (req.body.qrEnabled !== undefined) tenantUpdateData.subQrCashier = Boolean(req.body.qrEnabled);
-    if (req.body.kdsEnabled !== undefined) tenantUpdateData.subKds = Boolean(req.body.kdsEnabled);
-    if (req.body.cdsEnabled !== undefined) tenantUpdateData.subCds = Boolean(req.body.cdsEnabled);
-    if (req.body.appServiEnabled !== undefined) tenantUpdateData.subAppServi = Boolean(req.body.appServiEnabled);
-
-    if (Object.keys(tenantUpdateData).length > 0) {
-      await mainPrisma.tenant.update({
-        where: { id: req.tenant.id },
-        data: tenantUpdateData
-      });
-    }
-  } else if (!isSuperAdmin) {
+  if (!isSuperAdmin) {
     if (req.body.posEnabled === true && req.tenant?.subPos === false) {
       throw new ApiError(403, "POS feature is disabled in Super Admin Subscriptions.");
     }
