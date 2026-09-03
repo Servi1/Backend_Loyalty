@@ -21,6 +21,10 @@ router.get("/customers", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "
 // Staff registers a new customer
 router.post("/customers", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"), ctrl.createCustomer);
 
+// Tiers & Daily Caps Configuration
+router.get("/tiers", ctrl.getTiers);
+router.put("/tiers", authorize("SUPER_ADMIN", "ADMIN", "BRAND_MANAGER"), ctrl.updateTiers);
+
 // Report lists for Brand Owner / Manager
 router.get("/members", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.getAllCustomers);
 router.get("/transactions", authorize("ADMIN", "BRAND_MANAGER"), ctrl.getAllTransactions);

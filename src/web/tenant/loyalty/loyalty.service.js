@@ -1,5 +1,83 @@
-const ApiError = require("../../../utils/ApiError");
-const mainPrisma = require("../../../config/prisma");
+const DEFAULT_LOYALTY_TIERS = [
+  {
+    id: "starter",
+    name: "Starter",
+    level: 1,
+    icon: "⭐",
+    minOrders: 0,
+    minPurchaseValue: 0,
+    dailyCap: 0,
+    dailyCapType: "blocked",
+    status: "active"
+  },
+  {
+    id: "bronze",
+    name: "Bronze",
+    level: 2,
+    icon: "🥉",
+    minOrders: 10,
+    minPurchaseValue: 100,
+    dailyCap: 100,
+    dailyCapType: "capped",
+    status: "active"
+  },
+  {
+    id: "silver",
+    name: "Silver",
+    level: 3,
+    icon: "🥈",
+    minOrders: 30,
+    minPurchaseValue: 450,
+    dailyCap: 300,
+    dailyCapType: "capped",
+    status: "active"
+  },
+  {
+    id: "gold",
+    name: "Gold",
+    level: 4,
+    icon: "🥇",
+    minOrders: 40,
+    minPurchaseValue: 600,
+    dailyCap: 500,
+    dailyCapType: "capped",
+    status: "active"
+  },
+  {
+    id: "platinum",
+    name: "Platinum",
+    level: 5,
+    icon: "💎",
+    minOrders: 50,
+    minPurchaseValue: 1000,
+    dailyCap: null,
+    dailyCapType: "unlimited",
+    status: "active"
+  }
+];
+
+const getCustomerTierDetails = (customer, wallet, configuredTiers) => {
+  const tiers = Array.isArray(configuredTiers) && configuredTiers.length > 0
+    ? configuredTiers
+    : DEFAULT_LOYALTY_TIERS;
+
+  const ordersCount = customer?.completedOrdersCount || customer?.ratingCount || 0;
+  const lifetimeSpend = customer?.lifetimeSpend || (wallet ? wallet.lifetimeEarn : 0) || 0;
+
+  const sortedTiers = [...tiers].sort((a, b) => Number(b.level || 0) - Number(a.level || 0));
+
+  for (const tier of sortedTiers) {
+    if (tier.status === "active") {
+      const minOrders = Number(tier.minOrders || 0);
+      const minSpend = Number(tier.minPurchaseValue || 0);
+      if (ordersCount >= minOrders && lifetimeSpend >= minSpend) {
+        return tier;
+      }
+    }
+  }
+
+  return sortedTiers[sortedTiers.length - 1] || DEFAULT_LOYALTY_TIERS[0];
+};
 
 const getWallet = async (db, customerId) => {
   const customer = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
@@ -26,9 +104,14 @@ const getWallet = async (db, customerId) => {
  * @param {object} opts - Optional { orderId, orderNumber, source } to link transaction
  */
 const earnPoints = async (db, customerId, points, description, tenantId, opts = {}) => {
+  let tenantTiers = DEFAULT_LOYALTY_TIERS;
+
   if (tenantId) {
     const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
     if (tenant) {
+      if (Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
+        tenantTiers = tenant.loyaltyTiers;
+      }
       // Main active toggle affects ALL channels
       if (tenant.loyaltyEnabled === false) {
         console.log(`[LOYALTY] Earning points blocked: Loyalty program is globally disabled for tenant ${tenant.name}`);
@@ -73,15 +156,51 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
     }
   }
 
+  // Determine Tier and Daily Cap
+  const customerTier = getCustomerTierDetails(customer, wallet, tenantTiers);
+
+  if (customerTier.dailyCapType === "blocked" || customerTier.dailyCap === 0) {
+    console.log(`[LOYALTY] Points earning blocked: Customer tier "${customerTier.name}" is Blocked from earning points.`);
+    return wallet;
+  }
+
+  let finalPointsToEarn = points;
+
+  if (customerTier.dailyCapType === "capped" && Number(customerTier.dailyCap) > 0) {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const todayTxs = await mainPrisma.walletTransaction.aggregate({
+      _sum: { points: true },
+      where: {
+        walletId: wallet.id,
+        points: { gt: 0 },
+        createdAt: { gte: startOfDay },
+      },
+    });
+
+    const earnedToday = todayTxs._sum.points || 0;
+    const remainingCap = Math.max(0, Number(customerTier.dailyCap) - earnedToday);
+
+    if (remainingCap <= 0) {
+      console.log(`[LOYALTY] Points earning skipped: Daily cap of ${customerTier.dailyCap} pts reached for tier ${customerTier.name}.`);
+      return wallet;
+    }
+
+    finalPointsToEarn = Math.min(points, remainingCap);
+  }
+
+  if (finalPointsToEarn <= 0) return wallet;
+
   const [updatedWallet] = await mainPrisma.$transaction([
     mainPrisma.wallet.update({
       where: { appUserId: customerId },
-      data: { points: { increment: points }, lifetimeEarn: { increment: points } },
+      data: { points: { increment: finalPointsToEarn }, lifetimeEarn: { increment: finalPointsToEarn } },
     }),
     mainPrisma.walletTransaction.create({
       data: {
         walletId: wallet.id,
-        points,
+        points: finalPointsToEarn,
         description: description || "Points earned",
         tenantId,
         orderId: opts.orderId || null,
@@ -160,7 +279,6 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
   return updatedWallet;
 };
 
-
 const searchCustomers = async (db, search) => {
   const query = search ? search.trim() : "";
   if (!query) return [];
@@ -178,30 +296,50 @@ const searchCustomers = async (db, search) => {
     take: 15,
   });
 
-  return customers.map(c => ({
-    id: c.id,
-    name: c.name || "Unnamed",
-    phone: c.phone,
-    email: c.email,
-    points: c.wallet?.points || 0,
-  }));
+  return customers.map(c => {
+    const tier = getCustomerTierDetails(c, c.wallet, DEFAULT_LOYALTY_TIERS);
+    return {
+      id: c.id,
+      name: c.name || "Unnamed",
+      phone: c.phone,
+      email: c.email,
+      points: c.wallet?.points || 0,
+      tier: tier.name,
+      tierLevel: tier.level,
+      tierIcon: tier.icon,
+    };
+  });
 };
 
 const getAllCustomersForReport = async (db, tenantId) => {
+  let configuredTiers = DEFAULT_LOYALTY_TIERS;
+  if (tenantId) {
+    const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+    if (tenant && Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
+      configuredTiers = tenant.loyaltyTiers;
+    }
+  }
+
   const customers = await mainPrisma.appUser.findMany({
     include: { wallet: true },
     orderBy: { createdAt: "desc" },
   });
 
-  return customers.map(c => ({
-    id: c.id,
-    name: c.name || "Unnamed",
-    phone: c.phone,
-    email: c.email,
-    points: c.wallet?.points || 0,
-    lifetimeEarn: c.wallet?.lifetimeEarn || 0,
-    joinedAt: c.createdAt,
-  }));
+  return customers.map(c => {
+    const tier = getCustomerTierDetails(c, c.wallet, configuredTiers);
+    return {
+      id: c.id,
+      name: c.name || "Unnamed",
+      phone: c.phone,
+      email: c.email,
+      points: c.wallet?.points || 0,
+      lifetimeEarn: c.wallet?.lifetimeEarn || 0,
+      joinedAt: c.createdAt,
+      tier: tier.name,
+      tierLevel: tier.level,
+      tierIcon: tier.icon,
+    };
+  });
 };
 
 const getAllTransactionsForReport = async (db, tenantId) => {
@@ -277,6 +415,44 @@ const createCustomer = async (db, { name, phone, email, points = 0 }, tenantId) 
     points: wallet.points,
     joinedAt: customer.createdAt,
   };
+};
+
+const getTiers = async (tenantId) => {
+  let tiers = DEFAULT_LOYALTY_TIERS;
+  if (tenantId) {
+    const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+    if (tenant && Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
+      tiers = tenant.loyaltyTiers;
+    }
+  }
+
+  const allUsers = await mainPrisma.appUser.findMany({
+    include: { wallet: true }
+  });
+
+  const memberCounts = {};
+  for (const user of allUsers) {
+    const t = getCustomerTierDetails(user, user.wallet, tiers);
+    memberCounts[t.id] = (memberCounts[t.id] || 0) + 1;
+  }
+
+  return tiers.map((tier) => ({
+    ...tier,
+    membersCount: memberCounts[tier.id] || 0,
+  }));
+};
+
+const updateTiers = async (tenantId, tiers) => {
+  if (!Array.isArray(tiers)) throw new ApiError(400, "Tiers must be an array");
+
+  if (tenantId) {
+    await mainPrisma.tenant.update({
+      where: { id: tenantId },
+      data: { loyaltyTiers: tiers }
+    });
+  }
+
+  return getTiers(tenantId);
 };
 
 /**
@@ -376,6 +552,7 @@ const reverseOrderPoints = async (db, customerId, orderNumber, pointsRedeemed, t
 };
 
 module.exports = {
+  DEFAULT_LOYALTY_TIERS,
   getWallet,
   earnPoints,
   redeemPoints,
@@ -383,5 +560,7 @@ module.exports = {
   searchCustomers,
   getAllCustomersForReport,
   getAllTransactionsForReport,
-  createCustomer
+  createCustomer,
+  getTiers,
+  updateTiers,
 };
