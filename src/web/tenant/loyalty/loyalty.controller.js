@@ -51,6 +51,16 @@ const createCustomer = catchAsync(async (req, res) => {
   res.status(201).json({ success: true, data: customer });
 });
 
+const getTiers = catchAsync(async (req, res) => {
+  const tiers = await loyaltyService.getTiers(req.tenantId);
+  res.json({ success: true, data: tiers });
+});
+
+const updateTiers = catchAsync(async (req, res) => {
+  const tiers = await loyaltyService.updateTiers(req.tenantId, req.body.tiers);
+  res.json({ success: true, data: tiers });
+});
+
 module.exports = { 
   getWallet, 
   earn, 
@@ -58,5 +68,7 @@ module.exports = {
   searchCustomers, 
   getAllCustomers, 
   getAllTransactions,
-  createCustomer
+  createCustomer,
+  getTiers,
+  updateTiers,
 };
