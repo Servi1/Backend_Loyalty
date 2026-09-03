@@ -29,27 +29,39 @@ const update = catchAsync(async (req, res) => {
   const userRole = (req.user?.role || "").toUpperCase();
   const isSuperAdmin = userRole === "SUPER_ADMIN" || userRole === "SUPER_ADMINISTRATOR";
 
-  if (!isSuperAdmin) {
-    const existingBranch = await branchesService.getById(req.tenantDb, req.params.id);
-    if (existingBranch) {
-      if (req.body.posEnabled === true && (req.tenant?.subPos === false || existingBranch.posEnabled === false)) {
-        throw new ApiError(403, "POS feature is disabled in Super Admin Subscriptions.");
-      }
-      if (req.body.tablesEnabled === true && (req.tenant?.subQrTable === false || existingBranch.tablesEnabled === false)) {
-        throw new ApiError(403, "Tables feature is disabled in Super Admin Subscriptions.");
-      }
-      if (req.body.qrEnabled === true && (req.tenant?.subQrCashier === false || existingBranch.qrEnabled === false)) {
-        throw new ApiError(403, "QR Cashier feature is disabled in Super Admin Subscriptions.");
-      }
-      if (req.body.kdsEnabled === true && (req.tenant?.subKds === false || existingBranch.kdsEnabled === false)) {
-        throw new ApiError(403, "KDS feature is disabled in Super Admin Subscriptions.");
-      }
-      if (req.body.cdsEnabled === true && (req.tenant?.subCds === false || existingBranch.cdsEnabled === false)) {
-        throw new ApiError(403, "CDS feature is disabled in Super Admin Subscriptions.");
-      }
-      if (req.body.appServiEnabled === true && (req.tenant?.subAppServi === false || existingBranch.appServiEnabled === false)) {
-        throw new ApiError(403, "App Servi feature is disabled in Super Admin Subscriptions.");
-      }
+  if (isSuperAdmin && req.tenant?.id) {
+    const tenantUpdateData = {};
+    if (req.body.posEnabled !== undefined) tenantUpdateData.subPos = Boolean(req.body.posEnabled);
+    if (req.body.tablesEnabled !== undefined) tenantUpdateData.subQrTable = Boolean(req.body.tablesEnabled);
+    if (req.body.qrEnabled !== undefined) tenantUpdateData.subQrCashier = Boolean(req.body.qrEnabled);
+    if (req.body.kdsEnabled !== undefined) tenantUpdateData.subKds = Boolean(req.body.kdsEnabled);
+    if (req.body.cdsEnabled !== undefined) tenantUpdateData.subCds = Boolean(req.body.cdsEnabled);
+    if (req.body.appServiEnabled !== undefined) tenantUpdateData.subAppServi = Boolean(req.body.appServiEnabled);
+
+    if (Object.keys(tenantUpdateData).length > 0) {
+      await mainPrisma.tenant.update({
+        where: { id: req.tenant.id },
+        data: tenantUpdateData
+      });
+    }
+  } else if (!isSuperAdmin) {
+    if (req.body.posEnabled === true && req.tenant?.subPos === false) {
+      throw new ApiError(403, "POS feature is disabled in Super Admin Subscriptions.");
+    }
+    if (req.body.tablesEnabled === true && req.tenant?.subQrTable === false) {
+      throw new ApiError(403, "Tables feature is disabled in Super Admin Subscriptions.");
+    }
+    if (req.body.qrEnabled === true && req.tenant?.subQrCashier === false) {
+      throw new ApiError(403, "QR Cashier feature is disabled in Super Admin Subscriptions.");
+    }
+    if (req.body.kdsEnabled === true && req.tenant?.subKds === false) {
+      throw new ApiError(403, "KDS feature is disabled in Super Admin Subscriptions.");
+    }
+    if (req.body.cdsEnabled === true && req.tenant?.subCds === false) {
+      throw new ApiError(403, "CDS feature is disabled in Super Admin Subscriptions.");
+    }
+    if (req.body.appServiEnabled === true && req.tenant?.subAppServi === false) {
+      throw new ApiError(403, "App Servi feature is disabled in Super Admin Subscriptions.");
     }
   }
 
