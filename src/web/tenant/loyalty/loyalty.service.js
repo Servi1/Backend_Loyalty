@@ -448,10 +448,12 @@ const getTiers = async (tenantId) => {
 const updateTiers = async (tenantId, tiers) => {
   if (!Array.isArray(tiers)) throw new ApiError(400, "Tiers must be an array");
 
+  const cleanedTiers = tiers.map(({ membersCount, ...tier }) => tier);
+
   if (tenantId) {
     await mainPrisma.tenant.update({
       where: { id: tenantId },
-      data: { loyaltyTiers: tiers }
+      data: { loyaltyTiers: cleanedTiers }
     });
   }
 

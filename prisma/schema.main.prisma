@@ -154,6 +154,7 @@ model Tenant {
   loyaltyRedeemPoints  Boolean @default(true)
   loyaltyEarnRate      Float   @default(1.0)
   loyaltyRedeemRate    Float   @default(100.0)
+  loyaltyTiers         Json?
   isActive             Boolean          @default(true)
   category             String?
  
