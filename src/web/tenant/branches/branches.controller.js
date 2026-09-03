@@ -29,22 +29,7 @@ const update = catchAsync(async (req, res) => {
   const userRole = (req.user?.role || "").toUpperCase();
   const isSuperAdmin = userRole === "SUPER_ADMIN" || userRole === "SUPER_ADMINISTRATOR";
 
-  if (isSuperAdmin && req.tenant?.id) {
-    const tenantUpdateData = {};
-    if (req.body.posEnabled === true) tenantUpdateData.subPos = true;
-    if (req.body.tablesEnabled === true) tenantUpdateData.subQrTable = true;
-    if (req.body.qrEnabled === true) tenantUpdateData.subQrCashier = true;
-    if (req.body.kdsEnabled === true) tenantUpdateData.subKds = true;
-    if (req.body.cdsEnabled === true) tenantUpdateData.subCds = true;
-    if (req.body.appServiEnabled === true) tenantUpdateData.subAppServi = true;
-
-    if (Object.keys(tenantUpdateData).length > 0) {
-      await mainPrisma.tenant.update({
-        where: { id: req.tenant.id },
-        data: tenantUpdateData
-      });
-    }
-  } else if (!isSuperAdmin) {
+  if (!isSuperAdmin) {
     const existingBranch = await branchesService.getById(req.tenantDb, req.params.id);
     if (existingBranch) {
       if (req.body.posEnabled === true && req.tenant?.subPos === false) {

@@ -1847,9 +1847,24 @@ const toggleSlot = async (tenantId, serviceType, slotIndex, active, deviceId) =>
     newQty = currentQty + 1;
   }
 
+  const flagKeyMap = {
+    pos: "subPos",
+    qr_table: "subQrTable",
+    qr_cashier: "subQrCashier",
+    kds: "subKds",
+    cds: "subCds",
+    branch: "subBranch",
+  };
+
+  const subFlagKey = flagKeyMap[serviceType?.toLowerCase()];
+  const updateData = { [fieldKey]: newQty };
+  if (subFlagKey) {
+    updateData[subFlagKey] = newQty > 0;
+  }
+
   await mainPrisma.tenant.update({
     where: { id: tenantId },
-    data: { [fieldKey]: newQty },
+    data: updateData,
   });
 
   // Also update physical hardware device isActive status if assigned
