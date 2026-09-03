@@ -47,22 +47,22 @@ const update = catchAsync(async (req, res) => {
   } else if (!isSuperAdmin) {
     const existingBranch = await branchesService.getById(req.tenantDb, req.params.id);
     if (existingBranch) {
-      if (req.body.posEnabled === true && (req.tenant?.subPos === false || existingBranch.posEnabled === false)) {
+      if (req.body.posEnabled === true && req.tenant?.subPos === false) {
         throw new ApiError(403, "POS feature is disabled by Super Admin billing.");
       }
-      if (req.body.tablesEnabled === true && (req.tenant?.subQrTable === false || existingBranch.tablesEnabled === false)) {
+      if (req.body.tablesEnabled === true && req.tenant?.subQrTable === false) {
         throw new ApiError(403, "Tables feature is disabled by Super Admin billing.");
       }
-      if (req.body.qrEnabled === true && (req.tenant?.subQrCashier === false || existingBranch.qrEnabled === false)) {
+      if (req.body.qrEnabled === true && req.tenant?.subQrCashier === false) {
         throw new ApiError(403, "QR Cashier feature is disabled by Super Admin billing.");
       }
-      if (req.body.kdsEnabled === true && (req.tenant?.subKds === false || existingBranch.kdsEnabled === false)) {
+      if (req.body.kdsEnabled === true && req.tenant?.subKds === false) {
         throw new ApiError(403, "KDS feature is disabled by Super Admin billing.");
       }
-      if (req.body.cdsEnabled === true && (req.tenant?.subCds === false || existingBranch.cdsEnabled === false)) {
+      if (req.body.cdsEnabled === true && req.tenant?.subCds === false) {
         throw new ApiError(403, "CDS feature is disabled by Super Admin billing.");
       }
-      if (req.body.appServiEnabled === true && (req.tenant?.subAppServi === false || existingBranch.appServiEnabled === false)) {
+      if (req.body.appServiEnabled === true && req.tenant?.subAppServi === false) {
         throw new ApiError(403, "App Servi feature is disabled by Super Admin billing.");
       }
     }
