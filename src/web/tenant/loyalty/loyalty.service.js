@@ -558,6 +558,7 @@ const reverseOrderPoints = async (db, customerId, orderNumber, pointsRedeemed, t
 
 module.exports = {
   DEFAULT_LOYALTY_TIERS,
+  getCustomerTierDetails,
   getWallet,
   earnPoints,
   redeemPoints,

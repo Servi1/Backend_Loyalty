@@ -1246,7 +1246,12 @@ const syncAllTenantOrders = async () => {
   }
 };
 
-const getCustomerTier = (wallet) => {
+const getCustomerTier = (wallet, tenant = null, customer = null) => {
+  if (tenant && Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
+    const loyaltyService = require("../../tenant/loyalty/loyalty.service");
+    const tierObj = loyaltyService.getCustomerTierDetails(customer, wallet, tenant.loyaltyTiers);
+    if (tierObj && tierObj.name) return tierObj.name;
+  }
   if (wallet && wallet.tier) return wallet.tier;
   const points = wallet?.points || 0;
   if (points >= 3000) return "gold";
@@ -1447,7 +1452,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     email: customer.email || null,
     tenantName: tenant?.name || "Servi Platform",
     points: wallet?.points || 0,
-    tier: getCustomerTier(wallet),
+    tier: getCustomerTier(wallet, tenant, customer),
     joinedAt: customer.createdAt,
     pointsHistory,
     orders: orderHistory,
