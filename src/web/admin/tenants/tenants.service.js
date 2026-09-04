@@ -1661,14 +1661,25 @@ const getSuperAdminOrderDetail = async (tenantId, orderId) => {
 
   if (!order) throw new ApiError(404, "Order not found");
 
-  // Calculate points earned for this order if paid via Cash, Card, Apple Pay, etc.
+  // Calculate points earned for this order if COMPLETED and paid via Cash, Card, Apple Pay, etc.
   let pointsEarned = 0;
   const pm = (order.paymentMethod || "").toLowerCase();
   const isPointsPayment = pm === "points" || (order.notes && (order.notes.includes("Paid by Loyalty Points") || order.notes.includes("Points Payment")));
 
-  if (!isPointsPayment && (order.status || "").toUpperCase() !== "CANCELLED" && (order.status || "").toUpperCase() !== "REFUNDED") {
-    const earnRate = Number(tenant.loyaltyEarnRate || 1.0);
-    pointsEarned = Math.floor(Number(order.total || 0) * earnRate);
+  if (!isPointsPayment && (order.status || "").toUpperCase() === "COMPLETED") {
+    const earnTx = await mainPrisma.walletTransaction.findFirst({
+      where: {
+        orderId: order.id,
+        type: "EARN"
+      }
+    });
+
+    if (earnTx) {
+      pointsEarned = earnTx.points;
+    } else {
+      const earnRate = Number(tenant.loyaltyEarnRate || 1.0);
+      pointsEarned = Math.floor(Number(order.total || 0) * earnRate);
+    }
   }
 
   return {
