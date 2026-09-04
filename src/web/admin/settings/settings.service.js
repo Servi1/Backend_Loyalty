@@ -60,6 +60,37 @@ const DEFAULT_FAQ_LIST = [
   }
 ];
 
+const convertToHtml = (str) => {
+  if (!str) return "";
+  if (str.includes("<p>") || str.includes("<h2>") || str.includes("<div>")) {
+    return str;
+  }
+  return str
+    .split("\n\n")
+    .map((paragraph) => {
+      const trimmed = paragraph.trim();
+      if (!trimmed) return "";
+      if (/^\d+\.|\bPrivacy Policy\b|\bTerms\b/i.test(trimmed) && trimmed.length < 60) {
+        return `<h3 style="color:#4f46e5; margin-top:1.5rem; margin-bottom:0.5rem; font-size:1.1rem; font-weight:700;">${trimmed}</h3>`;
+      }
+      return `<p style="color:#374151; line-height:1.6; margin-bottom:1rem;">${trimmed}</p>`;
+    })
+    .join("");
+};
+
+const stripHtml = (html) => {
+  if (!html) return "";
+  return html
+    .replace(/<h[1-6][^>]*>/gi, "\n\n")
+    .replace(/<\/h[1-6]>/gi, "\n")
+    .replace(/<p[^>]*>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\n\s*\n\s*\n/g, "\n\n")
+    .trim();
+};
+
 const getSettings = async () => {
   const settings = await mainPrisma.systemSetting.findMany();
   const settingsMap = {};
@@ -99,43 +130,6 @@ const updateSettings = async (configs) => {
     updated.push(record);
   }
   return updated;
-};
-
-const getAppContent = async () => {
-  const [privacyRecord, faqRecord] = await Promise.all([
-    mainPrisma.systemSetting.findUnique({ where: { key: "privacy_policy" } }),
-    mainPrisma.systemSetting.findUnique({ where: { key: "faq_list" } })
-  ]);
-
-const convertToHtml = (str) => {
-  if (!str) return "";
-  if (str.includes("<p>") || str.includes("<h2>") || str.includes("<div>")) {
-    return str;
-  }
-  return str
-    .split("\n\n")
-    .map((paragraph) => {
-      const trimmed = paragraph.trim();
-      if (!trimmed) return "";
-      if (/^\d+\.|\bPrivacy Policy\b|\bTerms\b/i.test(trimmed) && trimmed.length < 60) {
-        return `<h3 style="color:#4f46e5; margin-top:1.5rem; margin-bottom:0.5rem; font-size:1.1rem; font-weight:700;">${trimmed}</h3>`;
-      }
-      return `<p style="color:#374151; line-height:1.6; margin-bottom:1rem;">${trimmed}</p>`;
-    })
-    .join("");
-};
-
-const stripHtml = (html) => {
-  if (!html) return "";
-  return html
-    .replace(/<h[1-6][^>]*>/gi, "\n\n")
-    .replace(/<\/h[1-6]>/gi, "\n")
-    .replace(/<p[^>]*>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/\n\s*\n\s*\n/g, "\n\n")
-    .trim();
 };
 
 const getAppContent = async (hostUrl = "") => {
