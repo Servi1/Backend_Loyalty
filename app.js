@@ -231,6 +231,36 @@ tenantRouter.use("/", zatcaRoutes);
 
 app.use("/api/tenant/:tenantId", tenantRouter);
 
+// Public App Content Endpoints (Privacy Policy & FAQs)
+const settingsService = require("./src/web/admin/settings/settings.service");
+
+app.get("/api/app/content", async (_req, res, next) => {
+  try {
+    const data = await settingsService.getAppContent();
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get("/api/app/content/privacy-policy", async (_req, res, next) => {
+  try {
+    const data = await settingsService.getAppContent();
+    res.json({ success: true, data: { content: data.privacyPolicy } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get("/api/app/content/faq", async (_req, res, next) => {
+  try {
+    const data = await settingsService.getAppContent();
+    res.json({ success: true, data: data.faqList });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // 3. Mobile App API
 const branchCtrl = require("./src/app/branches/branches.controller");
 app.get("/api/app/qr/resolve", branchCtrl.resolveQrToken);
