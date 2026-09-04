@@ -23,8 +23,8 @@ const getAppContent = catchAsync(async (req, res) => {
 
 const updateAppContent = catchAsync(async (req, res) => {
   const hostUrl = `${req.protocol}://${req.get("host")}`;
-  const { privacyPolicy, faqList } = req.body;
-  const result = await settingsService.updateAppContent({ privacyPolicy, faqList }, hostUrl);
+  const { privacyPolicy, policyPoints, faqList } = req.body;
+  const result = await settingsService.updateAppContent({ privacyPolicy, policyPoints, faqList }, hostUrl);
   res.json({ success: true, data: result });
 });
 

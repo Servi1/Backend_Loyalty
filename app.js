@@ -13,6 +13,7 @@ const tenantsRoutes = require("./src/web/admin/tenants/tenants.routes");
 const adminUsersRoutes = require("./src/web/admin/users/adminUsers.routes");
 const adminRolesRoutes = require("./src/web/admin/roles/adminRoles.routes");
 const settingsRoutes = require("./src/web/admin/settings/settings.routes");
+const settingsService = require("./src/web/admin/settings/settings.service");
 const tenantCategoriesRoutes = require("./src/web/admin/categories/categories.routes");
 const globalOrderTypesRoutes = require("./src/web/admin/order-types/globalOrderTypes.routes");
 const branchesRoutes = require("./src/web/tenant/branches/branches.routes");
@@ -232,23 +233,16 @@ tenantRouter.use("/", zatcaRoutes);
 app.use("/api/tenant/:tenantId", tenantRouter);
 
 // Standalone HTML / PDF Endpoint for React Native WebView & App Store Submission
+// Standalone PDF / HTML Endpoint for React Native WebView & App Store Submission
 app.get("/privacy-policy", async (req, res, next) => {
   try {
     const hostUrl = `${req.protocol}://${req.get("host")}`;
     const data = await settingsService.getAppContent(hostUrl);
 
-    if (data.hasPdf && data.pdfRelativePath) {
-      const fs = require("fs");
-      const pdfPath = path.join(__dirname, data.pdfRelativePath);
-      if (fs.existsSync(pdfPath)) {
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader("Content-Disposition", 'inline; filename="privacy-policy.pdf"');
-        return res.sendFile(pdfPath);
-      }
-    }
-
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.send(`<!DOCTYPE html>
+    // If explicit HTML format requested
+    if (req.query.format === "html") {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -265,11 +259,27 @@ app.get("/privacy-policy", async (req, res, next) => {
 </head>
 <body>
   <div class="card">
+    <h1>Privacy Policy</h1>
     ${data.html}
   </div>
   <footer>&copy; ${new Date().getFullYear()} Servi Platform. All rights reserved.</footer>
 </body>
 </html>`);
+    }
+
+    // Custom uploaded PDF file override
+    if (data.customPdfUploaded && data.pdfRelativePath) {
+      const fs = require("fs");
+      const pdfPath = path.join(__dirname, data.pdfRelativePath);
+      if (fs.existsSync(pdfPath)) {
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", 'inline; filename="privacy-policy.pdf"');
+        return res.sendFile(pdfPath);
+      }
+    }
+
+    // Default: Stream dynamically generated PDF from Policy Points
+    return settingsService.generatePrivacyPolicyPDF(res, data);
   } catch (err) {
     next(err);
   }
@@ -290,7 +300,18 @@ app.get("/api/app/content/privacy-policy", async (req, res, next) => {
   try {
     const hostUrl = `${req.protocol}://${req.get("host")}`;
     const data = await settingsService.getAppContent(hostUrl);
-    res.json({ success: true, data: { content: data.privacyPolicy, html: data.html, text: data.text, url: data.privacyPolicyUrl } });
+    res.json({
+      success: true,
+      data: {
+        type: "pdf",
+        pdfUrl: data.pdfUrl,
+        policyPoints: data.policyPoints,
+        content: data.privacyPolicy,
+        html: data.html,
+        text: data.text,
+        url: data.privacyPolicyUrl
+      }
+    });
   } catch (err) {
     next(err);
   }
