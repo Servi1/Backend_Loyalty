@@ -433,9 +433,31 @@ const getTiers = async (tenantId) => {
     include: { wallet: true }
   });
 
+  const allOrders = await mainPrisma.aggregatedOrder.findMany({
+    where: { status: "COMPLETED" },
+    select: { customerPhone: true, customerName: true, total: true }
+  });
+
+  const userStatsByPhone = {};
+  for (const ord of allOrders) {
+    if (ord.customerPhone) {
+      const p = ord.customerPhone.trim();
+      if (!userStatsByPhone[p]) userStatsByPhone[p] = { count: 0, spend: 0 };
+      userStatsByPhone[p].count += 1;
+      userStatsByPhone[p].spend += Number(ord.total || 0);
+    }
+  }
+
   const memberCounts = {};
   for (const user of allUsers) {
-    const t = getCustomerTierDetails(user, user.wallet, tiers);
+    const phone = user.phone ? user.phone.trim() : "";
+    const stats = userStatsByPhone[phone] || { count: 0, spend: 0 };
+    const userWithStats = {
+      ...user,
+      completedOrdersCount: stats.count,
+      lifetimeSpend: stats.spend > 0 ? stats.spend : (user.wallet ? Number(user.wallet.lifetimeEarn || 0) : 0)
+    };
+    const t = getCustomerTierDetails(userWithStats, user.wallet, tiers);
     memberCounts[t.id] = (memberCounts[t.id] || 0) + 1;
   }
 
