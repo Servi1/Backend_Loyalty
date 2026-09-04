@@ -231,30 +231,64 @@ tenantRouter.use("/", zatcaRoutes);
 
 app.use("/api/tenant/:tenantId", tenantRouter);
 
-// Public App Content Endpoints (Privacy Policy & FAQs)
-const settingsService = require("./src/web/admin/settings/settings.service");
-
-app.get("/api/app/content", async (_req, res, next) => {
+// Standalone HTML Webview Endpoint for React Native WebView & App Store Submission
+app.get("/privacy-policy", async (req, res, next) => {
   try {
-    const data = await settingsService.getAppContent();
+    const hostUrl = `${req.protocol}://${req.get("host")}`;
+    const data = await settingsService.getAppContent(hostUrl);
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - Servi</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1f2937; max-width: 800px; margin: 0 auto; padding: 2rem 1.5rem; background-color: #f9fafb; }
+    .card { background: #ffffff; border-radius: 1rem; padding: 2.5rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); border: 1px solid #e5e7eb; }
+    h1 { color: #4f46e5; margin-top: 0; font-size: 1.875rem; font-weight: 800; border-bottom: 2px solid #f3f4f6; padding-bottom: 1rem; }
+    h2, h3 { color: #374151; margin-top: 1.75rem; margin-bottom: 0.5rem; }
+    p { margin-bottom: 1rem; font-size: 0.95rem; color: #4b5563; }
+    footer { margin-top: 2rem; font-size: 0.8rem; color: #9ca3af; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    ${data.html}
+  </div>
+  <footer>&copy; ${new Date().getFullYear()} Servi Platform. All rights reserved.</footer>
+</body>
+</html>`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Public App Content Endpoints (Privacy Policy & FAQs)
+app.get("/api/app/content", async (req, res, next) => {
+  try {
+    const hostUrl = `${req.protocol}://${req.get("host")}`;
+    const data = await settingsService.getAppContent(hostUrl);
     res.json({ success: true, data });
   } catch (err) {
     next(err);
   }
 });
 
-app.get("/api/app/content/privacy-policy", async (_req, res, next) => {
+app.get("/api/app/content/privacy-policy", async (req, res, next) => {
   try {
-    const data = await settingsService.getAppContent();
-    res.json({ success: true, data: { content: data.privacyPolicy } });
+    const hostUrl = `${req.protocol}://${req.get("host")}`;
+    const data = await settingsService.getAppContent(hostUrl);
+    res.json({ success: true, data: { content: data.privacyPolicy, html: data.html, text: data.text, url: data.privacyPolicyUrl } });
   } catch (err) {
     next(err);
   }
 });
 
-app.get("/api/app/content/faq", async (_req, res, next) => {
+app.get("/api/app/content/faq", async (req, res, next) => {
   try {
-    const data = await settingsService.getAppContent();
+    const hostUrl = `${req.protocol}://${req.get("host")}`;
+    const data = await settingsService.getAppContent(hostUrl);
     res.json({ success: true, data: data.faqList });
   } catch (err) {
     next(err);

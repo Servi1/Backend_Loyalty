@@ -16,13 +16,15 @@ const updateSettings = catchAsync(async (req, res) => {
 });
 
 const getAppContent = catchAsync(async (req, res) => {
-  const result = await settingsService.getAppContent();
+  const hostUrl = `${req.protocol}://${req.get("host")}`;
+  const result = await settingsService.getAppContent(hostUrl);
   res.json({ success: true, data: result });
 });
 
 const updateAppContent = catchAsync(async (req, res) => {
+  const hostUrl = `${req.protocol}://${req.get("host")}`;
   const { privacyPolicy, faqList } = req.body;
-  const result = await settingsService.updateAppContent({ privacyPolicy, faqList });
+  const result = await settingsService.updateAppContent({ privacyPolicy, faqList }, hostUrl);
   res.json({ success: true, data: result });
 });
 
