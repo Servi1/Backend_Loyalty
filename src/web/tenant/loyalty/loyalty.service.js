@@ -449,6 +449,7 @@ const getTiers = async (tenantId) => {
   }
 
   const memberCounts = {};
+  const memberDetails = {};
   for (const user of allUsers) {
     const phone = user.phone ? user.phone.trim() : "";
     const stats = userStatsByPhone[phone] || { count: 0, spend: 0 };
@@ -459,11 +460,24 @@ const getTiers = async (tenantId) => {
     };
     const t = getCustomerTierDetails(userWithStats, user.wallet, tiers);
     memberCounts[t.id] = (memberCounts[t.id] || 0) + 1;
+    if (!memberDetails[t.id]) memberDetails[t.id] = [];
+    memberDetails[t.id].push({
+      id: user.id,
+      name: user.name || "Walk-in Customer",
+      phone: user.phone || "N/A",
+      email: user.email || "N/A",
+      points: user.wallet?.points || 0,
+      lifetimeEarn: user.wallet?.lifetimeEarn || 0,
+      completedOrdersCount: stats.count,
+      lifetimeSpend: userWithStats.lifetimeSpend,
+      createdAt: user.createdAt
+    });
   }
 
   return tiers.map((tier) => ({
     ...tier,
     membersCount: memberCounts[tier.id] || 0,
+    members: memberDetails[tier.id] || []
   }));
 };
 
