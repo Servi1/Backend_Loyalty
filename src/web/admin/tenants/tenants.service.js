@@ -1410,7 +1410,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     );
     let pointsEarned = 0;
     if ((o.status || "").toUpperCase() === "COMPLETED" && (o.paymentMethod || "").toLowerCase() !== "points") {
-      pointsEarned = earnPointsTx ? Math.abs(earnPointsTx.points) : Math.floor(o.total * (tenant?.loyaltyEarnRate || 1.0));
+      pointsEarned = earnPointsTx ? Math.abs(earnPointsTx.points) : 0;
     }
 
     return {
