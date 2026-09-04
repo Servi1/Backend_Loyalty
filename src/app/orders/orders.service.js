@@ -396,6 +396,8 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     },
   });
 
+  const initialStatus = order.status;
+
   // Award points only if order is already COMPLETED upon creation (except if paid by points)
   const effectiveEarnRate = earnRate !== undefined && earnRate !== null ? parseFloat(earnRate) : Number(tenant?.loyaltyEarnRate || 1.0);
   if (order.status === "COMPLETED" && (userId || finalCustomerId) && effectiveEarnRate > 0 && paymentMethod !== "points") {

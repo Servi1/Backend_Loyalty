@@ -28,5 +28,9 @@ server.listen(config.port, () => {
   // Start background worker to expire unpaid HOLD orders
   const holdExpiryWorker = require("./src/shared/workers/holdExpiry.worker");
   holdExpiryWorker.start();
+
+  // Start background worker to cancel orders pending > 5 minutes without POS acceptance
+  const pendingExpiryWorker = require("./src/shared/workers/pendingExpiry.worker");
+  pendingExpiryWorker.start();
 });
 // Trigger reload for new env config (HTTP base URL)
