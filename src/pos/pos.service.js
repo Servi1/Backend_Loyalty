@@ -183,16 +183,23 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
   try {
     const mainPrisma = require("../config/prisma");
     let customerName = "Customer Walk-in";
-    if (order.customerId) {
+    let customerPhone = order.customerPhone || null;
+
+    if (order.notes) {
+      const match = order.notes.match(/Customer:\s*([^|]+)/i);
+      if (match && match[1].trim()) customerName = match[1].trim();
+    }
+
+    if (customerName === "Customer Walk-in" && order.customerId) {
       const customer = await mainPrisma.appUser.findUnique({ where: { id: order.customerId } });
       if (customer) {
         customerName = customer.name || customer.phone || "Customer Walk-in";
+        if (!customerPhone) customerPhone = customer.phone || null;
       }
-    } else if (order.userId) {
-      const user = await db.user.findUnique({ where: { id: order.userId } });
-      if (user) {
-        customerName = user.name || user.phone || "Customer Walk-in";
-      }
+    }
+
+    if (customerName === "Customer Walk-in" && order.customerPhone) {
+      customerName = order.customerPhone;
     }
 
     let branch = order.branch;
