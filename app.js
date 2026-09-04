@@ -285,6 +285,17 @@ app.get("/privacy-policy", async (req, res, next) => {
   }
 });
 
+// Standalone PDF Endpoint for FAQs
+app.get(["/faq", "/faq.pdf"], async (req, res, next) => {
+  try {
+    const hostUrl = `${req.protocol}://${req.get("host")}`;
+    const data = await settingsService.getAppContent(hostUrl);
+    return settingsService.generateFaqPDF(res, data.faqList);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Public App Content Endpoints (Privacy Policy & FAQs)
 app.get("/api/app/content", async (req, res, next) => {
   try {

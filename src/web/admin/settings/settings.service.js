@@ -245,22 +245,26 @@ const generatePrivacyPolicyPDF = (res, data) => {
 
   doc.pipe(res);
 
-  const primaryColor = "#4f46e5"; // Indigo
-  const darkColor = "#0f172a";    // Dark slate text
-  const bodyColor = "#334155";    // Muted text
+  const headingColor = "#0f172a"; // Dark slate/black
+  const subtextColor = "#475569";  // Muted slate
+  const bodyColor = "#334155";     // Dark gray text
+  const dividerColor = "#cbd5e1";  // Slate border
 
-  // Header Banner
-  doc.rect(40, 40, 515, 60).fill(primaryColor);
-  doc.fillColor("#ffffff").fontSize(18).font("Helvetica-Bold").text("SERVI PLATFORM", 55, 52);
-  doc.fontSize(10).font("Helvetica").fillColor("#c7d2fe").text(`PRIVACY POLICY & TERMS  |  Last Updated: September 2026`, 55, 78);
+  // Header Title
+  doc.font("Helvetica-Bold").fontSize(18).fillColor(headingColor).text("SERVI PLATFORM", 40, 40);
+  doc.font("Helvetica-Bold").fontSize(12).fillColor(subtextColor).text("PRIVACY POLICY & TERMS", 40, 64);
+  doc.font("Helvetica").fontSize(9).fillColor("#64748b").text("Last Updated: September 2026", 40, 80);
 
-  doc.y = 125;
+  // Line Divider
+  doc.moveTo(40, 96).lineTo(555, 96).strokeColor(dividerColor).lineWidth(1).stroke();
+
+  doc.y = 115;
 
   const points = data.policyPoints && data.policyPoints.length > 0 ? data.policyPoints : null;
 
   if (points) {
     points.forEach((pt, idx) => {
-      doc.font("Helvetica-Bold").fontSize(12).fillColor(primaryColor).text(pt.title || `Section ${idx + 1}`, {
+      doc.font("Helvetica-Bold").fontSize(11).fillColor(headingColor).text(pt.title || `Section ${idx + 1}`, {
         paragraphGap: 4
       });
       doc.font("Helvetica").fontSize(10).fillColor(bodyColor).text(pt.content || "", {
@@ -281,6 +285,61 @@ const generatePrivacyPolicyPDF = (res, data) => {
     doc.switchToPage(i);
     doc.fontSize(8).fillColor("#94a3b8").text(
       `Servi Platform Privacy Policy  •  Page ${i + 1} of ${range.count}`,
+      40,
+      doc.page.height - 30,
+      { align: "center", width: 515 }
+    );
+  }
+
+  doc.end();
+};
+
+const generateFaqPDF = (res, faqList = []) => {
+  const PDFDocument = require("pdfkit");
+  const doc = new PDFDocument({ margin: 40, size: "A4", bufferPages: true });
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", 'inline; filename="App_FAQs.pdf"');
+
+  doc.pipe(res);
+
+  const headingColor = "#0f172a";
+  const subtextColor = "#475569";
+  const bodyColor = "#334155";
+  const dividerColor = "#cbd5e1";
+
+  // Header Title
+  doc.font("Helvetica-Bold").fontSize(18).fillColor(headingColor).text("SERVI PLATFORM", 40, 40);
+  doc.font("Helvetica-Bold").fontSize(12).fillColor(subtextColor).text("FREQUENTLY ASKED QUESTIONS (FAQ)", 40, 64);
+  doc.font("Helvetica").fontSize(9).fillColor("#64748b").text("Official Help & Information Guide", 40, 80);
+
+  // Line Divider
+  doc.moveTo(40, 96).lineTo(555, 96).strokeColor(dividerColor).lineWidth(1).stroke();
+
+  doc.y = 115;
+
+  if (Array.isArray(faqList) && faqList.length > 0) {
+    faqList.forEach((faq, idx) => {
+      doc.font("Helvetica-Bold").fontSize(11).fillColor(headingColor).text(`Q${idx + 1}: ${faq.question || ""}`, {
+        paragraphGap: 4
+      });
+      doc.font("Helvetica").fontSize(10).fillColor(bodyColor).text(faq.answer || "", {
+        lineGap: 4,
+        paragraphGap: 14
+      });
+    });
+  } else {
+    doc.font("Helvetica").fontSize(10).fillColor(bodyColor).text("No FAQ items available.", {
+      paragraphGap: 10
+    });
+  }
+
+  // Footer on all pages
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i++) {
+    doc.switchToPage(i);
+    doc.fontSize(8).fillColor("#94a3b8").text(
+      `Servi Platform FAQs  •  Page ${i + 1} of ${range.count}`,
       40,
       doc.page.height - 30,
       { align: "center", width: 515 }
@@ -362,6 +421,7 @@ module.exports = {
   savePrivacyPdf,
   removePrivacyPdf,
   generatePrivacyPolicyPDF,
+  generateFaqPDF,
   convertToHtml,
   stripHtml
 };
