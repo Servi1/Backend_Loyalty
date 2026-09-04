@@ -43,6 +43,16 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
       branch = await db.branch.findUnique({ where: { id: order.branchId } });
     }
 
+    let cName = "Customer Walk-in";
+    let cPhone = order.customerPhone || user?.phone || null;
+    if (order.notes) {
+      const match = order.notes.match(/Customer:\s*([^|]+)/i);
+      if (match && match[1].trim()) cName = match[1].trim();
+    }
+    if (cName === "Customer Walk-in" && user) {
+      cName = user.name || user.phone || "Customer Walk-in";
+    }
+
     await mainPrisma.aggregatedOrder.upsert({
       where: { id: `${tenantId}_${order.id}` },
       create: {
@@ -54,8 +64,8 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         type: order.type,
         total: order.total,
         notes: order.notes,
-        customerName: user?.name || user?.phone || "App Customer",
-        customerPhone: order.customerPhone || null,
+        customerName: cName,
+        customerPhone: cPhone,
         branchName: branch?.name || "Unknown",
         feeRate: order.feeRate || 0.0,
         source: order.source || "app",
@@ -77,7 +87,8 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         status: order.status,
         total: order.total,
         notes: order.notes,
-        customerPhone: order.customerPhone || null,
+        customerName: cName,
+        customerPhone: cPhone,
         feeRate: order.feeRate || 0.0,
         source: order.source || "app",
         paymentMethod: order.paymentMethod || "cash",
