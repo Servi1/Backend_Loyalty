@@ -133,8 +133,9 @@ const updateSettings = async (configs) => {
 };
 
 const getAppContent = async (hostUrl = "") => {
-  const [privacyRecord, faqRecord] = await Promise.all([
+  const [privacyRecord, pdfRecord, faqRecord] = await Promise.all([
     mainPrisma.systemSetting.findUnique({ where: { key: "privacy_policy" } }),
+    mainPrisma.systemSetting.findUnique({ where: { key: "privacy_policy_pdf" } }),
     mainPrisma.systemSetting.findUnique({ where: { key: "faq_list" } })
   ]);
 
@@ -153,7 +154,18 @@ const getAppContent = async (hostUrl = "") => {
   const text = stripHtml(privacyPolicyRaw);
   const baseUrl = hostUrl.replace(/\/$/, "");
 
+  let pdfUrl = null;
+  let pdfRelativePath = null;
+  if (pdfRecord && pdfRecord.value) {
+    pdfRelativePath = pdfRecord.value;
+    pdfUrl = baseUrl ? `${baseUrl}/${pdfRecord.value.replace(/^\//, "")}` : `/${pdfRecord.value.replace(/^\//, "")}`;
+  }
+
   return {
+    type: pdfUrl ? "pdf" : "text",
+    hasPdf: !!pdfUrl,
+    pdfUrl,
+    pdfRelativePath,
     privacyPolicy: privacyPolicyRaw,
     content: privacyPolicyRaw,
     html,
@@ -161,6 +173,22 @@ const getAppContent = async (hostUrl = "") => {
     privacyPolicyUrl: baseUrl ? `${baseUrl}/privacy-policy` : "/privacy-policy",
     faqList
   };
+};
+
+const savePrivacyPdf = async (relativePath, hostUrl = "") => {
+  await mainPrisma.systemSetting.upsert({
+    where: { key: "privacy_policy_pdf" },
+    update: { value: relativePath },
+    create: { key: "privacy_policy_pdf", value: relativePath }
+  });
+  return getAppContent(hostUrl);
+};
+
+const removePrivacyPdf = async (hostUrl = "") => {
+  await mainPrisma.systemSetting.delete({
+    where: { key: "privacy_policy_pdf" }
+  }).catch(() => null);
+  return getAppContent(hostUrl);
 };
 
 const updateAppContent = async ({ privacyPolicy, faqList }, hostUrl = "") => {
@@ -196,6 +224,8 @@ module.exports = {
   updateSettings,
   getAppContent,
   updateAppContent,
+  savePrivacyPdf,
+  removePrivacyPdf,
   convertToHtml,
   stripHtml
 };

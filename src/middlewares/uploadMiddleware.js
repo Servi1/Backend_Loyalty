@@ -54,6 +54,37 @@ const doorstepUpload = multer({
   limits: { fileSize: 3 * 1024 * 1024 }, // 3 MB max
 });
 
+// Multer instance for PDF document uploads, restricted to 15 MB
+const pdfStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const fullPath = path.join(uploadDir, "documents");
+    if (!fs.existsSync(fullPath)) {
+      fs.mkdirSync(fullPath, { recursive: true });
+    }
+    cb(null, fullPath);
+  },
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e6);
+    const ext = path.extname(file.originalname);
+    cb(null, `privacy-policy-${uniqueSuffix}${ext}`);
+  },
+});
+
+const pdfFileFilter = (_req, file, cb) => {
+  if (file.mimetype === "application/pdf" || file.originalname.endsWith(".pdf")) {
+    cb(null, true);
+  } else {
+    cb(new ApiError(400, "Only PDF (.pdf) files are allowed"), false);
+  }
+};
+
+const pdfUpload = multer({
+  storage: pdfStorage,
+  fileFilter: pdfFileFilter,
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB max
+});
+
 upload.doorstepUpload = doorstepUpload;
+upload.pdfUpload = pdfUpload;
 
 module.exports = upload;

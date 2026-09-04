@@ -28,9 +28,27 @@ const updateAppContent = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+const uploadPrivacyPdf = catchAsync(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: "No PDF file uploaded" });
+  }
+  const hostUrl = `${req.protocol}://${req.get("host")}`;
+  const relativePath = `uploads/documents/${req.file.filename}`;
+  const result = await settingsService.savePrivacyPdf(relativePath, hostUrl);
+  res.json({ success: true, data: result });
+});
+
+const removePrivacyPdf = catchAsync(async (req, res) => {
+  const hostUrl = `${req.protocol}://${req.get("host")}`;
+  const result = await settingsService.removePrivacyPdf(hostUrl);
+  res.json({ success: true, data: result });
+});
+
 module.exports = {
   getSettings,
   updateSettings,
   getAppContent,
-  updateAppContent
+  updateAppContent,
+  uploadPrivacyPdf,
+  removePrivacyPdf
 };

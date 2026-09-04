@@ -231,11 +231,22 @@ tenantRouter.use("/", zatcaRoutes);
 
 app.use("/api/tenant/:tenantId", tenantRouter);
 
-// Standalone HTML Webview Endpoint for React Native WebView & App Store Submission
+// Standalone HTML / PDF Endpoint for React Native WebView & App Store Submission
 app.get("/privacy-policy", async (req, res, next) => {
   try {
     const hostUrl = `${req.protocol}://${req.get("host")}`;
     const data = await settingsService.getAppContent(hostUrl);
+
+    if (data.hasPdf && data.pdfRelativePath) {
+      const fs = require("fs");
+      const pdfPath = path.join(__dirname, data.pdfRelativePath);
+      if (fs.existsSync(pdfPath)) {
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", 'inline; filename="privacy-policy.pdf"');
+        return res.sendFile(pdfPath);
+      }
+    }
+
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(`<!DOCTYPE html>
 <html lang="en">
