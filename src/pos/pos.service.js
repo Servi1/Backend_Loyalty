@@ -123,12 +123,15 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
     }
   }
 
+  const itemsTotal = items.reduce((sum, i) => sum + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
+  const finalTotal = (total !== undefined && total !== null && Number(total) > 0) ? Number(total) : itemsTotal;
+
   const order = await db.order.create({
     data: {
       orderNumber,
       status: orderData.status || "ACCEPTED",
       type: type || "DINE_IN",
-      total: Number(total) || 0,
+      total: finalTotal,
       feeRate,
       notes,
       branchId,
