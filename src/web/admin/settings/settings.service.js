@@ -224,6 +224,7 @@ const getAppContent = async (hostUrl = "") => {
     type: "pdf",
     hasPdf: true,
     pdfUrl,
+    faqUrl: baseUrl ? `${baseUrl}/faq` : "/faq",
     customPdfUploaded: !!pdfRelativePath,
     pdfRelativePath,
     privacyPolicy: privacyPolicyRaw,

@@ -234,7 +234,7 @@ app.use("/api/tenant/:tenantId", tenantRouter);
 
 // Standalone HTML / PDF Endpoint for React Native WebView & App Store Submission
 // Standalone PDF / HTML Endpoint for React Native WebView & App Store Submission
-app.get("/privacy-policy", async (req, res, next) => {
+app.get(["/privacy-policy", "/api/privacy-policy", "/api/app/content/privacy-policy/pdf"], async (req, res, next) => {
   try {
     const hostUrl = `${req.protocol}://${req.get("host")}`;
     const data = await settingsService.getAppContent(hostUrl);
@@ -286,7 +286,7 @@ app.get("/privacy-policy", async (req, res, next) => {
 });
 
 // Standalone PDF Endpoint for FAQs
-app.get(["/faq", "/faq.pdf"], async (req, res, next) => {
+app.get(["/faq", "/faq.pdf", "/api/faq", "/api/app/content/faq-pdf", "/api/app/content/faq/pdf"], async (req, res, next) => {
   try {
     const hostUrl = `${req.protocol}://${req.get("host")}`;
     const data = await settingsService.getAppContent(hostUrl);
