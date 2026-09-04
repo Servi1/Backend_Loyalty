@@ -14,27 +14,28 @@ const defaults = {
   platform_vat: "15.0"
 };
 
-const DEFAULT_PRIVACY_POLICY = `<h2>Privacy Policy</h2>
-<p>Last updated: September 2026</p>
-<p>At Servi, we are committed to protecting your privacy and ensuring your personal information is handled in a safe and responsible manner.</p>
+const DEFAULT_PRIVACY_POLICY = `Privacy Policy
+Last updated: September 2026
 
-<h3>1. Information We Collect</h3>
-<p>We collect information you provide directly to us when using our application, such as your name, phone number, email address, address details, and order history.</p>
+At Servi, we are committed to protecting your privacy and ensuring your personal information is handled in a safe and responsible manner.
 
-<h3>2. How We Use Your Information</h3>
-<p>We use the information we collect to provide, maintain, and improve our services, process transactions, deliver food & services to your table/location, and communicate loyalty rewards with you.</p>
+1. Information We Collect
+We collect information you provide directly to us when using our application, such as your name, phone number, email address, address details, and order history.
 
-<h3>3. Loyalty & Rewards Program</h3>
-<p>Your orders accumulate points based on established brand tier rules. Points earned or redeemed are logged securely to your account wallet.</p>
+2. How We Use Your Information
+We use the information we collect to provide, maintain, and improve our services, process transactions, deliver food & services to your table/location, and communicate loyalty rewards with you.
 
-<h3>4. Information Sharing</h3>
-<p>We do not sell or share your personal information with third parties except as necessary to fulfill your orders (such as passing your contact details to brand store staff) or as required by law.</p>
+3. Loyalty & Rewards Program
+Your orders accumulate points based on established brand tier rules. Points earned or redeemed are logged securely to your account wallet.
 
-<h3>5. Data Security</h3>
-<p>We implement appropriate technical and organizational security measures to protect your personal data against unauthorized access, alteration, or disclosure.</p>
+4. Information Sharing
+We do not sell or share your personal information with third parties except as necessary to fulfill your orders (such as passing your contact details to brand store staff) or as required by law.
 
-<h3>6. Contact Us</h3>
-<p>If you have any questions or concerns about this Privacy Policy, please contact our support team at support@servi.com.</p>`;
+5. Data Security
+We implement appropriate technical and organizational security measures to protect your personal data against unauthorized access, alteration, or disclosure.
+
+6. Contact Us
+If you have any questions or concerns about this Privacy Policy, please contact our support team at support@servi.com.`;
 
 const DEFAULT_FAQ_LIST = [
   {
