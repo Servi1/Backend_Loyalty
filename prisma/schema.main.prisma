@@ -230,6 +230,7 @@ model AppUser {
   addresses      Json?    @default("[]")
   paymentMethods Json?    @default("[]")
   favoriteBrands Json?    @default("[]")
+  fcmToken       String?
   isDelete       Boolean  @default(false)
   // Relations
   orders        Order[]
@@ -417,4 +418,23 @@ model GlobalOrderType {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// ─── Super Admin Broadcast Push Notifications ────────
+model BroadcastNotification {
+  id             String   @id @default(uuid())
+  title          String
+  body           String
+  imageUrl       String?
+  targetAudience String   @default("ALL")
+  dataPayload    Json?    @default("{}")
+  sentBy         String   @default("Super Admin")
+  sentCount      Int      @default(0)
+  successCount   Int      @default(0)
+  failureCount   Int      @default(0)
+  status         String   @default("SENT")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([createdAt])
 }

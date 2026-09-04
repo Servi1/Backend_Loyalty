@@ -14,6 +14,7 @@ const adminUsersRoutes = require("./src/web/admin/users/adminUsers.routes");
 const adminRolesRoutes = require("./src/web/admin/roles/adminRoles.routes");
 const settingsRoutes = require("./src/web/admin/settings/settings.routes");
 const settingsService = require("./src/web/admin/settings/settings.service");
+const adminNotificationsRoutes = require("./src/web/admin/notifications/adminNotifications.routes");
 const tenantCategoriesRoutes = require("./src/web/admin/categories/categories.routes");
 const globalOrderTypesRoutes = require("./src/web/admin/order-types/globalOrderTypes.routes");
 const branchesRoutes = require("./src/web/tenant/branches/branches.routes");
@@ -74,6 +75,7 @@ app.use("/api/admin/tenants", tenantsRoutes);
 app.use("/api/admin/users", adminUsersRoutes);
 app.use("/api/admin/roles", adminRolesRoutes);
 app.use("/api/admin/settings", settingsRoutes);
+app.use("/api/admin/notifications", adminNotificationsRoutes);
 app.use("/api/admin/categories", tenantCategoriesRoutes);
 app.use("/api/admin/global-order-types", globalOrderTypesRoutes);
 app.use("/api/auth", authRoutes); // auth handles both super admin and tenant logins
@@ -345,7 +347,9 @@ app.post("/api/app/qr/encode", branchCtrl.encodeQrTokenEndpoint);
 
 // Global app auth router (tenant-independent)
 const globalAuthRouter = require("./src/app/auth/globalAuth.routes");
+const appNotificationsRoutes = require("./src/app/notifications/appNotifications.routes");
 app.use("/api/app/auth", globalAuthRouter);
+app.use("/api/app/notifications", appNotificationsRoutes);
 
 const { optionalAppTenant } = require("./src/app/middlewares/appTenant.middleware");
 
