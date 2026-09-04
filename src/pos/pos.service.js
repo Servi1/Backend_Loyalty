@@ -109,12 +109,27 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
     }
   }
 
+  // Lookup fee percentage for POS channel
+  let feeRate = 0.0;
+  if (tenantId) {
+    try {
+      const mainPrisma = require("../config/prisma");
+      const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+      if (tenant && tenant.feePos !== undefined && tenant.feePos !== null) {
+        feeRate = Number(tenant.feePos);
+      }
+    } catch (e) {
+      console.error("[POS ORDER] Failed to lookup fee rate:", e.message);
+    }
+  }
+
   const order = await db.order.create({
     data: {
       orderNumber,
       status: orderData.status || "ACCEPTED",
       type: type || "DINE_IN",
       total: Number(total) || 0,
+      feeRate,
       notes,
       branchId,
       userId,
