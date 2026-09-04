@@ -31,6 +31,16 @@ const getById = async (db, id) => {
 const create = async (db, data) => {
   const { customPaymentTypeIds, customOrderTypeIds, ...rest } = data;
   const insertData = { ...rest };
+
+  if (!insertData.locationGroupId || insertData.locationGroupId === "none") {
+    throw new ApiError(400, "Location Group is required");
+  }
+  if (!Array.isArray(customOrderTypeIds) || customOrderTypeIds.length === 0) {
+    throw new ApiError(400, "At least one Order Type must be selected");
+  }
+  if (!Array.isArray(customPaymentTypeIds) || customPaymentTypeIds.length === 0) {
+    throw new ApiError(400, "At least one Payment Method must be selected");
+  }
   
   const initSub = (field, subField) => {
     if (insertData[field] === true) {
@@ -76,6 +86,18 @@ const update = async (db, id, data) => {
   const current = await getById(db, id);
   const { customPaymentTypeIds, customOrderTypeIds, ...rest } = data;
   const updatedData = { ...rest };
+
+  if (data.name !== undefined) {
+    if (!updatedData.locationGroupId || updatedData.locationGroupId === "none") {
+      throw new ApiError(400, "Location Group is required");
+    }
+  }
+  if (customOrderTypeIds !== undefined && (!Array.isArray(customOrderTypeIds) || customOrderTypeIds.length === 0)) {
+    throw new ApiError(400, "At least one Order Type must be selected");
+  }
+  if (customPaymentTypeIds !== undefined && (!Array.isArray(customPaymentTypeIds) || customPaymentTypeIds.length === 0)) {
+    throw new ApiError(400, "At least one Payment Method must be selected");
+  }
 
   const checkToggle = (field, subField) => {
     if (data[field] !== undefined && data[field] !== current[field]) {
