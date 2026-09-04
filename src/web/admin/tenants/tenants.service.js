@@ -1152,17 +1152,18 @@ const resolveTenantFeeRate = (tenant, source) => {
   return 0.0;
 };
 
-const resolveCustomerName = (order) => {
+const resolveCustomerName = (order, appUsersMap = null) => {
   if (order.notes) {
     const match = order.notes.match(/Customer:\s*([^|]+)/i);
     if (match && match[1].trim()) return match[1].trim();
   }
-  const userName = order.user?.name;
-  if (userName && userName.trim() && userName.trim().toLowerCase() !== "test" && userName.trim().toLowerCase() !== "guest customer") {
-    return userName.trim();
+  if (order.customerId) {
+    if (appUsersMap && appUsersMap.has(order.customerId)) {
+      const u = appUsersMap.get(order.customerId);
+      if (u) return u.name || u.phone || "Customer Walk-in";
+    }
   }
   if (order.customerPhone) return order.customerPhone;
-  if (order.user?.phone) return order.user.phone;
   return "Customer Walk-in";
 };
 
@@ -1172,11 +1173,14 @@ const syncAllTenantOrders = async () => {
     const tenants = await mainPrisma.tenant.findMany({ where: { isActive: true } });
     let totalSynced = 0;
 
+    const appUsers = await mainPrisma.appUser.findMany();
+    const appUsersMap = new Map(appUsers.map(u => [u.id, u]));
+
     for (const tenant of tenants) {
       try {
         const tenantDb = getTenantClient(tenant.dbUrl);
         const orders = await tenantDb.order.findMany({
-          include: { user: true, branch: true }
+          include: { branch: true }
         });
 
         for (const order of orders) {
@@ -1184,7 +1188,8 @@ const syncAllTenantOrders = async () => {
             ? Number(order.feeRate)
             : resolveTenantFeeRate(tenant, order.source);
 
-          const cName = resolveCustomerName(order);
+          const cName = resolveCustomerName(order, appUsersMap);
+          const cPhone = order.customerPhone || (order.customerId ? appUsersMap.get(order.customerId)?.phone : null) || null;
 
           await mainPrisma.aggregatedOrder.upsert({
             where: { id: `${tenant.id}_${order.id}` },
@@ -1198,7 +1203,7 @@ const syncAllTenantOrders = async () => {
               total: order.total,
               notes: order.notes,
               customerName: cName,
-              customerPhone: order.customerPhone || order.user?.phone || null,
+              customerPhone: cPhone,
               branchName: order.branch?.name || "Register Terminal",
               feeRate: resolvedFee,
               source: order.source || "pos",
@@ -1216,7 +1221,7 @@ const syncAllTenantOrders = async () => {
               total: order.total,
               notes: order.notes,
               customerName: cName,
-              customerPhone: order.customerPhone || order.user?.phone || null,
+              customerPhone: cPhone,
               branchName: order.branch?.name || "Register Terminal",
               feeRate: resolvedFee,
               source: order.source || "pos",
@@ -1759,9 +1764,13 @@ const syncTenantOrders = async (tenantId) => {
     }
   });
 
+  const appUsers = await mainPrisma.appUser.findMany();
+  const appUsersMap = new Map(appUsers.map(u => [u.id, u]));
+
   let syncedCount = 0;
   for (const order of orders) {
-    const cName = resolveCustomerName(order);
+    const cName = resolveCustomerName(order, appUsersMap);
+    const cPhone = order.customerPhone || (order.customerId ? appUsersMap.get(order.customerId)?.phone : null) || null;
     await mainPrisma.aggregatedOrder.upsert({
       where: { id: `${tenant.id}_${order.id}` },
       create: {
@@ -1774,7 +1783,7 @@ const syncTenantOrders = async (tenantId) => {
         total: order.total,
         notes: order.notes,
         customerName: cName,
-        customerPhone: order.customerPhone || order.user?.phone || null,
+        customerPhone: cPhone,
         branchName: order.branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
         source: order.source || "pos",
@@ -1792,7 +1801,7 @@ const syncTenantOrders = async (tenantId) => {
         total: order.total,
         notes: order.notes,
         customerName: cName,
-        customerPhone: order.customerPhone || order.user?.phone || null,
+        customerPhone: cPhone,
         branchName: order.branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
         source: order.source || "pos",
