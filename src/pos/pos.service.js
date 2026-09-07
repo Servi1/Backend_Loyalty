@@ -126,6 +126,15 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
   const itemsTotal = items.reduce((sum, i) => sum + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
   const finalTotal = (total !== undefined && total !== null && Number(total) > 0) ? Number(total) : itemsTotal;
 
+  // Validate if userId exists in tenantDb user table (since SuperAdmins or BrandAdmins from main DB might not be in tenantDb.user)
+  let validUserId = null;
+  if (userId) {
+    const staffUser = await db.user.findUnique({ where: { id: userId } });
+    if (staffUser) {
+      validUserId = userId;
+    }
+  }
+
   const order = await db.order.create({
     data: {
       orderNumber,
@@ -135,7 +144,7 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
       feeRate,
       notes,
       branchId,
-      userId,
+      userId: validUserId || undefined,
       tableId,
       customOrderTypeId: orderData.customOrderTypeId || undefined,
       customerId: resolvedCustomerId || undefined,

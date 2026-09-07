@@ -156,23 +156,63 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
   if (branchId) {
     const branch = await db.branch.findUnique({ where: { id: branchId } });
     if (branch) {
-      const openCheck = isBranchOpenNow(branch);
-      if (!openCheck.isOpen) {
-        throw new ApiError(400, openCheck.reason);
+      const isScheduledOrManual = type === "SCHEDULED" || status === "HALTED" || source === "pos" || Boolean(selectedSlot);
+      if (!isScheduledOrManual) {
+        const openCheck = isBranchOpenNow(branch);
+        if (!openCheck.isOpen) {
+          throw new ApiError(400, openCheck.reason);
+        }
       }
     }
   }
 
+  // Validate if userId exists in tenantDb user table (since SuperAdmins or BrandAdmins from main DB might not be in tenantDb.user)
+  let validUserId = null;
+  if (userId) {
+    const staffUser = await db.user.findUnique({ where: { id: userId } });
+    if (staffUser) {
+      validUserId = userId;
+    }
+  }
+
+const normalizePhone = (rawPhone) => {
+  if (!rawPhone) return "";
+  let digits = rawPhone.toString().trim().replace(/[\s\-\(\)]/g, "");
+  if (digits.startsWith("00966")) {
+    digits = "+966" + digits.substring(5);
+  }
+  if (digits.startsWith("+966")) {
+    let rest = digits.substring(4);
+    if (rest.startsWith("0")) rest = rest.substring(1);
+    return "+966" + rest;
+  }
+  if (digits.startsWith("966")) {
+    let rest = digits.substring(3);
+    if (rest.startsWith("0")) rest = rest.substring(1);
+    return "+966" + rest;
+  }
+  if (digits.startsWith("0")) {
+    digits = digits.substring(1);
+  }
+  if (/^5\d{8}$/.test(digits)) {
+    return "+966" + digits;
+  }
+  if (!digits.startsWith("+") && digits.length >= 9) {
+    return "+966" + digits;
+  }
+  return digits.startsWith("+") ? digits : `+${digits}`;
+};
+
   let finalCustomerId = customerId;
-  if (customerPhone) {
-    const cleanedPhone = customerPhone.trim();
+  let normalizedCustomerPhone = customerPhone ? normalizePhone(customerPhone) : null;
+  if (normalizedCustomerPhone) {
     let appUser = await mainPrisma.appUser.findUnique({
-      where: { phone: cleanedPhone }
+      where: { phone: normalizedCustomerPhone }
     });
     if (!appUser) {
       appUser = await mainPrisma.appUser.create({
         data: {
-          phone: cleanedPhone,
+          phone: normalizedCustomerPhone,
           name: "Guest Client"
         }
       });
@@ -281,9 +321,9 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
     data: {
       orderNumber: generateOrderNumber(),
       status: status || "PENDING",
-      userId: userId || null,
+      userId: validUserId || null,
       customerId: finalCustomerId || null,
-      customerPhone: customerPhone || null,
+      customerPhone: normalizedCustomerPhone || customerPhone || null,
       branchId,
       tableId: tableId || null,
       qrCashierId: qrCashierId || null,
@@ -304,8 +344,8 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
     include: { items: { include: { menuItem: true } }, branch: true, customOrderType: true },
   });
 
-  if (userId) {
-    const user = await mainPrisma.appUser.findUnique({ where: { id: userId } });
+  if (finalCustomerId) {
+    const user = await mainPrisma.appUser.findUnique({ where: { id: finalCustomerId } });
     order.user = user;
   }
 
