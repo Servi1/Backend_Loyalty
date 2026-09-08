@@ -1464,6 +1464,53 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     duration: `${Math.floor(20 + (o.total % 40))} min`,
   }));
 
+  // Auto-backfill points transactions for COMPLETED orders created before wallet auto-creation
+  const loyaltyService = require("../../tenant/loyalty/loyalty.service");
+  let updatedTx = false;
+  for (const o of orders) {
+    if ((o.status || "").toUpperCase() === "COMPLETED" && (o.paymentMethod || "").toLowerCase() !== "points") {
+      const tx = wallet?.transactions?.find(
+        (t) => (t.orderNumber && t.orderNumber === o.orderNumber) ||
+               (t.orderId && t.orderId === o.id) ||
+               (t.description && t.description.includes(o.orderNumber))
+      );
+      if (!tx) {
+        let earnRate = 0.0;
+        if (o.loyaltyEarnRate !== undefined && o.loyaltyEarnRate !== null && Number(o.loyaltyEarnRate) === 0) {
+          earnRate = 0.0;
+        } else {
+          const oTenant = targetTenants.find((t) => t.id === o.tenantId);
+          if (!oTenant || oTenant.loyaltyEnabled === false) continue;
+          earnRate = Number(oTenant.loyaltyEarnRate !== undefined && oTenant.loyaltyEarnRate !== null ? oTenant.loyaltyEarnRate : 1.0);
+        }
+        const pointsToEarn = Math.floor(Number(o.total || 0) * earnRate);
+        if (pointsToEarn > 0) {
+          try {
+            await loyaltyService.earnPoints(null, customerId, pointsToEarn, `Earned on Order #${o.orderNumber}`, o.tenantId, {
+              orderId: o.id,
+              orderNumber: o.orderNumber
+            });
+            updatedTx = true;
+          } catch (e) {
+            console.error(`[LOYALTY AUTO-BACKFILL] Failed to award points for order ${o.orderNumber}:`, e.message);
+          }
+        }
+      }
+    }
+  }
+
+  if (updatedTx) {
+    wallet = await mainPrisma.wallet.findUnique({
+      where: { appUserId: customerId },
+      include: {
+        transactions: {
+          orderBy: { createdAt: "desc" },
+          take: 100,
+        },
+      },
+    });
+  }
+
   const pointsHistory = (wallet?.transactions || []).map((t) => {
     const desc = (t.description || "").toLowerCase();
     let type = t.points >= 0 ? "earned" : "redeemed";

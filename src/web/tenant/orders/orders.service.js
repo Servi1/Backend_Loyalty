@@ -563,11 +563,14 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
         where: { id: updated.customerId },
         include: { wallet: true }
       });
-      if (customer && customer.wallet) {
+      if (customer) {
+        const loyaltyService = require("../loyalty/loyalty.service");
+        const wallet = customer.wallet || (await loyaltyService.getWallet(db, updated.customerId));
+
         const description = `Earned on Order #${updated.orderNumber}`;
         const tx = await mainPrisma.walletTransaction.findFirst({
           where: {
-            walletId: customer.wallet.id,
+            walletId: wallet.id,
             OR: [
               { orderNumber: updated.orderNumber },
               { orderId: updated.id },
@@ -591,7 +594,6 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
 
           const pointsToEarn = Math.floor(updated.total * earnRate);
           if (pointsToEarn > 0) {
-            const loyaltyService = require("../loyalty/loyalty.service");
             await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId, {
               orderId: updated.id,
               orderNumber: updated.orderNumber
