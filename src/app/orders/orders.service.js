@@ -257,37 +257,45 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   }
 
   let subtotal = 0;
-  const orderItems = items.map((item) => {
-    const targetId = item.menuItemId || item.itemId || item.id;
-    const menuItem = menuItems.find((m) => m.id === targetId);
+  const orderItems = items
+    .filter((item) => Boolean(item && (item.menuItemId || item.itemId || item.id)))
+    .map((item) => {
+      const targetId = item.menuItemId || item.itemId || item.id;
+      const menuItem = menuItems.find((m) => m.id === targetId);
+      if (!menuItem) return null;
 
-    let modifiersPrice = 0;
-    if (item.selectedModifiers && Array.isArray(item.selectedModifiers)) {
-      item.selectedModifiers.forEach((mod) => {
-        if (mod.options && Array.isArray(mod.options)) {
-          mod.options.forEach((opt) => {
-            modifiersPrice += Number(opt.priceModifier || 0);
-          });
-        }
-      });
-    }
+      let modifiersPrice = 0;
+      if (item.selectedModifiers && Array.isArray(item.selectedModifiers)) {
+        item.selectedModifiers.forEach((mod) => {
+          if (mod.options && Array.isArray(mod.options)) {
+            mod.options.forEach((opt) => {
+              modifiersPrice += Number(opt.priceModifier || 0);
+            });
+          }
+        });
+      }
 
-    const itemPrice = (menuItem ? menuItem.price : 0) + modifiersPrice;
-    const lineTotal = itemPrice * (item.quantity || 1);
-    subtotal += lineTotal;
+      const itemPrice = menuItem.price + modifiersPrice;
+      const lineTotal = itemPrice * (item.quantity || 1);
+      subtotal += lineTotal;
 
-    return {
-      menuItemId: targetId,
-      quantity: item.quantity || 1,
-      price: itemPrice,
-      notes: item.notes || null,
-      selectedModifiers: item.selectedModifiers || [],
-      staffId: item.staffId || null,
-      staffName: item.staffName || null,
-      selectedSlot: item.selectedSlot || null,
-      selectedSlotDate: item.selectedSlotDate || null,
-    };
-  });
+      return {
+        menuItemId: targetId,
+        quantity: item.quantity || 1,
+        price: itemPrice,
+        notes: item.notes || null,
+        selectedModifiers: item.selectedModifiers || [],
+        staffId: item.staffId || null,
+        staffName: item.staffName || null,
+        selectedSlot: item.selectedSlot || null,
+        selectedSlotDate: item.selectedSlotDate || null,
+      };
+    })
+    .filter(Boolean);
+
+  if (orderItems.length === 0) {
+    throw new ApiError(400, "Order must contain valid menu items");
+  }
 
   if (typeof total === "number" && Math.abs(total - subtotal) > 0.01) {
     console.warn(
