@@ -1486,13 +1486,20 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
 
   const orderHistory = orders.map((o) => {
     const earnPointsTx = (wallet?.transactions || []).find(
-      (tx) => (tx.orderNumber && tx.orderNumber === o.orderNumber) ||
-              (tx.orderId && tx.orderId === o.id) ||
-              (tx.description && tx.description.includes(o.orderNumber))
+      (tx) => tx.points > 0 &&
+              ((tx.orderNumber && tx.orderNumber === o.orderNumber) ||
+               (tx.orderId && tx.orderId === o.id) ||
+               (tx.description && tx.description.includes(o.orderNumber)))
     );
     let pointsEarned = 0;
     if ((o.status || "").toUpperCase() === "COMPLETED" && (o.paymentMethod || "").toLowerCase() !== "points") {
-      pointsEarned = earnPointsTx ? Math.abs(earnPointsTx.points) : Math.floor(o.total);
+      if (earnPointsTx) {
+        pointsEarned = Math.abs(earnPointsTx.points);
+      } else if (o.loyaltyEarnRate !== undefined && o.loyaltyEarnRate !== null && Number(o.loyaltyEarnRate) > 0) {
+        pointsEarned = Math.floor(Number(o.total || 0) * Number(o.loyaltyEarnRate));
+      } else {
+        pointsEarned = 0;
+      }
     }
 
     return {

@@ -362,13 +362,17 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   const finalQrCashierId = qrCashierId || cashierId || null;
   const orderSource = source || (tableId ? "qr_table" : (finalQrCashierId ? "qr_cashier" : "app"));
 
-  // Look up fee percentage from main database using order channel source
+  // Look up fee percentage and loyalty earn rate from main database using order channel source
   let feeRate = 0.0;
+  let orderLoyaltyEarnRate = 0.0;
   if (tenantId) {
     try {
       const tenantObj = tenant || (await mainPrisma.tenant.findUnique({ where: { id: tenantId } }));
       if (tenantObj) {
         feeRate = resolveTenantFeeRate(tenantObj, orderSource);
+        if (tenantObj.loyaltyEnabled !== false) {
+          orderLoyaltyEarnRate = earnRate !== undefined && earnRate !== null ? parseFloat(earnRate) : Number(tenantObj.loyaltyEarnRate !== undefined && tenantObj.loyaltyEarnRate !== null ? tenantObj.loyaltyEarnRate : 1.0);
+        }
       }
     } catch (e) {
       console.error("Failed to query tenant fee settings:", e.message);
@@ -404,6 +408,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       notes: finalNotes || null,
       total: subtotal,
       feeRate,
+      loyaltyEarnRate: orderLoyaltyEarnRate,
       source: orderSource,
       paymentMethod: paymentMethod || "cash",
       pointsRedeemed: pointsRedeemed,
@@ -468,6 +473,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
         total: order.total,
         notes: order.notes,
         feeRate: order.feeRate,
+        loyaltyEarnRate: order.loyaltyEarnRate,
         paymentMethod: paymentMethod || "cash",
         pointsRedeemed: pointsRedeemed,
         tenantId: tenantId,

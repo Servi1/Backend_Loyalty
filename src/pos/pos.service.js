@@ -109,17 +109,23 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
     }
   }
 
-  // Lookup fee percentage for POS channel
+  // Lookup fee percentage and loyalty earn rate for POS channel
   let feeRate = 0.0;
+  let loyaltyEarnRate = 0.0;
   if (tenantId) {
     try {
       const mainPrisma = require("../config/prisma");
       const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-      if (tenant && tenant.feePos !== undefined && tenant.feePos !== null) {
-        feeRate = Number(tenant.feePos);
+      if (tenant) {
+        if (tenant.feePos !== undefined && tenant.feePos !== null) {
+          feeRate = Number(tenant.feePos);
+        }
+        if (tenant.loyaltyEnabled !== false && tenant.loyaltyAddPoints !== false) {
+          loyaltyEarnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+        }
       }
     } catch (e) {
-      console.error("[POS ORDER] Failed to lookup fee rate:", e.message);
+      console.error("[POS ORDER] Failed to lookup fee or loyalty rate:", e.message);
     }
   }
 
@@ -142,6 +148,7 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
       type: type || "DINE_IN",
       total: finalTotal,
       feeRate,
+      loyaltyEarnRate,
       notes,
       branchId,
       userId: validUserId || undefined,
@@ -249,6 +256,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
+        loyaltyEarnRate: order.loyaltyEarnRate ?? 0.0,
         source: order.source || "pos",
         staffId: order.staffId || null,
         staffName: order.staffName || null,
@@ -265,6 +273,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
         feeRate: order.feeRate || 0.0,
+        loyaltyEarnRate: order.loyaltyEarnRate ?? 0.0,
         source: order.source || "pos",
         staffId: order.staffId || null,
         staffName: order.staffName || null,
@@ -406,11 +415,18 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
 
           if (!tx) {
             const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-            const earnRate = tenant ? tenant.loyaltyEarnRate : 1.0;
-            const pointsToEarn = Math.floor(updated.total * earnRate);
-            if (pointsToEarn > 0) {
-              const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
-              await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId, { source: "pos", orderId: updated.id, orderNumber: updated.orderNumber });
+            if (!tenant || tenant.loyaltyEnabled === false || tenant.loyaltyAddPoints === false) {
+              console.log(`[POS LOYALTY] Loyalty disabled or addPoints false. Skipping points for order #${updated.orderNumber}`);
+            } else {
+              const earnRate = (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null)
+                ? Number(updated.loyaltyEarnRate)
+                : Number(tenant.loyaltyEarnRate || 0.0);
+
+              const pointsToEarn = Math.floor(updated.total * earnRate);
+              if (pointsToEarn > 0) {
+                const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
+                await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId, { source: "pos", orderId: updated.id, orderNumber: updated.orderNumber });
+              }
             }
           }
         }

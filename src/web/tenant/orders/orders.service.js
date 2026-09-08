@@ -63,6 +63,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
         feeRate: resolvedFeeRate,
+        loyaltyEarnRate: order.loyaltyEarnRate ?? 0.0,
         source: order.source || "pos",
         staffId: order.staffId || null,
         staffName: order.staffName || null,
@@ -80,6 +81,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
         feeRate: resolvedFeeRate,
+        loyaltyEarnRate: order.loyaltyEarnRate ?? 0.0,
         source: order.source || "pos",
         staffId: order.staffId || null,
         staffName: order.staffName || null,
@@ -293,16 +295,23 @@ const normalizePhone = (rawPhone) => {
 
   const orderSource = source || (tableId ? "qr_table" : (qrCashierId ? "qr_cashier" : "pos"));
 
-  // Look up fee percentage from main database
+  // Look up fee percentage and loyalty earn rate from main database
   let feeRate = 0.0;
+  let loyaltyEarnRate = 0.0;
   if (tenantId) {
     try {
       const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
       if (tenant) {
         feeRate = resolveTenantFeeRate(tenant, orderSource);
+        if (tenant.loyaltyEnabled !== false) {
+          const src = (orderSource || "").toLowerCase();
+          if (src !== "pos" || tenant.loyaltyAddPoints !== false) {
+            loyaltyEarnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+          }
+        }
       }
     } catch (e) {
-      console.error("Failed to query tenant fee settings:", e.message);
+      console.error("Failed to query tenant fee and loyalty settings:", e.message);
     }
   }
 
@@ -331,6 +340,7 @@ const normalizePhone = (rawPhone) => {
       notes,
       total: finalTotal,
       feeRate,
+      loyaltyEarnRate,
       posUnit: posUnit || null,
       source: orderSource,
       staffId: staffId || null,
@@ -360,6 +370,7 @@ const normalizePhone = (rawPhone) => {
         total: order.total,
         notes: order.notes,
         feeRate: order.feeRate,
+        loyaltyEarnRate: order.loyaltyEarnRate,
         tenantId: tenantId,
         branchId: order.branchId,
         tableId: order.tableId,
@@ -563,7 +574,14 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
 
         if (!tx) {
           const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-          const earnRate = tenant ? tenant.loyaltyEarnRate : 1.0;
+          if (!tenant || tenant.loyaltyEnabled === false) {
+            console.log(`[LOYALTY] Tenant loyalty disabled or not found. Skipping point award for order #${updated.orderNumber}`);
+            return;
+          }
+          const earnRate = (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null)
+            ? Number(updated.loyaltyEarnRate)
+            : Number(tenant.loyaltyEarnRate || 0.0);
+
           const pointsToEarn = Math.floor(updated.total * earnRate);
           if (pointsToEarn > 0) {
             const loyaltyService = require("../loyalty/loyalty.service");
