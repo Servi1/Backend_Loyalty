@@ -159,40 +159,11 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
     }
   }
 
-  // Determine Tier and Daily Cap
+  // Determine Tier
   const customerTier = getCustomerTierDetails(customer, wallet, tenantTiers);
 
-  if (customerTier.dailyCapType === "blocked" || customerTier.dailyCap === 0) {
-    console.log(`[LOYALTY] Points earning blocked: Customer tier "${customerTier.name}" is Blocked from earning points.`);
-    return wallet;
-  }
-
-  let finalPointsToEarn = points;
-
-  if (customerTier.dailyCapType === "capped" && Number(customerTier.dailyCap) > 0) {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const todayTxs = await mainPrisma.walletTransaction.aggregate({
-      _sum: { points: true },
-      where: {
-        walletId: wallet.id,
-        points: { gt: 0 },
-        createdAt: { gte: startOfDay },
-      },
-    });
-
-    const earnedToday = todayTxs._sum.points || 0;
-    const remainingCap = Math.max(0, Number(customerTier.dailyCap) - earnedToday);
-
-    if (remainingCap <= 0) {
-      console.log(`[LOYALTY] Points earning skipped: Daily cap of ${customerTier.dailyCap} pts reached for tier ${customerTier.name}.`);
-      return wallet;
-    }
-
-    finalPointsToEarn = Math.min(points, remainingCap);
-  }
-
+  // Earning points is UNLIMITED
+  const finalPointsToEarn = points;
   if (finalPointsToEarn <= 0) return wallet;
 
   const [updatedWallet] = await mainPrisma.$transaction([
@@ -220,9 +191,13 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
  * @param {object} opts - Optional { orderId, orderNumber, source } to link transaction
  */
 const redeemPoints = async (db, customerId, points, description, tenantId, opts = {}) => {
+  let tenantTiers = DEFAULT_LOYALTY_TIERS;
   if (tenantId) {
     const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
     if (tenant) {
+      if (Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
+        tenantTiers = tenant.loyaltyTiers;
+      }
       // Main active toggle affects ALL channels
       if (tenant.loyaltyEnabled === false) {
         throw new ApiError(400, "Loyalty points program is currently disabled for this brand.");
@@ -241,6 +216,39 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
   const wallet = await mainPrisma.wallet.findUnique({ where: { appUserId: customerId } });
   if (!wallet) throw new ApiError(404, "Wallet not found");
   if (wallet.points < points) throw new ApiError(400, "Insufficient points");
+
+  // Enforce Tier Daily Redemption Cap
+  const customerTier = getCustomerTierDetails(customer, wallet, tenantTiers);
+
+  if (customerTier.dailyCapType === "blocked" || customerTier.dailyCap === 0) {
+    throw new ApiError(400, `Point redemption is blocked for ${customerTier.name} tier.`);
+  }
+
+  if (customerTier.dailyCapType === "capped" && Number(customerTier.dailyCap) > 0) {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const todayRedeemTxs = await mainPrisma.walletTransaction.aggregate({
+      _sum: { points: true },
+      where: {
+        walletId: wallet.id,
+        points: { lt: 0 },
+        createdAt: { gte: startOfDay },
+      },
+    });
+
+    const redeemedToday = Math.abs(todayRedeemTxs._sum.points || 0);
+    const dailyCap = Number(customerTier.dailyCap);
+    const remainingRedeemCap = Math.max(0, dailyCap - redeemedToday);
+
+    if (remainingRedeemCap <= 0) {
+      throw new ApiError(400, `Daily redemption cap of ${dailyCap} pts reached for ${customerTier.name} tier.`);
+    }
+
+    if (points > remainingRedeemCap) {
+      throw new ApiError(400, `Cannot redeem ${points} pts. Your remaining daily redemption cap for ${customerTier.name} tier is ${remainingRedeemCap} pts.`);
+    }
+  }
 
   // Prevent duplicate points redemption for the exact same order
   if (opts.orderId || opts.orderNumber) {
