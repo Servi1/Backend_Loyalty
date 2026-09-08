@@ -13,6 +13,27 @@ const loyaltyService = require("../../web/tenant/loyalty/loyalty.service");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const normalisePhone = (raw) => {
+  if (!raw) return "";
+  let digits = raw.toString().trim().replace(/\D/g, "");
+  while (digits.length > 9) {
+    if (digits.startsWith("966")) {
+      digits = digits.substring(3);
+    } else if (digits.startsWith("0")) {
+      digits = digits.substring(1);
+    } else {
+      break;
+    }
+  }
+  if (digits.startsWith("0")) {
+    digits = digits.substring(1);
+  }
+  if (digits.length === 9) {
+    return "+966" + digits;
+  }
+  return raw.startsWith("+") ? raw : `+${digits}`;
+};
+
 const resolveTenantFeeRate = (tenant, source) => {
   if (!tenant) return 0.0;
   const src = (source || "pos").toLowerCase();
@@ -276,7 +297,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   // Lookup or create customer account by phone number in central AppUser table
   let finalCustomerId = userId || null;
   if (customerPhone) {
-    const cleanedPhone = customerPhone.trim();
+    const cleanedPhone = normalisePhone(customerPhone);
     try {
       let appUser = await mainPrisma.appUser.findUnique({
         where: { phone: cleanedPhone }
@@ -369,7 +390,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     data: {
       orderNumber,
       customerId: finalCustomerId,
-      customerPhone: customerPhone || null,
+      customerPhone: customerPhone ? normalisePhone(customerPhone) : null,
       branchId,
       tableId: tableId || null,
       qrCashierId: finalQrCashierId,

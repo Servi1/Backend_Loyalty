@@ -23,9 +23,24 @@ const signToken = (userId) =>
   });
 
 const normalisePhone = (raw) => {
-  let phone = String(raw).replace(/[\s\-().]/g, "");
-  if (!phone.startsWith("+")) phone = "+" + phone;
-  return phone;
+  if (!raw) return "";
+  let digits = raw.toString().trim().replace(/\D/g, "");
+  while (digits.length > 9) {
+    if (digits.startsWith("966")) {
+      digits = digits.substring(3);
+    } else if (digits.startsWith("0")) {
+      digits = digits.substring(1);
+    } else {
+      break;
+    }
+  }
+  if (digits.startsWith("0")) {
+    digits = digits.substring(1);
+  }
+  if (digits.length === 9) {
+    return "+966" + digits;
+  }
+  return raw.startsWith("+") ? raw : `+${digits}`;
 };
 
 // ─── sendOtp ─────────────────────────────────────────────────────────────────

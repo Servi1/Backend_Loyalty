@@ -131,7 +131,7 @@ const create = async (data) => {
   }
 
   // 4. Save tenant to main registry
-  const { adminEmail, adminPassword, ...tenantData } = data;
+  const { adminEmail, adminPassword, adminName, ...tenantData } = data;
   const tenant = await mainPrisma.tenant.create({
     data: {
       ...tenantData,

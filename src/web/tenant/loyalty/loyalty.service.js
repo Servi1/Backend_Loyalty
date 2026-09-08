@@ -293,16 +293,20 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
 const searchCustomers = async (db, search) => {
   const query = search ? search.trim() : "";
   if (!query) return [];
+  const cleanDigits = query.replace(/\D/g, "");
+
+  const searchConditions = [
+    { name: { contains: query, mode: "insensitive" } },
+    { phone: { contains: query, mode: "insensitive" } },
+    { email: { contains: query, mode: "insensitive" } },
+  ];
+  if (cleanDigits) {
+    searchConditions.push({ phone: { contains: cleanDigits, mode: "insensitive" } });
+  }
 
   // Search globally in AppUser registry
   const customers = await mainPrisma.appUser.findMany({
-    where: {
-      OR: [
-        { name: { contains: query, mode: "insensitive" } },
-        { phone: { contains: query, mode: "insensitive" } },
-        { email: { contains: query, mode: "insensitive" } },
-      ],
-    },
+    where: { OR: searchConditions },
     include: { wallet: true },
     take: 15,
   });
@@ -320,6 +324,27 @@ const searchCustomers = async (db, search) => {
       tierIcon: tier.icon,
     };
   });
+};
+
+const getCustomerByPhone = async (db, phone) => {
+  if (!phone) return null;
+  const normalized = normalizePhone(phone);
+  const customer = await mainPrisma.appUser.findUnique({
+    where: { phone: normalized },
+    include: { wallet: true },
+  });
+  if (!customer) return null;
+  const tier = getCustomerTierDetails(customer, customer.wallet, DEFAULT_LOYALTY_TIERS);
+  return {
+    id: customer.id,
+    name: customer.name || "Unnamed",
+    phone: customer.phone,
+    email: customer.email,
+    points: customer.wallet?.points || 0,
+    tier: tier.name,
+    tierLevel: tier.level,
+    tierIcon: tier.icon,
+  };
 };
 
 const getAllCustomersForReport = async (db, tenantId) => {
@@ -378,14 +403,15 @@ const getAllTransactionsForReport = async (db, tenantId) => {
 
 const createCustomer = async (db, { name, phone, email, points = 0 }, tenantId) => {
   if (!phone) throw new ApiError(400, "Phone number is required");
+  const normalizedPhone = normalizePhone(phone);
 
-  let customer = await mainPrisma.appUser.findUnique({ where: { phone } });
+  let customer = await mainPrisma.appUser.findUnique({ where: { phone: normalizedPhone } });
   if (customer) {
     throw new ApiError(400, "Customer with this phone already exists");
   } else {
     // Create new global user
     customer = await mainPrisma.appUser.create({
-      data: { name, phone, email },
+      data: { name, phone: normalizedPhone, email },
     });
   }
 
