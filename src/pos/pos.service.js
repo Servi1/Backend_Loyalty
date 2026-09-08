@@ -418,9 +418,12 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
             if (!tenant || tenant.loyaltyEnabled === false || tenant.loyaltyAddPoints === false) {
               console.log(`[POS LOYALTY] Loyalty disabled or addPoints false. Skipping points for order #${updated.orderNumber}`);
             } else {
-              const earnRate = (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null)
-                ? Number(updated.loyaltyEarnRate)
-                : Number(tenant.loyaltyEarnRate || 0.0);
+              let earnRate = 0.0;
+              if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null && Number(updated.loyaltyEarnRate) === 0) {
+                earnRate = 0.0;
+              } else {
+                earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+              }
 
               const pointsToEarn = Math.floor(updated.total * earnRate);
               if (pointsToEarn > 0) {

@@ -371,7 +371,9 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       if (tenantObj) {
         feeRate = resolveTenantFeeRate(tenantObj, orderSource);
         if (tenantObj.loyaltyEnabled !== false) {
-          orderLoyaltyEarnRate = earnRate !== undefined && earnRate !== null ? parseFloat(earnRate) : Number(tenantObj.loyaltyEarnRate !== undefined && tenantObj.loyaltyEarnRate !== null ? tenantObj.loyaltyEarnRate : 1.0);
+          orderLoyaltyEarnRate = Number(tenantObj.loyaltyEarnRate !== undefined && tenantObj.loyaltyEarnRate !== null ? tenantObj.loyaltyEarnRate : 1.0);
+        } else {
+          orderLoyaltyEarnRate = 0.0;
         }
       }
     } catch (e) {

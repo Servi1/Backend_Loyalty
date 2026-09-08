@@ -578,9 +578,12 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
             console.log(`[LOYALTY] Tenant loyalty disabled or not found. Skipping point award for order #${updated.orderNumber}`);
             return;
           }
-          const earnRate = (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null)
-            ? Number(updated.loyaltyEarnRate)
-            : Number(tenant.loyaltyEarnRate || 0.0);
+          let earnRate = 0.0;
+          if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null && Number(updated.loyaltyEarnRate) === 0) {
+            earnRate = 0.0;
+          } else {
+            earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+          }
 
           const pointsToEarn = Math.floor(updated.total * earnRate);
           if (pointsToEarn > 0) {
