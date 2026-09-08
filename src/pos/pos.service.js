@@ -186,22 +186,31 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
     try {
       const mainPrisma = require("../config/prisma");
       const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-      const earnRate = tenant ? tenant.loyaltyEarnRate : 1.0;
-      const pointsToEarn = Math.floor(order.total * earnRate);
-      
-      if (pointsToEarn > 0) {
-        const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
-        await loyaltyService.earnPoints(
-          db,
-          order.customerId,
-          pointsToEarn,
-          `Earned on Order #${order.orderNumber}`,
-          tenantId,
-          { source: "pos", orderId: order.id, orderNumber: order.orderNumber }
-        );
+      if (!tenant || tenant.loyaltyEnabled === false || tenant.loyaltyAddPoints === false) {
+        console.log(`[POS LOYALTY] Loyalty disabled or addPoints false. Skipping points for order #${order.orderNumber}`);
+      } else {
+        let earnRate = 0.0;
+        if (order.loyaltyEarnRate !== undefined && order.loyaltyEarnRate !== null && Number(order.loyaltyEarnRate) === 0) {
+          earnRate = 0.0;
+        } else {
+          earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+        }
+
+        const pointsToEarn = Math.floor(order.total * earnRate);
+        if (pointsToEarn > 0) {
+          const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
+          await loyaltyService.earnPoints(
+            db,
+            order.customerId,
+            pointsToEarn,
+            `Earned on Order #${order.orderNumber}`,
+            tenantId,
+            { source: "pos", orderId: order.id, orderNumber: order.orderNumber }
+          );
+        }
       }
     } catch (err) {
-      console.error("[POS ORDER] Failed to award points on order creation:", err.message);
+      console.error("Failed to auto-award points on immediate POS order completion:", err.message);
     }
   }
 
