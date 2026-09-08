@@ -1756,16 +1756,21 @@ const getSuperAdminOrderDetail = async (tenantId, orderId) => {
   if (!isPointsPayment && (order.status || "").toUpperCase() === "COMPLETED") {
     const earnTx = await mainPrisma.walletTransaction.findFirst({
       where: {
-        orderId: order.id,
-        type: "EARN"
+        points: { gt: 0 },
+        OR: [
+          { orderId: order.id },
+          { orderNumber: order.orderNumber },
+          { description: { contains: order.orderNumber } }
+        ]
       }
     });
 
     if (earnTx) {
-      pointsEarned = earnTx.points;
+      pointsEarned = Math.abs(earnTx.points);
+    } else if (order.loyaltyEarnRate !== undefined && order.loyaltyEarnRate !== null && Number(order.loyaltyEarnRate) > 0) {
+      pointsEarned = Math.floor(Number(order.total || 0) * Number(order.loyaltyEarnRate));
     } else {
-      const earnRate = Number(tenant.loyaltyEarnRate || 1.0);
-      pointsEarned = Math.floor(Number(order.total || 0) * earnRate);
+      pointsEarned = 0;
     }
   }
 
