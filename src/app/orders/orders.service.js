@@ -240,7 +240,14 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   }
 
   // Validate and price items from the database (never trust client prices)
-  const menuItemIds = items.map((i) => i.menuItemId);
+  const menuItemIds = items
+    .map((i) => i.menuItemId || i.itemId || i.id)
+    .filter(Boolean);
+
+  if (menuItemIds.length === 0) {
+    throw new ApiError(400, "Order must contain valid menu items");
+  }
+
   const menuItems = await db.menuItem.findMany({
     where: { id: { in: menuItemIds }, isAvailable: true },
   });
@@ -251,7 +258,8 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
 
   let subtotal = 0;
   const orderItems = items.map((item) => {
-    const menuItem = menuItems.find((m) => m.id === item.menuItemId);
+    const targetId = item.menuItemId || item.itemId || item.id;
+    const menuItem = menuItems.find((m) => m.id === targetId);
 
     let modifiersPrice = 0;
     if (item.selectedModifiers && Array.isArray(item.selectedModifiers)) {
@@ -264,12 +272,12 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       });
     }
 
-    const itemPrice = menuItem.price + modifiersPrice;
+    const itemPrice = (menuItem ? menuItem.price : 0) + modifiersPrice;
     const lineTotal = itemPrice * (item.quantity || 1);
     subtotal += lineTotal;
 
     return {
-      menuItemId: item.menuItemId,
+      menuItemId: targetId,
       quantity: item.quantity || 1,
       price: itemPrice,
       notes: item.notes || null,

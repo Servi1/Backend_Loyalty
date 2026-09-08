@@ -254,13 +254,17 @@ const normalizePhone = (rawPhone) => {
   }
 
   // Calculate total from items
-  const menuItemIds = items.map((i) => i.menuItemId);
+  const menuItemIds = items.map((i) => i.menuItemId || i.itemId || i.id).filter(Boolean);
+  if (menuItemIds.length === 0) {
+    throw new ApiError(400, "Order must contain valid menu items");
+  }
   const menuItems = await db.menuItem.findMany({ where: { id: { in: menuItemIds } } });
 
   let subtotal = 0;
   const orderItems = items.map((item) => {
-    const menuItem = menuItems.find((m) => m.id === item.menuItemId);
-    if (!menuItem) throw new ApiError(400, `Menu item ${item.menuItemId} not found`);
+    const targetId = item.menuItemId || item.itemId || item.id;
+    const menuItem = menuItems.find((m) => m.id === targetId);
+    if (!menuItem) throw new ApiError(400, `Menu item ${targetId} not found`);
     
     let modifiersPrice = 0;
     if (item.selectedModifiers && Array.isArray(item.selectedModifiers)) {

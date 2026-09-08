@@ -163,7 +163,7 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
           quantity: Number(item.quantity) || 1,
           price: Number(item.price) || 0,
           notes: item.notes,
-          menuItemId: item.menuItemId,
+          menuItemId: item.menuItemId || item.itemId || item.id,
           selectedModifiers: item.selectedModifiers ? JSON.stringify(item.selectedModifiers) : "[]"
         }))
       }
