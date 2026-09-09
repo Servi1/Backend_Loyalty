@@ -15,7 +15,10 @@ const { Router } = require("express");
 const ctrl = require("./wallet.controller");
 const { authenticateAppUser } = require("../middlewares/appAuth.middleware");
 
-const router = Router();
+const router = Router({ mergeParams: true });
+
+// Public endpoint for customer menu to query available points balance & daily redemption limits by phone
+router.get("/public-lookup", ctrl.lookupPhone);
 
 router.use(authenticateAppUser);
 

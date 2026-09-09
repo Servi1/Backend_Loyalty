@@ -338,17 +338,21 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   }
 
   if (paymentMethod === "points") {
+    const targetUserId = finalCustomerId || userId;
+    if (!targetUserId) {
+      throw new ApiError(400, "Customer phone number is required to pay with loyalty points.");
+    }
     const redeemRate = Number(tenant?.loyaltyRedeemRate || 100.0);
     const pointsCost = Math.round(subtotal * redeemRate);
-    const wallet = await loyaltyService.getWallet(db, finalCustomerId || userId);
+    const wallet = await loyaltyService.getWallet(db, targetUserId);
     if (!wallet || wallet.points < pointsCost) {
-      throw new ApiError(400, "Insufficient points to complete this order");
+      throw new ApiError(400, `Insufficient points balance. Order requires ${pointsCost} pts, but available balance is ${wallet?.points || 0} pts.`);
     }
     pointsRedeemed = pointsCost;
     // Redeem points — link transaction to this order so the wallet history shows the order number
     await loyaltyService.redeemPoints(
       db,
-      finalCustomerId || userId,
+      targetUserId,
       pointsCost,
       `Redeemed ${pointsCost} pts for order ${orderNumber}`,
       tenantId,

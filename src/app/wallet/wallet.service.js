@@ -633,6 +633,91 @@ const addCoupon = async (db, userId, { prizeLabel, prizeImageUrl, code, expiresA
   return coupon;
 };
 
+const loyaltyService = require("../../web/tenant/loyalty/loyalty.service");
+
+const lookupWalletByPhone = async (db, tenantId, phone) => {
+  if (!phone) throw new ApiError(400, "Phone number is required");
+  const cleanedPhone = normalisePhone(phone);
+
+  const tenant = tenantId ? await mainPrisma.tenant.findUnique({ where: { id: tenantId } }) : null;
+  const redeemRate = Number(tenant?.loyaltyRedeemRate || 100.0);
+  const loyaltyEnabled = tenant ? tenant.loyaltyEnabled !== false : true;
+
+  const appUser = await mainPrisma.appUser.findUnique({ where: { phone: cleanedPhone } });
+  if (!appUser) {
+    return {
+      exists: false,
+      points: 0,
+      redeemRate,
+      equivalentSar: 0,
+      loyaltyEnabled,
+      tier: {
+        name: "Starter",
+        level: 1,
+        icon: "⭐",
+        dailyCap: 0,
+        dailyCapType: "blocked",
+        redeemedToday: 0,
+        remainingDailyCap: 0,
+      },
+    };
+  }
+
+  let wallet = await mainPrisma.wallet.findUnique({
+    where: { appUserId: appUser.id },
+  });
+
+  if (!wallet) {
+    wallet = { points: 0, lifetimeEarn: 0 };
+  }
+
+  const configuredTiers = tenant?.loyaltyTiers || [];
+  const customerTier = loyaltyService.getCustomerTierDetails(appUser, wallet, configuredTiers);
+
+  let redeemedToday = 0;
+  if (wallet.id) {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const todayRedeemTxs = await mainPrisma.walletTransaction.aggregate({
+      _sum: { points: true },
+      where: {
+        walletId: wallet.id,
+        points: { lt: 0 },
+        createdAt: { gte: startOfDay },
+      },
+    });
+    redeemedToday = Math.abs(todayRedeemTxs._sum.points || 0);
+  }
+
+  const dailyCap = Number(customerTier.dailyCap || 0);
+  const remainingDailyCap = customerTier.dailyCapType === "unlimited"
+    ? 999999
+    : customerTier.dailyCapType === "blocked"
+    ? 0
+    : Math.max(0, dailyCap - redeemedToday);
+
+  return {
+    exists: true,
+    appUserId: appUser.id,
+    customerName: appUser.name,
+    phone: appUser.phone,
+    points: wallet.points || 0,
+    redeemRate,
+    equivalentSar: Number(((wallet.points || 0) / redeemRate).toFixed(2)),
+    loyaltyEnabled,
+    tier: {
+      name: customerTier.name,
+      level: customerTier.level,
+      icon: customerTier.icon,
+      dailyCap: customerTier.dailyCap,
+      dailyCapType: customerTier.dailyCapType,
+      redeemedToday,
+      remainingDailyCap,
+    },
+  };
+};
+
 module.exports = {
   getWallet,
   getTransactions,
@@ -644,4 +729,5 @@ module.exports = {
   claimAllGifts,
   getCoupons,
   addCoupon,
+  lookupWalletByPhone,
 };
