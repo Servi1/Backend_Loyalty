@@ -115,16 +115,19 @@ const create = async (data) => {
         });
       }
 
-      // Seed default order types
-      await tenantPrisma.customOrderType.createMany({
-        data: [
-          { name: "Dine In", isActive: true },
-          { name: "Takeaway", isActive: true },
-          { name: "Delivery", isActive: true },
-          { name: "Deliver to Car", isActive: true },
-          { name: "Scheduled", isActive: true }
-        ]
-      });
+      // Seed default order types if empty
+      const existingOrderTypes = await tenantPrisma.customOrderType.findMany();
+      if (existingOrderTypes.length === 0) {
+        await tenantPrisma.customOrderType.createMany({
+          data: [
+            { name: "Dine In", isActive: true },
+            { name: "Takeaway", isActive: true },
+            { name: "Delivery", isActive: true },
+            { name: "Deliver to Car", isActive: true },
+            { name: "Scheduled", isActive: true }
+          ]
+        });
+      }
     } catch (err) {
       console.error("Failed to initialize tenant defaults:", err);
     }
@@ -206,8 +209,32 @@ const update = async (id, data) => {
 };
 
 const remove = async (id) => {
-  await getById(id);
-  // Optional: drop the database physically, or leave it for safety
+  const tenant = await getById(id);
+
+  if (tenant && tenant.dbUrl) {
+    try {
+      const urlObj = new URL(tenant.dbUrl);
+      const dbName = urlObj.pathname.replace("/", "");
+      if (dbName && dbName.startsWith("tenant_")) {
+        const mainDbUrl = process.env.DATABASE_URL;
+        const client = new Client({ connectionString: mainDbUrl });
+        await client.connect();
+        // Terminate existing active connections to tenant DB before dropping
+        await client.query(`
+          SELECT pg_terminate_backend(pg_stat_activity.pid)
+          FROM pg_stat_activity
+          WHERE pg_stat_activity.datname = '${dbName}'
+            AND pid <> pg_backend_pid();
+        `);
+        await client.query(`DROP DATABASE IF EXISTS "${dbName}";`);
+        await client.end();
+        console.log(`Successfully dropped physical database ${dbName} for tenant ${tenant.slug}`);
+      }
+    } catch (err) {
+      console.error(`Failed to drop physical DB for tenant ${tenant?.slug}:`, err.message);
+    }
+  }
+
   return mainPrisma.tenant.delete({ where: { id } });
 };
 
