@@ -1542,7 +1542,9 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     const desc = (t.description || "").toLowerCase();
     let type = t.points >= 0 ? "earned" : "redeemed";
 
-    if (desc.includes("gift sent") || desc.includes("transferred to") || desc.includes("transfer out")) {
+    if (desc.includes("refund") || desc.includes("reverse")) {
+      type = "refunded";
+    } else if (desc.includes("gift sent") || desc.includes("transferred to") || desc.includes("transfer out")) {
       type = "transferred";
     } else if (desc.includes("claimed gift") || desc.includes("transferred from") || desc.includes("received gift")) {
       type = "received";

@@ -31,13 +31,24 @@ const normalisePhone = (raw) => {
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
 
-const _formatTx = (tx) => ({
-  id: tx.id,
-  points: tx.points,
-  type: tx.points >= 0 ? "earn" : "redeem",
-  description: tx.description,
-  createdAt: tx.createdAt,
-});
+const _formatTx = (tx) => {
+  const desc = (tx.description || "").toLowerCase();
+  let type = tx.points >= 0 ? "earn" : "redeem";
+  if (desc.includes("refund") || desc.includes("reverse")) {
+    type = "refunded";
+  } else if (desc.includes("gift sent") || desc.includes("transferred to") || desc.includes("transfer out")) {
+    type = "transferred";
+  } else if (desc.includes("claimed gift") || desc.includes("transferred from") || desc.includes("received gift")) {
+    type = "received";
+  }
+  return {
+    id: tx.id,
+    points: tx.points,
+    type,
+    description: tx.description,
+    createdAt: tx.createdAt,
+  };
+};
 
 const _formatGiftDate = (date) => {
   try {

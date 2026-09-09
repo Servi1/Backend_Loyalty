@@ -354,7 +354,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       db,
       targetUserId,
       pointsCost,
-      `Redeemed ${pointsCost} pts for order ${orderNumber}`,
+      `Redeemed ${pointsCost} pts for order #${orderNumber}`,
       tenantId,
       { orderId: null, orderNumber, source: "app" } // orderId filled after order creation below
     );
