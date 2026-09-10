@@ -1623,17 +1623,46 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
   };
 };
 
+const normalizeSaudiPhone = (rawPhone) => {
+  if (!rawPhone) return "";
+  let digits = rawPhone.toString().trim().replace(/[\s\-\(\)]/g, "");
+  if (digits.startsWith("00966")) {
+    digits = "+966" + digits.substring(5);
+  }
+  if (digits.startsWith("+966")) {
+    let rest = digits.substring(4);
+    if (rest.startsWith("0")) rest = rest.substring(1);
+    return "+966" + rest;
+  }
+  if (digits.startsWith("966")) {
+    let rest = digits.substring(3);
+    if (rest.startsWith("0")) rest = rest.substring(1);
+    return "+966" + rest;
+  }
+  if (digits.startsWith("0")) {
+    digits = digits.substring(1);
+  }
+  if (/^5\d{8}$/.test(digits)) {
+    return "+966" + digits;
+  }
+  if (!digits.startsWith("+") && digits.length >= 9) {
+    return "+966" + digits;
+  }
+  return digits.startsWith("+") ? digits : `+${digits}`;
+};
+
 const addSuperAdminCustomer = async ({ tenantId, name, phone, email, points = 0, tier }) => {
   const tenant = (tenantId && tenantId !== "null" && tenantId !== "undefined") ? await mainPrisma.tenant.findUnique({ where: { id: tenantId } }) : null;
 
   if (!phone) throw new ApiError(400, "Phone number is required");
+  const normalizedPhone = normalizeSaudiPhone(phone);
 
-  let customer = await mainPrisma.appUser.findUnique({ where: { phone } });
+  let customer = await mainPrisma.appUser.findUnique({ where: { phone: normalizedPhone } });
   if (customer) {
     throw new ApiError(400, "Customer with this phone already exists");
   } else {
     customer = await mainPrisma.appUser.create({
-      data: { name, phone, email },
+      data: { name, phone: normalizedPhone, email },
     });
   }
 
@@ -1687,6 +1716,171 @@ const addSuperAdminCustomer = async ({ tenantId, name, phone, email, points = 0,
     points: wallet.points,
     tier: getCustomerTier(wallet),
     joinedAt: customer.createdAt,
+  };
+};
+
+const bulkUploadSuperAdminCustomers = async ({ tenantId, customers }) => {
+  if (!Array.isArray(customers) || customers.length === 0) {
+    throw new ApiError(400, "No customer data provided for bulk upload");
+  }
+
+  const tenant = (tenantId && tenantId !== "null" && tenantId !== "undefined" && tenantId !== "all")
+    ? await mainPrisma.tenant.findUnique({ where: { id: tenantId } })
+    : null;
+
+  let createdCount = 0;
+  let updatedCount = 0;
+  const errors = [];
+
+  for (let i = 0; i < customers.length; i++) {
+    const row = customers[i];
+    const rowNum = i + 1;
+    const name = (row.name || "").trim() || "Unnamed Customer";
+    const rawPhone = row.phone || row["phone no"] || row.phone_number || row["phone_number"] || row.mobile || "";
+
+    if (!rawPhone) {
+      errors.push(`Row ${rowNum}: Phone number is required`);
+      continue;
+    }
+
+    const normalizedPhone = normalizeSaudiPhone(rawPhone);
+    const points = Math.max(0, Number(row.points) || 0);
+    const tier = (row.tier || "bronze").toString().trim().toLowerCase();
+    const email = (row.email || "").trim() || null;
+
+    try {
+      let customer = await mainPrisma.appUser.findUnique({ where: { phone: normalizedPhone } });
+      if (!customer) {
+        customer = await mainPrisma.appUser.create({
+          data: { name, phone: normalizedPhone, email },
+        });
+        createdCount++;
+      } else {
+        if (name && name !== "Unnamed Customer" && customer.name !== name) {
+          customer = await mainPrisma.appUser.update({
+            where: { id: customer.id },
+            data: { name },
+          });
+        }
+        updatedCount++;
+      }
+
+      let wallet = await mainPrisma.wallet.findUnique({ where: { appUserId: customer.id } });
+      if (!wallet) {
+        wallet = await mainPrisma.wallet.create({
+          data: {
+            appUserId: customer.id,
+            points,
+            lifetimeEarn: points,
+            tier: tier || "bronze",
+          },
+        });
+      } else {
+        const updateData = {};
+        if (points > 0) {
+          updateData.points = { increment: points };
+          updateData.lifetimeEarn = { increment: points };
+        }
+        if (tier) {
+          updateData.tier = tier;
+        }
+        wallet = await mainPrisma.wallet.update({
+          where: { appUserId: customer.id },
+          data: updateData,
+        });
+      }
+
+      if (points > 0) {
+        await mainPrisma.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            points,
+            description: "Bulk Upload by Super Admin",
+            tenantId: tenant?.id || null,
+          },
+        });
+      }
+    } catch (err) {
+      console.error(`Error processing bulk row ${rowNum}:`, err.message);
+      errors.push(`Row ${rowNum} (${name}): ${err.message}`);
+    }
+  }
+
+  return {
+    success: true,
+    total: customers.length,
+    createdCount,
+    updatedCount,
+    errors,
+    message: `Successfully processed ${createdCount + updatedCount} customers (${createdCount} new accounts created).`,
+  };
+};
+
+const adjustSuperAdminCustomerPoints = async (tenantId, customerId, { action = "add", mode = "delta", points = 0, tier, reason }) => {
+  const customer = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
+  if (!customer) throw new ApiError(404, "Customer not found");
+
+  const tenant = (tenantId && tenantId !== "null" && tenantId !== "undefined" && tenantId !== "all")
+    ? await mainPrisma.tenant.findUnique({ where: { id: tenantId } })
+    : null;
+
+  let wallet = await mainPrisma.wallet.findUnique({ where: { appUserId: customer.id } });
+  if (!wallet) {
+    wallet = await mainPrisma.wallet.create({
+      data: { appUserId: customer.id, points: 0, lifetimeEarn: 0, tier: tier || "bronze" },
+    });
+  }
+
+  let deltaPoints = 0;
+  let newTotalPoints = wallet.points;
+
+  if (action === "add") {
+    deltaPoints = Math.max(0, Number(points) || 0);
+    newTotalPoints = wallet.points + deltaPoints;
+  } else if (action === "adjust") {
+    if (mode === "set") {
+      const target = Math.max(0, Number(points) || 0);
+      deltaPoints = target - wallet.points;
+      newTotalPoints = target;
+    } else {
+      deltaPoints = Number(points) || 0;
+      newTotalPoints = Math.max(0, wallet.points + deltaPoints);
+    }
+  }
+
+  const updateData = { points: newTotalPoints };
+  if (deltaPoints > 0) {
+    updateData.lifetimeEarn = { increment: deltaPoints };
+  }
+  if (tier) {
+    updateData.tier = tier;
+  }
+
+  wallet = await mainPrisma.wallet.update({
+    where: { appUserId: customer.id },
+    data: updateData,
+  });
+
+  if (deltaPoints !== 0) {
+    await mainPrisma.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        points: deltaPoints,
+        description: reason || (action === "add" ? "Points added by Super Admin" : "Points adjusted by Super Admin"),
+        tenantId: tenant?.id || null,
+      },
+    });
+  }
+
+  return {
+    id: customer.id,
+    customerId: customer.id,
+    name: customer.name,
+    phone: customer.phone,
+    email: customer.email,
+    tenantName: tenant?.name || "Servi Platform",
+    points: wallet.points,
+    tier: getCustomerTier(wallet),
   };
 };
 
@@ -2126,6 +2320,8 @@ module.exports = {
   getSuperAdminCustomerDetails,
   addSuperAdminCustomer,
   deleteSuperAdminCustomer,
+  bulkUploadSuperAdminCustomers,
+  adjustSuperAdminCustomerPoints,
   getTenantUsers,
   getAllSystemUsers,
   getSyncStatus,

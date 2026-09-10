@@ -138,6 +138,19 @@ const toggleSlot = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+const bulkUploadSuperAdminCustomers = catchAsync(async (req, res) => {
+  const result = await tenantsService.bulkUploadSuperAdminCustomers(req.body);
+  res.json({ success: true, data: result });
+});
+
+const adjustSuperAdminCustomerPoints = catchAsync(async (req, res) => {
+  const { tenantId, customerId } = req.params;
+  const targetCustomerId = customerId || req.params.id || req.body.customerId;
+  const targetTenantId = tenantId || req.body.tenantId;
+  const result = await tenantsService.adjustSuperAdminCustomerPoints(targetTenantId, targetCustomerId, req.body);
+  res.json({ success: true, data: result });
+});
+
 module.exports = {
   getAll,
   getById,
@@ -156,6 +169,8 @@ module.exports = {
   getSuperAdminCustomerDetails,
   addSuperAdminCustomer,
   deleteSuperAdminCustomer,
+  bulkUploadSuperAdminCustomers,
+  adjustSuperAdminCustomerPoints,
   getTenantUsers,
   getAllSystemUsers,
   getSyncStatus,
