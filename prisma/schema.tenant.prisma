@@ -257,6 +257,7 @@ model Order {
   total       Float       @default(0)
   notes       String?
   feeRate     Float       @default(0.0)
+  loyaltyEarnRate Float?  @default(0.0)
   // Relations
   userId     String?
   user       User?   @relation(fields: [userId], references: [id])

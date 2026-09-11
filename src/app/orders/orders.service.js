@@ -13,6 +13,27 @@ const loyaltyService = require("../../web/tenant/loyalty/loyalty.service");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const normalisePhone = (raw) => {
+  if (!raw) return "";
+  let digits = raw.toString().trim().replace(/\D/g, "");
+  while (digits.length > 9) {
+    if (digits.startsWith("966")) {
+      digits = digits.substring(3);
+    } else if (digits.startsWith("0")) {
+      digits = digits.substring(1);
+    } else {
+      break;
+    }
+  }
+  if (digits.startsWith("0")) {
+    digits = digits.substring(1);
+  }
+  if (digits.length === 9) {
+    return "+966" + digits;
+  }
+  return raw.startsWith("+") ? raw : `+${digits}`;
+};
+
 const resolveTenantFeeRate = (tenant, source) => {
   if (!tenant) return 0.0;
   const src = (source || "pos").toLowerCase();
@@ -219,7 +240,14 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   }
 
   // Validate and price items from the database (never trust client prices)
-  const menuItemIds = items.map((i) => i.menuItemId);
+  const menuItemIds = items
+    .map((i) => i.menuItemId || i.itemId || i.id)
+    .filter(Boolean);
+
+  if (menuItemIds.length === 0) {
+    throw new ApiError(400, "Order must contain valid menu items");
+  }
+
   const menuItems = await db.menuItem.findMany({
     where: { id: { in: menuItemIds }, isAvailable: true },
   });
@@ -229,36 +257,45 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   }
 
   let subtotal = 0;
-  const orderItems = items.map((item) => {
-    const menuItem = menuItems.find((m) => m.id === item.menuItemId);
+  const orderItems = items
+    .filter((item) => Boolean(item && (item.menuItemId || item.itemId || item.id)))
+    .map((item) => {
+      const targetId = item.menuItemId || item.itemId || item.id;
+      const menuItem = menuItems.find((m) => m.id === targetId);
+      if (!menuItem) return null;
 
-    let modifiersPrice = 0;
-    if (item.selectedModifiers && Array.isArray(item.selectedModifiers)) {
-      item.selectedModifiers.forEach((mod) => {
-        if (mod.options && Array.isArray(mod.options)) {
-          mod.options.forEach((opt) => {
-            modifiersPrice += Number(opt.priceModifier || 0);
-          });
-        }
-      });
-    }
+      let modifiersPrice = 0;
+      if (item.selectedModifiers && Array.isArray(item.selectedModifiers)) {
+        item.selectedModifiers.forEach((mod) => {
+          if (mod.options && Array.isArray(mod.options)) {
+            mod.options.forEach((opt) => {
+              modifiersPrice += Number(opt.priceModifier || 0);
+            });
+          }
+        });
+      }
 
-    const itemPrice = menuItem.price + modifiersPrice;
-    const lineTotal = itemPrice * (item.quantity || 1);
-    subtotal += lineTotal;
+      const itemPrice = menuItem.price + modifiersPrice;
+      const lineTotal = itemPrice * (item.quantity || 1);
+      subtotal += lineTotal;
 
-    return {
-      menuItemId: item.menuItemId,
-      quantity: item.quantity || 1,
-      price: itemPrice,
-      notes: item.notes || null,
-      selectedModifiers: item.selectedModifiers || [],
-      staffId: item.staffId || null,
-      staffName: item.staffName || null,
-      selectedSlot: item.selectedSlot || null,
-      selectedSlotDate: item.selectedSlotDate || null,
-    };
-  });
+      return {
+        menuItemId: targetId,
+        quantity: item.quantity || 1,
+        price: itemPrice,
+        notes: item.notes || null,
+        selectedModifiers: item.selectedModifiers || [],
+        staffId: item.staffId || null,
+        staffName: item.staffName || null,
+        selectedSlot: item.selectedSlot || null,
+        selectedSlotDate: item.selectedSlotDate || null,
+      };
+    })
+    .filter(Boolean);
+
+  if (orderItems.length === 0) {
+    throw new ApiError(400, "Order must contain valid menu items");
+  }
 
   if (typeof total === "number" && Math.abs(total - subtotal) > 0.01) {
     console.warn(
@@ -276,7 +313,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   // Lookup or create customer account by phone number in central AppUser table
   let finalCustomerId = userId || null;
   if (customerPhone) {
-    const cleanedPhone = customerPhone.trim();
+    const cleanedPhone = normalisePhone(customerPhone);
     try {
       let appUser = await mainPrisma.appUser.findUnique({
         where: { phone: cleanedPhone }
@@ -301,19 +338,23 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   }
 
   if (paymentMethod === "points") {
+    const targetUserId = finalCustomerId || userId;
+    if (!targetUserId) {
+      throw new ApiError(400, "Customer phone number is required to pay with loyalty points.");
+    }
     const redeemRate = Number(tenant?.loyaltyRedeemRate || 100.0);
     const pointsCost = Math.round(subtotal * redeemRate);
-    const wallet = await loyaltyService.getWallet(db, finalCustomerId || userId);
+    const wallet = await loyaltyService.getWallet(db, targetUserId);
     if (!wallet || wallet.points < pointsCost) {
-      throw new ApiError(400, "Insufficient points to complete this order");
+      throw new ApiError(400, `Insufficient points balance. Order requires ${pointsCost} pts, but available balance is ${wallet?.points || 0} pts.`);
     }
     pointsRedeemed = pointsCost;
     // Redeem points — link transaction to this order so the wallet history shows the order number
     await loyaltyService.redeemPoints(
       db,
-      finalCustomerId || userId,
+      targetUserId,
       pointsCost,
-      `Redeemed ${pointsCost} pts for order ${orderNumber}`,
+      `Redeemed ${pointsCost} pts for order #${orderNumber}`,
       tenantId,
       { orderId: null, orderNumber, source: "app" } // orderId filled after order creation below
     );
@@ -341,13 +382,19 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   const finalQrCashierId = qrCashierId || cashierId || null;
   const orderSource = source || (tableId ? "qr_table" : (finalQrCashierId ? "qr_cashier" : "app"));
 
-  // Look up fee percentage from main database using order channel source
+  // Look up fee percentage and loyalty earn rate from main database using order channel source
   let feeRate = 0.0;
+  let orderLoyaltyEarnRate = 0.0;
   if (tenantId) {
     try {
       const tenantObj = tenant || (await mainPrisma.tenant.findUnique({ where: { id: tenantId } }));
       if (tenantObj) {
         feeRate = resolveTenantFeeRate(tenantObj, orderSource);
+        if (tenantObj.loyaltyEnabled !== false) {
+          orderLoyaltyEarnRate = Number(tenantObj.loyaltyEarnRate !== undefined && tenantObj.loyaltyEarnRate !== null ? tenantObj.loyaltyEarnRate : 1.0);
+        } else {
+          orderLoyaltyEarnRate = 0.0;
+        }
       }
     } catch (e) {
       console.error("Failed to query tenant fee settings:", e.message);
@@ -369,7 +416,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     data: {
       orderNumber,
       customerId: finalCustomerId,
-      customerPhone: customerPhone || null,
+      customerPhone: customerPhone ? normalisePhone(customerPhone) : null,
       branchId,
       tableId: tableId || null,
       qrCashierId: finalQrCashierId,
@@ -383,6 +430,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       notes: finalNotes || null,
       total: subtotal,
       feeRate,
+      loyaltyEarnRate: orderLoyaltyEarnRate,
       source: orderSource,
       paymentMethod: paymentMethod || "cash",
       pointsRedeemed: pointsRedeemed,
@@ -447,6 +495,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
         total: order.total,
         notes: order.notes,
         feeRate: order.feeRate,
+        loyaltyEarnRate: order.loyaltyEarnRate,
         paymentMethod: paymentMethod || "cash",
         pointsRedeemed: pointsRedeemed,
         tenantId: tenantId,

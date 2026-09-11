@@ -90,6 +90,14 @@ const addCoupon = catchAsync(async (req, res) => {
   res.json({ success: true, message: "Coupon saved successfully", data: coupon });
 });
 
+// ─── GET /wallet/public-lookup ──────────────────────────────────────────────
+const lookupPhone = catchAsync(async (req, res) => {
+  const { tenantId } = req.params;
+  const { phone } = req.query;
+  const result = await walletService.lookupWalletByPhone(req.tenantDb, tenantId, phone);
+  res.json({ success: true, data: result });
+});
+
 module.exports = {
   getWallet,
   getTransactions,
@@ -102,4 +110,5 @@ module.exports = {
   claimAllGifts,
   getCoupons,
   addCoupon,
+  lookupPhone,
 };

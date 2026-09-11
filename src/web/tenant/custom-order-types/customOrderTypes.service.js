@@ -8,6 +8,31 @@ const getAll = async (db) => {
   // Fetch local custom order types
   let tenantTypes = await db.customOrderType.findMany();
 
+  // Deduplicate tenantTypes by name if any duplicates exist in local DB
+  const uniqueTypesMap = new Map();
+  const duplicateIdsToDelete = [];
+
+  for (const tt of tenantTypes) {
+    const key = tt.name.trim().toLowerCase();
+    if (!uniqueTypesMap.has(key)) {
+      uniqueTypesMap.set(key, tt);
+    } else {
+      duplicateIdsToDelete.push(tt.id);
+    }
+  }
+
+  if (duplicateIdsToDelete.length > 0) {
+    try {
+      await db.customOrderType.deleteMany({
+        where: { id: { in: duplicateIdsToDelete } }
+      });
+    } catch (e) {
+      console.error("Failed to clean duplicate order types:", e);
+    }
+  }
+
+  tenantTypes = Array.from(uniqueTypesMap.values());
+
   // Sync global types to local database
   for (const gt of globalTypes) {
     const matchIndex = tenantTypes.findIndex(tt => tt.name.toLowerCase() === gt.name.toLowerCase());

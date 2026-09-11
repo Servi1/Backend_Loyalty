@@ -63,6 +63,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
         feeRate: resolvedFeeRate,
+        loyaltyEarnRate: order.loyaltyEarnRate ?? 0.0,
         source: order.source || "pos",
         staffId: order.staffId || null,
         staffName: order.staffName || null,
@@ -80,6 +81,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
         feeRate: resolvedFeeRate,
+        loyaltyEarnRate: order.loyaltyEarnRate ?? 0.0,
         source: order.source || "pos",
         staffId: order.staffId || null,
         staffName: order.staffName || null,
@@ -156,23 +158,63 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
   if (branchId) {
     const branch = await db.branch.findUnique({ where: { id: branchId } });
     if (branch) {
-      const openCheck = isBranchOpenNow(branch);
-      if (!openCheck.isOpen) {
-        throw new ApiError(400, openCheck.reason);
+      const isScheduledOrManual = type === "SCHEDULED" || status === "HALTED" || source === "pos" || Boolean(selectedSlot);
+      if (!isScheduledOrManual) {
+        const openCheck = isBranchOpenNow(branch);
+        if (!openCheck.isOpen) {
+          throw new ApiError(400, openCheck.reason);
+        }
       }
     }
   }
 
+  // Validate if userId exists in tenantDb user table (since SuperAdmins or BrandAdmins from main DB might not be in tenantDb.user)
+  let validUserId = null;
+  if (userId) {
+    const staffUser = await db.user.findUnique({ where: { id: userId } });
+    if (staffUser) {
+      validUserId = userId;
+    }
+  }
+
+const normalizePhone = (rawPhone) => {
+  if (!rawPhone) return "";
+  let digits = rawPhone.toString().trim().replace(/[\s\-\(\)]/g, "");
+  if (digits.startsWith("00966")) {
+    digits = "+966" + digits.substring(5);
+  }
+  if (digits.startsWith("+966")) {
+    let rest = digits.substring(4);
+    if (rest.startsWith("0")) rest = rest.substring(1);
+    return "+966" + rest;
+  }
+  if (digits.startsWith("966")) {
+    let rest = digits.substring(3);
+    if (rest.startsWith("0")) rest = rest.substring(1);
+    return "+966" + rest;
+  }
+  if (digits.startsWith("0")) {
+    digits = digits.substring(1);
+  }
+  if (/^5\d{8}$/.test(digits)) {
+    return "+966" + digits;
+  }
+  if (!digits.startsWith("+") && digits.length >= 9) {
+    return "+966" + digits;
+  }
+  return digits.startsWith("+") ? digits : `+${digits}`;
+};
+
   let finalCustomerId = customerId;
-  if (customerPhone) {
-    const cleanedPhone = customerPhone.trim();
+  let normalizedCustomerPhone = customerPhone ? normalizePhone(customerPhone) : null;
+  if (normalizedCustomerPhone) {
     let appUser = await mainPrisma.appUser.findUnique({
-      where: { phone: cleanedPhone }
+      where: { phone: normalizedCustomerPhone }
     });
     if (!appUser) {
       appUser = await mainPrisma.appUser.create({
         data: {
-          phone: cleanedPhone,
+          phone: normalizedCustomerPhone,
           name: "Guest Client"
         }
       });
@@ -212,13 +254,17 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
   }
 
   // Calculate total from items
-  const menuItemIds = items.map((i) => i.menuItemId);
+  const menuItemIds = items.map((i) => i.menuItemId || i.itemId || i.id).filter(Boolean);
+  if (menuItemIds.length === 0) {
+    throw new ApiError(400, "Order must contain valid menu items");
+  }
   const menuItems = await db.menuItem.findMany({ where: { id: { in: menuItemIds } } });
 
   let subtotal = 0;
   const orderItems = items.map((item) => {
-    const menuItem = menuItems.find((m) => m.id === item.menuItemId);
-    if (!menuItem) throw new ApiError(400, `Menu item ${item.menuItemId} not found`);
+    const targetId = item.menuItemId || item.itemId || item.id;
+    const menuItem = menuItems.find((m) => m.id === targetId);
+    if (!menuItem) throw new ApiError(400, `Menu item ${targetId} not found`);
     
     let modifiersPrice = 0;
     if (item.selectedModifiers && Array.isArray(item.selectedModifiers)) {
@@ -253,16 +299,23 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
 
   const orderSource = source || (tableId ? "qr_table" : (qrCashierId ? "qr_cashier" : "pos"));
 
-  // Look up fee percentage from main database
+  // Look up fee percentage and loyalty earn rate from main database
   let feeRate = 0.0;
+  let loyaltyEarnRate = 0.0;
   if (tenantId) {
     try {
       const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
       if (tenant) {
         feeRate = resolveTenantFeeRate(tenant, orderSource);
+        if (tenant.loyaltyEnabled !== false) {
+          const src = (orderSource || "").toLowerCase();
+          if (src !== "pos" || tenant.loyaltyAddPoints !== false) {
+            loyaltyEarnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+          }
+        }
       }
     } catch (e) {
-      console.error("Failed to query tenant fee settings:", e.message);
+      console.error("Failed to query tenant fee and loyalty settings:", e.message);
     }
   }
 
@@ -281,9 +334,9 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
     data: {
       orderNumber: generateOrderNumber(),
       status: status || "PENDING",
-      userId: userId || null,
+      userId: validUserId || null,
       customerId: finalCustomerId || null,
-      customerPhone: customerPhone || null,
+      customerPhone: normalizedCustomerPhone || customerPhone || null,
       branchId,
       tableId: tableId || null,
       qrCashierId: qrCashierId || null,
@@ -291,6 +344,7 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
       notes,
       total: finalTotal,
       feeRate,
+      loyaltyEarnRate,
       posUnit: posUnit || null,
       source: orderSource,
       staffId: staffId || null,
@@ -304,8 +358,8 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
     include: { items: { include: { menuItem: true } }, branch: true, customOrderType: true },
   });
 
-  if (userId) {
-    const user = await mainPrisma.appUser.findUnique({ where: { id: userId } });
+  if (finalCustomerId) {
+    const user = await mainPrisma.appUser.findUnique({ where: { id: finalCustomerId } });
     order.user = user;
   }
 
@@ -320,6 +374,7 @@ const create = async (db, { userId, customerId, customerPhone, status, branchId,
         total: order.total,
         notes: order.notes,
         feeRate: order.feeRate,
+        loyaltyEarnRate: order.loyaltyEarnRate,
         tenantId: tenantId,
         branchId: order.branchId,
         tableId: order.tableId,
@@ -508,11 +563,14 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
         where: { id: updated.customerId },
         include: { wallet: true }
       });
-      if (customer && customer.wallet) {
+      if (customer) {
+        const loyaltyService = require("../loyalty/loyalty.service");
+        const wallet = customer.wallet || (await loyaltyService.getWallet(db, updated.customerId));
+
         const description = `Earned on Order #${updated.orderNumber}`;
         const tx = await mainPrisma.walletTransaction.findFirst({
           where: {
-            walletId: customer.wallet.id,
+            walletId: wallet.id,
             OR: [
               { orderNumber: updated.orderNumber },
               { orderId: updated.id },
@@ -523,10 +581,19 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
 
         if (!tx) {
           const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-          const earnRate = tenant ? tenant.loyaltyEarnRate : 1.0;
+          if (!tenant || tenant.loyaltyEnabled === false) {
+            console.log(`[LOYALTY] Tenant loyalty disabled or not found. Skipping point award for order #${updated.orderNumber}`);
+            return;
+          }
+          let earnRate = 0.0;
+          if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null && Number(updated.loyaltyEarnRate) === 0) {
+            earnRate = 0.0;
+          } else {
+            earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+          }
+
           const pointsToEarn = Math.floor(updated.total * earnRate);
           if (pointsToEarn > 0) {
-            const loyaltyService = require("../loyalty/loyalty.service");
             await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId, {
               orderId: updated.id,
               orderNumber: updated.orderNumber

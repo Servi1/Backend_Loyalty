@@ -195,6 +195,7 @@ model AggregatedOrder {
   customerPhone  String?
   branchName     String?
   feeRate        Float    @default(0.0)
+  loyaltyEarnRate Float?  @default(0.0)
   source         String   @default("pos") // pos | app | qr_cashier | qr_table
   paymentMethod  String?  // cash | card | apple_pay | google_pay | split | points
   pointsRedeemed Int?     // points deducted (set when paymentMethod = "points")
@@ -271,6 +272,7 @@ model Order {
   total       Float       @default(0)
   notes       String?
   feeRate     Float       @default(0.0)
+  loyaltyEarnRate Float?  @default(0.0)
 
   // Relations
   appUserId   String?

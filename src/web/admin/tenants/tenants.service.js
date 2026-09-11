@@ -115,23 +115,26 @@ const create = async (data) => {
         });
       }
 
-      // Seed default order types
-      await tenantPrisma.customOrderType.createMany({
-        data: [
-          { name: "Dine In", isActive: true },
-          { name: "Takeaway", isActive: true },
-          { name: "Delivery", isActive: true },
-          { name: "Deliver to Car", isActive: true },
-          { name: "Scheduled", isActive: true }
-        ]
-      });
+      // Seed default order types if empty
+      const existingOrderTypes = await tenantPrisma.customOrderType.findMany();
+      if (existingOrderTypes.length === 0) {
+        await tenantPrisma.customOrderType.createMany({
+          data: [
+            { name: "Dine In", isActive: true },
+            { name: "Takeaway", isActive: true },
+            { name: "Delivery", isActive: true },
+            { name: "Deliver to Car", isActive: true },
+            { name: "Scheduled", isActive: true }
+          ]
+        });
+      }
     } catch (err) {
       console.error("Failed to initialize tenant defaults:", err);
     }
   }
 
   // 4. Save tenant to main registry
-  const { adminEmail, adminPassword, ...tenantData } = data;
+  const { adminEmail, adminPassword, adminName, ...tenantData } = data;
   const tenant = await mainPrisma.tenant.create({
     data: {
       ...tenantData,
@@ -206,8 +209,32 @@ const update = async (id, data) => {
 };
 
 const remove = async (id) => {
-  await getById(id);
-  // Optional: drop the database physically, or leave it for safety
+  const tenant = await getById(id);
+
+  if (tenant && tenant.dbUrl) {
+    try {
+      const urlObj = new URL(tenant.dbUrl);
+      const dbName = urlObj.pathname.replace("/", "");
+      if (dbName && dbName.startsWith("tenant_")) {
+        const mainDbUrl = process.env.DATABASE_URL;
+        const client = new Client({ connectionString: mainDbUrl });
+        await client.connect();
+        // Terminate existing active connections to tenant DB before dropping
+        await client.query(`
+          SELECT pg_terminate_backend(pg_stat_activity.pid)
+          FROM pg_stat_activity
+          WHERE pg_stat_activity.datname = '${dbName}'
+            AND pid <> pg_backend_pid();
+        `);
+        await client.query(`DROP DATABASE IF EXISTS "${dbName}";`);
+        await client.end();
+        console.log(`Successfully dropped physical database ${dbName} for tenant ${tenant.slug}`);
+      }
+    } catch (err) {
+      console.error(`Failed to drop physical DB for tenant ${tenant?.slug}:`, err.message);
+    }
+  }
+
   return mainPrisma.tenant.delete({ where: { id } });
 };
 
@@ -517,6 +544,9 @@ const getSubscriptions = async () => {
 
 const getLoyaltyOverview = async (filters = {}) => {
   const where = {};
+  if (filters.tenantId) {
+    where.id = filters.tenantId;
+  }
   if (filters.startDate || filters.endDate) {
     where.createdAt = {};
     if (filters.startDate) where.createdAt.gte = new Date(filters.startDate);
@@ -617,20 +647,38 @@ const getInvoices = async (filters = {}) => {
     const totalDays = new Date(year, month + 1, 0).getDate();
 
     const activeStart = new Date(Math.max(monthStart.getTime(), startDate.getTime()));
-    const activeEnd = new Date(Math.min(monthEnd.getTime(), endDate.getTime()));
+    const cycleEnd = new Date(Math.min(monthEnd.getTime(), endDate.getTime()));
 
-    if (activeStart > activeEnd) {
-      return { daysActive: 0, totalDays, period: "" };
+    if (activeStart > cycleEnd) {
+      return { daysActive: 0, cycleActiveDays: 0, totalDays, period: "" };
     }
 
-    const diffTime = activeEnd.getTime() - activeStart.getTime();
-    const daysActive = Math.max(1, Math.round(diffTime / (24 * 60 * 60 * 1000)) + 1);
+    // Convert to midnight calendar dates to eliminate time-of-day skew
+    const startDay = new Date(activeStart.getFullYear(), activeStart.getMonth(), activeStart.getDate());
+    const cycleEndDay = new Date(cycleEnd.getFullYear(), cycleEnd.getMonth(), cycleEnd.getDate());
+
+    const cycleDiffDays = Math.round((cycleEndDay.getTime() - startDay.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+    const cycleActiveDays = Math.min(totalDays, Math.max(1, cycleDiffDays));
+
+    const now = new Date();
+    const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth());
+    const effectiveNow = isCurrentMonth ? new Date(Math.min(monthEnd.getTime(), now.getTime())) : monthEnd;
+
+    const elapsedEnd = new Date(Math.min(effectiveNow.getTime(), endDate.getTime()));
+    const elapsedEndDay = new Date(elapsedEnd.getFullYear(), elapsedEnd.getMonth(), elapsedEnd.getDate());
+
+    let daysActive = 0;
+    if (startDay <= elapsedEndDay) {
+      const elapsedDiffDays = Math.round((elapsedEndDay.getTime() - startDay.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+      daysActive = Math.min(cycleActiveDays, Math.max(1, elapsedDiffDays));
+    }
 
     const startStr = activeStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    const endStr = activeEnd.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const endStr = cycleEnd.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
     return {
-      daysActive: Math.min(daysActive, totalDays),
+      daysActive,
+      cycleActiveDays,
       totalDays,
       period: `${startStr} - ${endStr}`
     };
@@ -717,9 +765,9 @@ const getInvoices = async (filters = {}) => {
             .sort((a, b) => new Date(a.addedAt).getTime() - new Date(b.addedAt).getTime())[0];
 
           const featureSubscribedAt = featureAddon ? new Date(featureAddon.addedAt) : tenant.createdAt;
-          const { daysActive, totalDays, period } = getDaysActiveInMonth(featureSubscribedAt, currentMonthEnd, currentYear, currentMonth);
+          const { daysActive, cycleActiveDays, totalDays, period } = getDaysActiveInMonth(featureSubscribedAt, currentMonthEnd, currentYear, currentMonth);
 
-          if (daysActive > 0) {
+          if (cycleActiveDays > 0 || daysActive > 0) {
             const unitPrice = tenant[gsvc.priceKey] !== undefined && tenant[gsvc.priceKey] !== null ? Number(tenant[gsvc.priceKey]) : gsvc.defaultPrice;
             const serviceCycle = tenant[gsvc.cycleKey] || tenant.billingCycle || "monthly";
             const isYearly = String(serviceCycle).toLowerCase() === "yearly";
@@ -769,7 +817,7 @@ const getInvoices = async (filters = {}) => {
               baseSlotCounts[gsvc.typeKey] = quantity;
 
               for (let i = 0; i < quantity; i++) {
-                const singleCost = effectiveMonthlyPrice * (daysActive / totalDays);
+                const singleCost = effectiveMonthlyPrice * (cycleActiveDays / totalDays);
                 const assigned = regDevices[i] || null;
                 const isSlotCanceled = assigned ? assigned.isActive === false : (i >= Number(tenant[gsvc.qtyKey] || 0));
                 const itemCharge = isSlotCanceled ? 0.0 : parseFloat(singleCost.toFixed(2));
@@ -802,12 +850,12 @@ const getInvoices = async (filters = {}) => {
                   yearlyTotalDays: isYearly ? yearlyTotalDays : 365,
                   yearlyDaysRemaining,
                   period: isYearly ? yearlyPeriod : period,
-                  prorated: daysActive < totalDays
+                  prorated: cycleActiveDays < totalDays
                 });
               }
             } else {
               const monthlyPrice = effectiveMonthlyPrice;
-              const cost = monthlyPrice * (daysActive / totalDays);
+              const cost = monthlyPrice * (cycleActiveDays / totalDays);
 
               invoiceAmount += cost;
               globalServices.push({
@@ -828,7 +876,7 @@ const getInvoices = async (filters = {}) => {
                 yearlyTotalDays: isYearly ? yearlyTotalDays : 365,
                 yearlyDaysRemaining,
                 period: isYearly ? yearlyPeriod : period,
-                prorated: daysActive < totalDays
+                prorated: cycleActiveDays < totalDays
               });
             }
           }
@@ -851,8 +899,8 @@ const getInvoices = async (filters = {}) => {
       for (const addon of tenantAddons) {
         const addedDate = new Date(addon.addedAt);
         if (addedDate.getFullYear() === currentYear && addedDate.getMonth() === currentMonth) {
-          const { daysActive, totalDays, period } = getDaysActiveInMonth(addedDate, currentMonthEnd, currentYear, currentMonth);
-          if (daysActive > 0) {
+          const { daysActive, cycleActiveDays, totalDays, period } = getDaysActiveInMonth(addedDate, currentMonthEnd, currentYear, currentMonth);
+          if (cycleActiveDays > 0 || daysActive > 0) {
             const unitPrice = Number(addon.pricePerUnit || 0);
             const addonQty = Number(addon.quantity || 1);
             const label = serviceLabels[addon.serviceType.toLowerCase()] || addon.serviceType.toUpperCase();
@@ -900,7 +948,7 @@ const getInvoices = async (filters = {}) => {
             }
 
             for (let i = 0; i < addonQty; i++) {
-              const singleCost = effectiveMonthlyPrice * (daysActive / totalDays);
+              const singleCost = effectiveMonthlyPrice * (cycleActiveDays / totalDays);
               const globalIndex = (baseSlotCounts[typeKey] || 0);
               baseSlotCounts[typeKey] = globalIndex + 1;
               const addonSeq = (addonCounts[typeKey] = (addonCounts[typeKey] || 0) + 1);
@@ -937,7 +985,7 @@ const getInvoices = async (filters = {}) => {
                 yearlyTotalDays: isYearly ? yearlyTotalDays : 365,
                 yearlyDaysRemaining,
                 period: isYearly ? yearlyPeriod : period,
-                prorated: daysActive < totalDays
+                prorated: cycleActiveDays < totalDays
               });
             }
           }
@@ -953,10 +1001,10 @@ const getInvoices = async (filters = {}) => {
 
         // I. Branch Base Fee (if subBranch is enabled on tenant level)
         if (tenant.subBranch) {
-          const { daysActive, totalDays, period } = getDaysActiveInMonth(branch.createdAt, currentMonthEnd, currentYear, currentMonth);
-          if (daysActive > 0) {
+          const { daysActive, cycleActiveDays, totalDays, period } = getDaysActiveInMonth(branch.createdAt, currentMonthEnd, currentYear, currentMonth);
+          if (cycleActiveDays > 0 || daysActive > 0) {
             const price = tenant.priceBranch !== undefined ? tenant.priceBranch : 19.0;
-            const cost = price * (daysActive / totalDays);
+            const cost = price * (cycleActiveDays / totalDays);
             branchTotal += cost;
             servicesList.push({
               name: "Branch Base Fee",
@@ -965,7 +1013,7 @@ const getInvoices = async (filters = {}) => {
               daysActive,
               totalDays,
               period,
-              prorated: daysActive < totalDays
+              prorated: cycleActiveDays < totalDays
             });
           }
         }
@@ -1336,35 +1384,77 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
 };
 
 const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
-  const tenant = (tenantId && tenantId !== "null" && tenantId !== "undefined") ? await mainPrisma.tenant.findUnique({ where: { id: tenantId } }) : null;
+  const tenant = (tenantId && tenantId !== "null" && tenantId !== "undefined" && tenantId !== "all")
+    ? await mainPrisma.tenant.findUnique({ where: { id: tenantId } })
+    : null;
 
   const customer = await mainPrisma.appUser.findUnique({
     where: { id: customerId }
   });
   if (!customer) throw new ApiError(404, "Customer not found");
 
-  // Get global wallet
-  const wallet = await mainPrisma.wallet.findUnique({
+  // Get or auto-create global wallet
+  let wallet = await mainPrisma.wallet.findUnique({
     where: { appUserId: customerId },
     include: {
       transactions: {
         orderBy: { createdAt: "desc" },
-        take: 50,
+        take: 100,
       },
     },
   });
 
-  const orders = [];
-  if (tenant) {
+  if (!wallet) {
     try {
-      const tenantPrisma = getTenantClient(tenant.dbUrl);
-      const tenantOrders = await tenantPrisma.order.findMany({
-        where: {
-          OR: [
-            { customerId },
-            customer.phone ? { customerPhone: customer.phone } : undefined,
-          ].filter(Boolean)
+      wallet = await mainPrisma.wallet.create({
+        data: {
+          appUserId: customerId,
+          points: 0,
+          lifetimeEarn: 0,
+          lifetimeSpend: 0,
         },
+        include: {
+          transactions: {
+            orderBy: { createdAt: "desc" },
+            take: 100,
+          },
+        },
+      });
+    } catch (e) {
+      console.error("Failed to auto-create wallet in customer details:", e.message);
+    }
+  }
+
+  // Construct phone variations for flexible matching (+966550505994, 966550505994, 0550505994, 550505994)
+  const phoneVariations = [];
+  if (customer.phone) {
+    const clean = customer.phone.trim().replace(/\s+/g, "");
+    const digitsOnly = clean.replace(/\D/g, "");
+    const withoutPlus = clean.replace(/^\+/, "");
+    const last9 = digitsOnly.length >= 9 ? digitsOnly.slice(-9) : digitsOnly;
+
+    phoneVariations.push(clean, withoutPlus, digitsOnly, `+966${last9}`, `966${last9}`, `0${last9}`, last9);
+  }
+  const uniquePhones = Array.from(new Set(phoneVariations)).filter(Boolean);
+
+  const rawOrders = [];
+  // Determine list of tenants to search: if tenant is specified, search it; otherwise search all active tenants
+  const targetTenants = tenant ? [tenant] : await mainPrisma.tenant.findMany();
+
+  for (const t of targetTenants) {
+    try {
+      const tenantPrisma = getTenantClient(t.dbUrl);
+      const OR = [
+        { customerId },
+        { userId: customerId },
+      ];
+      uniquePhones.forEach((ph) => {
+        OR.push({ customerPhone: ph });
+        OR.push({ customerPhone: { contains: ph } });
+      });
+
+      const tenantOrders = await tenantPrisma.order.findMany({
+        where: { OR },
         include: {
           items: { include: { menuItem: true } },
           branch: true,
@@ -1372,26 +1462,92 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
         orderBy: { createdAt: "desc" },
         take: 50,
       });
-      orders.push(...tenantOrders);
+
+      tenantOrders.forEach((o) => {
+        o.tenantName = t.name;
+        o.tenantId = t.id;
+      });
+
+      rawOrders.push(...tenantOrders);
     } catch (err) {
-      console.error(`Failed to fetch orders from tenant ${tenant.name} for customer details:`, err.message);
+      console.error(`Failed to fetch orders from tenant ${t.name} for customer details:`, err.message);
     }
   }
 
-  // Deterministic visits derived from orders since there is no native visit table
+  // Deduplicate orders by ID and sort descending by createdAt
+  const orderMap = new Map();
+  rawOrders.forEach((o) => {
+    if (!orderMap.has(o.id)) {
+      orderMap.set(o.id, o);
+    }
+  });
+  const orders = Array.from(orderMap.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  // Deterministic visits derived from orders
   const visits = orders.map((o) => ({
     id: `v_${o.id}`,
-    date: o.createdAt.toISOString().slice(0, 10),
-    branch: o.branch?.name || "Downtown Flagship",
+    date: new Date(o.createdAt).toISOString().slice(0, 10),
+    branch: o.branch?.name || "Register Terminal",
     city: o.branch?.city || "Riyadh",
     duration: `${Math.floor(20 + (o.total % 40))} min`,
   }));
+
+  // Auto-backfill points transactions for COMPLETED orders created before wallet auto-creation
+  const loyaltyService = require("../../tenant/loyalty/loyalty.service");
+  let updatedTx = false;
+  for (const o of orders) {
+    if ((o.status || "").toUpperCase() === "COMPLETED" && (o.paymentMethod || "").toLowerCase() !== "points") {
+      const tx = wallet?.transactions?.find(
+        (t) => (t.orderNumber && t.orderNumber === o.orderNumber) ||
+               (t.orderId && t.orderId === o.id) ||
+               (t.description && t.description.includes(o.orderNumber))
+      );
+      if (!tx) {
+        let earnRate = 0.0;
+        if (o.loyaltyEarnRate !== undefined && o.loyaltyEarnRate !== null && Number(o.loyaltyEarnRate) === 0) {
+          earnRate = 0.0;
+        } else {
+          const oTenant = targetTenants.find((t) => t.id === o.tenantId);
+          if (!oTenant || oTenant.loyaltyEnabled === false) continue;
+          earnRate = Number(oTenant.loyaltyEarnRate !== undefined && oTenant.loyaltyEarnRate !== null ? oTenant.loyaltyEarnRate : 1.0);
+        }
+        const pointsToEarn = Math.floor(Number(o.total || 0) * earnRate);
+        if (pointsToEarn > 0) {
+          try {
+            await loyaltyService.earnPoints(null, customerId, pointsToEarn, `Earned on Order #${o.orderNumber}`, o.tenantId, {
+              orderId: o.id,
+              orderNumber: o.orderNumber
+            });
+            updatedTx = true;
+          } catch (e) {
+            console.error(`[LOYALTY AUTO-BACKFILL] Failed to award points for order ${o.orderNumber}:`, e.message);
+          }
+        }
+      }
+    }
+  }
+
+  if (updatedTx) {
+    wallet = await mainPrisma.wallet.findUnique({
+      where: { appUserId: customerId },
+      include: {
+        transactions: {
+          orderBy: { createdAt: "desc" },
+          take: 100,
+        },
+      },
+    });
+  }
 
   const pointsHistory = (wallet?.transactions || []).map((t) => {
     const desc = (t.description || "").toLowerCase();
     let type = t.points >= 0 ? "earned" : "redeemed";
 
-    if (desc.includes("gift sent") || desc.includes("transferred to") || desc.includes("transfer out")) {
+    if (desc.includes("refund") || desc.includes("reverse")) {
+      type = "refunded";
+    } else if (desc.includes("gift sent") || desc.includes("transferred to") || desc.includes("transfer out")) {
       type = "transferred";
     } else if (desc.includes("claimed gift") || desc.includes("transferred from") || desc.includes("received gift")) {
       type = "received";
@@ -1409,28 +1565,36 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
 
   const orderHistory = orders.map((o) => {
     const earnPointsTx = (wallet?.transactions || []).find(
-      (tx) => (tx.orderNumber && tx.orderNumber === o.orderNumber) ||
-              (tx.orderId && tx.orderId === o.id) ||
-              (tx.description && tx.description.includes(o.orderNumber))
+      (tx) => tx.points > 0 &&
+              ((tx.orderNumber && tx.orderNumber === o.orderNumber) ||
+               (tx.orderId && tx.orderId === o.id) ||
+               (tx.description && tx.description.includes(o.orderNumber)))
     );
     let pointsEarned = 0;
     if ((o.status || "").toUpperCase() === "COMPLETED" && (o.paymentMethod || "").toLowerCase() !== "points") {
-      pointsEarned = earnPointsTx ? Math.abs(earnPointsTx.points) : 0;
+      if (earnPointsTx) {
+        pointsEarned = Math.abs(earnPointsTx.points);
+      } else if (o.loyaltyEarnRate !== undefined && o.loyaltyEarnRate !== null && Number(o.loyaltyEarnRate) > 0) {
+        pointsEarned = Math.floor(Number(o.total || 0) * Number(o.loyaltyEarnRate));
+      } else {
+        pointsEarned = 0;
+      }
     }
 
     return {
       id: o.id,
       orderNumber: o.orderNumber,
       createdAt: o.createdAt,
-      date: o.createdAt.toISOString().slice(0, 10),
+      date: new Date(o.createdAt).toISOString().slice(0, 10),
       branch: o.branch?.name || "Register Terminal",
       branchName: o.branch?.name || "Register Terminal",
+      tenantName: o.tenantName || tenant?.name || "Servi Platform",
       source: o.source || "pos",
       type: o.type || "DINE_IN",
       status: o.status || "COMPLETED",
       paymentMethod: o.paymentMethod || "cash",
       items: o.items ? o.items.reduce((acc, item) => acc + item.quantity, 0) : 0,
-      itemsList: (o.items || []).map(i => ({
+      itemsList: (o.items || []).map((i) => ({
         id: i.id,
         quantity: i.quantity,
         price: Number(i.price || 0),
@@ -1443,6 +1607,8 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     };
   });
 
+  const primaryTenantName = tenant?.name || (orders.length > 0 ? orders[0].tenantName : "Servi Platform");
+
   return {
     id: customer.id,
     customerId: customer.id,
@@ -1450,7 +1616,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     name: customer.name || "Walk-in Customer",
     phone: customer.phone || null,
     email: customer.email || null,
-    tenantName: tenant?.name || "Servi Platform",
+    tenantName: primaryTenantName,
     points: wallet?.points || 0,
     tier: getCustomerTier(wallet, tenant, customer),
     joinedAt: customer.createdAt,
@@ -1460,17 +1626,46 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
   };
 };
 
+const normalizeSaudiPhone = (rawPhone) => {
+  if (!rawPhone) return "";
+  let digits = rawPhone.toString().trim().replace(/[\s\-\(\)]/g, "");
+  if (digits.startsWith("00966")) {
+    digits = "+966" + digits.substring(5);
+  }
+  if (digits.startsWith("+966")) {
+    let rest = digits.substring(4);
+    if (rest.startsWith("0")) rest = rest.substring(1);
+    return "+966" + rest;
+  }
+  if (digits.startsWith("966")) {
+    let rest = digits.substring(3);
+    if (rest.startsWith("0")) rest = rest.substring(1);
+    return "+966" + rest;
+  }
+  if (digits.startsWith("0")) {
+    digits = digits.substring(1);
+  }
+  if (/^5\d{8}$/.test(digits)) {
+    return "+966" + digits;
+  }
+  if (!digits.startsWith("+") && digits.length >= 9) {
+    return "+966" + digits;
+  }
+  return digits.startsWith("+") ? digits : `+${digits}`;
+};
+
 const addSuperAdminCustomer = async ({ tenantId, name, phone, email, points = 0, tier }) => {
   const tenant = (tenantId && tenantId !== "null" && tenantId !== "undefined") ? await mainPrisma.tenant.findUnique({ where: { id: tenantId } }) : null;
 
   if (!phone) throw new ApiError(400, "Phone number is required");
+  const normalizedPhone = normalizeSaudiPhone(phone);
 
-  let customer = await mainPrisma.appUser.findUnique({ where: { phone } });
+  let customer = await mainPrisma.appUser.findUnique({ where: { phone: normalizedPhone } });
   if (customer) {
     throw new ApiError(400, "Customer with this phone already exists");
   } else {
     customer = await mainPrisma.appUser.create({
-      data: { name, phone, email },
+      data: { name, phone: normalizedPhone, email },
     });
   }
 
@@ -1524,6 +1719,171 @@ const addSuperAdminCustomer = async ({ tenantId, name, phone, email, points = 0,
     points: wallet.points,
     tier: getCustomerTier(wallet),
     joinedAt: customer.createdAt,
+  };
+};
+
+const bulkUploadSuperAdminCustomers = async ({ tenantId, customers }) => {
+  if (!Array.isArray(customers) || customers.length === 0) {
+    throw new ApiError(400, "No customer data provided for bulk upload");
+  }
+
+  const tenant = (tenantId && tenantId !== "null" && tenantId !== "undefined" && tenantId !== "all")
+    ? await mainPrisma.tenant.findUnique({ where: { id: tenantId } })
+    : null;
+
+  let createdCount = 0;
+  let updatedCount = 0;
+  const errors = [];
+
+  for (let i = 0; i < customers.length; i++) {
+    const row = customers[i];
+    const rowNum = i + 1;
+    const name = (row.name || "").trim() || "Unnamed Customer";
+    const rawPhone = row.phone || row["phone no"] || row.phone_number || row["phone_number"] || row.mobile || "";
+
+    if (!rawPhone) {
+      errors.push(`Row ${rowNum}: Phone number is required`);
+      continue;
+    }
+
+    const normalizedPhone = normalizeSaudiPhone(rawPhone);
+    const points = Math.max(0, Number(row.points) || 0);
+    const tier = (row.tier || "bronze").toString().trim().toLowerCase();
+    const email = (row.email || "").trim() || null;
+
+    try {
+      let customer = await mainPrisma.appUser.findUnique({ where: { phone: normalizedPhone } });
+      if (!customer) {
+        customer = await mainPrisma.appUser.create({
+          data: { name, phone: normalizedPhone, email },
+        });
+        createdCount++;
+      } else {
+        if (name && name !== "Unnamed Customer" && customer.name !== name) {
+          customer = await mainPrisma.appUser.update({
+            where: { id: customer.id },
+            data: { name },
+          });
+        }
+        updatedCount++;
+      }
+
+      let wallet = await mainPrisma.wallet.findUnique({ where: { appUserId: customer.id } });
+      if (!wallet) {
+        wallet = await mainPrisma.wallet.create({
+          data: {
+            appUserId: customer.id,
+            points,
+            lifetimeEarn: points,
+            tier: tier || "bronze",
+          },
+        });
+      } else {
+        const updateData = {};
+        if (points > 0) {
+          updateData.points = { increment: points };
+          updateData.lifetimeEarn = { increment: points };
+        }
+        if (tier) {
+          updateData.tier = tier;
+        }
+        wallet = await mainPrisma.wallet.update({
+          where: { appUserId: customer.id },
+          data: updateData,
+        });
+      }
+
+      if (points > 0) {
+        await mainPrisma.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            points,
+            description: "Bulk Upload by Super Admin",
+            tenantId: tenant?.id || null,
+          },
+        });
+      }
+    } catch (err) {
+      console.error(`Error processing bulk row ${rowNum}:`, err.message);
+      errors.push(`Row ${rowNum} (${name}): ${err.message}`);
+    }
+  }
+
+  return {
+    success: true,
+    total: customers.length,
+    createdCount,
+    updatedCount,
+    errors,
+    message: `Successfully processed ${createdCount + updatedCount} customers (${createdCount} new accounts created).`,
+  };
+};
+
+const adjustSuperAdminCustomerPoints = async (tenantId, customerId, { action = "add", mode = "delta", points = 0, tier, reason }) => {
+  const customer = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
+  if (!customer) throw new ApiError(404, "Customer not found");
+
+  const tenant = (tenantId && tenantId !== "null" && tenantId !== "undefined" && tenantId !== "all")
+    ? await mainPrisma.tenant.findUnique({ where: { id: tenantId } })
+    : null;
+
+  let wallet = await mainPrisma.wallet.findUnique({ where: { appUserId: customer.id } });
+  if (!wallet) {
+    wallet = await mainPrisma.wallet.create({
+      data: { appUserId: customer.id, points: 0, lifetimeEarn: 0, tier: tier || "bronze" },
+    });
+  }
+
+  let deltaPoints = 0;
+  let newTotalPoints = wallet.points;
+
+  if (action === "add") {
+    deltaPoints = Math.max(0, Number(points) || 0);
+    newTotalPoints = wallet.points + deltaPoints;
+  } else if (action === "adjust") {
+    if (mode === "set") {
+      const target = Math.max(0, Number(points) || 0);
+      deltaPoints = target - wallet.points;
+      newTotalPoints = target;
+    } else {
+      deltaPoints = Number(points) || 0;
+      newTotalPoints = Math.max(0, wallet.points + deltaPoints);
+    }
+  }
+
+  const updateData = { points: newTotalPoints };
+  if (deltaPoints > 0) {
+    updateData.lifetimeEarn = { increment: deltaPoints };
+  }
+  if (tier) {
+    updateData.tier = tier;
+  }
+
+  wallet = await mainPrisma.wallet.update({
+    where: { appUserId: customer.id },
+    data: updateData,
+  });
+
+  if (deltaPoints !== 0) {
+    await mainPrisma.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        points: deltaPoints,
+        description: reason || (action === "add" ? "Points added by Super Admin" : "Points adjusted by Super Admin"),
+        tenantId: tenant?.id || null,
+      },
+    });
+  }
+
+  return {
+    id: customer.id,
+    customerId: customer.id,
+    name: customer.name,
+    phone: customer.phone,
+    email: customer.email,
+    tenantName: tenant?.name || "Servi Platform",
+    points: wallet.points,
+    tier: getCustomerTier(wallet),
   };
 };
 
@@ -1669,16 +2029,21 @@ const getSuperAdminOrderDetail = async (tenantId, orderId) => {
   if (!isPointsPayment && (order.status || "").toUpperCase() === "COMPLETED") {
     const earnTx = await mainPrisma.walletTransaction.findFirst({
       where: {
-        orderId: order.id,
-        type: "EARN"
+        points: { gt: 0 },
+        OR: [
+          { orderId: order.id },
+          { orderNumber: order.orderNumber },
+          { description: { contains: order.orderNumber } }
+        ]
       }
     });
 
     if (earnTx) {
-      pointsEarned = earnTx.points;
+      pointsEarned = Math.abs(earnTx.points);
+    } else if (order.loyaltyEarnRate !== undefined && order.loyaltyEarnRate !== null && Number(order.loyaltyEarnRate) > 0) {
+      pointsEarned = Math.floor(Number(order.total || 0) * Number(order.loyaltyEarnRate));
     } else {
-      const earnRate = Number(tenant.loyaltyEarnRate || 1.0);
-      pointsEarned = Math.floor(Number(order.total || 0) * earnRate);
+      pointsEarned = 0;
     }
   }
 
@@ -1958,6 +2323,8 @@ module.exports = {
   getSuperAdminCustomerDetails,
   addSuperAdminCustomer,
   deleteSuperAdminCustomer,
+  bulkUploadSuperAdminCustomers,
+  adjustSuperAdminCustomerPoints,
   getTenantUsers,
   getAllSystemUsers,
   getSyncStatus,

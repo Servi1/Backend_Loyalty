@@ -18,6 +18,13 @@ const create = catchAsync(async (req, res) => {
 });
 
 const update = catchAsync(async (req, res) => {
+  if (req.user && req.user.role !== 'SUPER_ADMIN') {
+    const targetTenantId = req.params.id;
+    const userTenantId = req.tenant ? req.tenant.id : req.user.tenantId;
+    if (userTenantId && targetTenantId !== userTenantId) {
+      return res.status(403).json({ success: false, message: "Forbidden: Cannot edit another brand's settings" });
+    }
+  }
   const tenant = await tenantsService.update(req.params.id, req.body);
   res.json({ success: true, data: tenant });
 });
@@ -43,7 +50,8 @@ const getSubscriptions = catchAsync(async (_req, res) => {
 
 const getLoyaltyOverview = catchAsync(async (req, res) => {
   const { startDate, endDate } = req.query;
-  const loyalty = await tenantsService.getLoyaltyOverview({ startDate, endDate });
+  const tenantId = req.tenant ? req.tenant.id : (req.user && req.user.role !== 'SUPER_ADMIN' ? req.user.tenantId : null);
+  const loyalty = await tenantsService.getLoyaltyOverview({ startDate, endDate, tenantId });
   res.json({ success: true, data: loyalty });
 });
 
@@ -138,6 +146,19 @@ const toggleSlot = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+const bulkUploadSuperAdminCustomers = catchAsync(async (req, res) => {
+  const result = await tenantsService.bulkUploadSuperAdminCustomers(req.body);
+  res.json({ success: true, data: result });
+});
+
+const adjustSuperAdminCustomerPoints = catchAsync(async (req, res) => {
+  const { tenantId, customerId } = req.params;
+  const targetCustomerId = customerId || req.params.id || req.body.customerId;
+  const targetTenantId = tenantId || req.body.tenantId;
+  const result = await tenantsService.adjustSuperAdminCustomerPoints(targetTenantId, targetCustomerId, req.body);
+  res.json({ success: true, data: result });
+});
+
 module.exports = {
   getAll,
   getById,
@@ -156,6 +177,8 @@ module.exports = {
   getSuperAdminCustomerDetails,
   addSuperAdminCustomer,
   deleteSuperAdminCustomer,
+  bulkUploadSuperAdminCustomers,
+  adjustSuperAdminCustomerPoints,
   getTenantUsers,
   getAllSystemUsers,
   getSyncStatus,
