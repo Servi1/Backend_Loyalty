@@ -544,6 +544,9 @@ const getSubscriptions = async () => {
 
 const getLoyaltyOverview = async (filters = {}) => {
   const where = {};
+  if (filters.tenantId) {
+    where.id = filters.tenantId;
+  }
   if (filters.startDate || filters.endDate) {
     where.createdAt = {};
     if (filters.startDate) where.createdAt.gte = new Date(filters.startDate);

@@ -19,19 +19,19 @@ router.get("/orders/:tenantId/:orderId", authorize("SUPER_ADMIN"), ctrl.getSuper
 router.get("/subscriptions", authorize("SUPER_ADMIN"), ctrl.getSubscriptions);
 router.get("/loyalty", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.getLoyaltyOverview);
 router.get("/loyalty/customers", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.getSuperAdminCustomers);
-router.post("/loyalty/customers", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.addSuperAdminCustomer);
-router.post("/loyalty/customers/bulk-upload", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.bulkUploadSuperAdminCustomers);
-router.post("/loyalty/customers/:tenantId/:customerId/adjust-points", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.adjustSuperAdminCustomerPoints);
-router.post("/loyalty/customers/:customerId/adjust-points", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.adjustSuperAdminCustomerPoints);
+router.post("/loyalty/customers", authorize("SUPER_ADMIN"), ctrl.addSuperAdminCustomer);
+router.post("/loyalty/customers/bulk-upload", authorize("SUPER_ADMIN"), ctrl.bulkUploadSuperAdminCustomers);
+router.post("/loyalty/customers/:tenantId/:customerId/adjust-points", authorize("SUPER_ADMIN"), ctrl.adjustSuperAdminCustomerPoints);
+router.post("/loyalty/customers/:customerId/adjust-points", authorize("SUPER_ADMIN"), ctrl.adjustSuperAdminCustomerPoints);
 router.get("/loyalty/customers/:tenantId/:customerId", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.getSuperAdminCustomerDetails);
-router.delete("/loyalty/customers/:tenantId/:customerId", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.deleteSuperAdminCustomer);
+router.delete("/loyalty/customers/:tenantId/:customerId", authorize("SUPER_ADMIN"), ctrl.deleteSuperAdminCustomer);
 router.get("/invoices", authorize("SUPER_ADMIN"), ctrl.getInvoices);
 router.get("/users/all", authorize("SUPER_ADMIN"), ctrl.getAllSystemUsers);
 router.get("/:id/users", authorize("SUPER_ADMIN"), ctrl.getTenantUsers);
 router.get("/", authorize("SUPER_ADMIN"), ctrl.getAll);
 router.get("/:id", authorize("SUPER_ADMIN"), ctrl.getById);
 router.post("/", authorize("SUPER_ADMIN"), ctrl.create);
-router.put("/:id", authorize("SUPER_ADMIN"), ctrl.update);
+router.put("/:id", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.update);
 router.patch("/:id/slots/toggle", authorize("SUPER_ADMIN"), ctrl.toggleSlot);
 router.delete("/:id", authorize("SUPER_ADMIN"), ctrl.remove);
 
