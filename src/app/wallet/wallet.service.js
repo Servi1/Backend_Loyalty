@@ -7,11 +7,107 @@
 const ApiError = require("../../utils/ApiError");
 const mainPrisma = require("../../config/prisma");
 
-// Helper to normalise phone numbers
+// Helper to normalise phone numbers (defaulting to Saudi international +966)
 const normalisePhone = (raw) => {
+  if (!raw) return "";
   let phone = String(raw).replace(/[\s\-().]/g, "");
-  if (!phone.startsWith("+")) phone = "+" + phone;
-  return phone;
+  if (phone.startsWith("+")) return phone;
+  if (phone.startsWith("00")) return "+" + phone.slice(2);
+  if (phone.startsWith("0")) phone = phone.slice(1);
+  if (phone.startsWith("966")) return "+" + phone;
+  return "+966" + phone;
+};
+
+// Auto-revert gifts older than 3 days (72 hours) back to sender's wallet
+const processExpiredGifts = async () => {
+  try {
+    const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+    const expiryThreshold = new Date(Date.now() - THREE_DAYS_MS);
+
+    const expiredGifts = await mainPrisma.gift.findMany({
+      where: {
+        claimed: false,
+        createdAt: { lt: expiryThreshold }
+      },
+      include: {
+        sender: { include: { wallet: true } },
+        recipient: true
+      }
+    });
+
+    for (const gift of expiredGifts) {
+      if (gift.sender && gift.sender.wallet) {
+        let recipientDisplay = gift.recipient?.name || gift.recipient?.phone || "recipient";
+        let isCard = false;
+        let cardTheme = "";
+        if (gift.message && gift.message.startsWith("{")) {
+          try {
+            const parsed = JSON.parse(gift.message);
+            if (parsed.isGiftCard) {
+              isCard = true;
+              cardTheme = parsed.theme || "Gift Card";
+              if (parsed.recipientName) recipientDisplay = parsed.recipientName;
+            }
+          } catch (e) {}
+        }
+
+        const desc = isCard
+          ? `Refund: Unclaimed Gift Card (${cardTheme}) to ${recipientDisplay} expired after 3 days`
+          : `Refund: Unclaimed gift to ${recipientDisplay} expired after 3 days`;
+
+        await mainPrisma.$transaction([
+          mainPrisma.gift.update({
+            where: { id: gift.id },
+            data: {
+              claimed: true,
+              message: gift.message ? gift.message + " [EXPIRED_REVERTED]" : "[EXPIRED_REVERTED]"
+            }
+          }),
+          mainPrisma.wallet.update({
+            where: { id: gift.sender.wallet.id },
+            data: { points: { increment: gift.points } }
+          }),
+          mainPrisma.walletTransaction.create({
+            data: {
+              walletId: gift.sender.wallet.id,
+              points: gift.points,
+              description: desc
+            }
+          })
+        ]);
+      }
+    }
+  } catch (err) {
+    console.error("Error processing expired gifts:", err);
+  }
+};
+
+// ─── verifyUser ──────────────────────────────────────────────────────────────
+const verifyUser = async (currentUserId, rawPhone) => {
+  if (!rawPhone || !rawPhone.trim()) {
+    throw new ApiError(400, "Mobile number is required");
+  }
+
+  const phone = normalisePhone(rawPhone);
+
+  const targetUser = await mainPrisma.appUser.findFirst({
+    where: { phone, isDelete: false },
+    select: { id: true, name: true, phone: true }
+  });
+
+  if (!targetUser) {
+    throw new ApiError(404, "User does not exist");
+  }
+
+  if (targetUser.id === currentUserId) {
+    throw new ApiError(400, "Cannot send points or gift cards to yourself");
+  }
+
+  return {
+    id: targetUser.id,
+    name: targetUser.name || targetUser.phone,
+    phone: targetUser.phone
+  };
 };
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
@@ -37,6 +133,7 @@ const _formatGiftDate = (date) => {
 // ─── getWallet ────────────────────────────────────────────────────────────────
 
 const getWallet = async (db, userId) => {
+  await processExpiredGifts();
   const wallet = await mainPrisma.wallet.findUnique({
     where: { appUserId: userId },
     include: {
@@ -237,6 +334,7 @@ const sendGiftCard = async (db, tenantId, senderId, { recipientPhone, points, th
 // ─── getGifts ──────────────────────────────────────────────────────────────────
 
 const getGifts = async (db, userId) => {
+  await processExpiredGifts();
   const gifts = await mainPrisma.gift.findMany({
     where: { recipientId: userId },
     include: {
@@ -249,6 +347,8 @@ const getGifts = async (db, userId) => {
     },
     orderBy: { createdAt: "desc" },
   });
+
+  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
   return gifts.map(g => {
     let displayMessage = g.message || "";
@@ -268,13 +368,18 @@ const getGifts = async (db, userId) => {
       }
     }
 
+    const expiresAtDate = new Date(new Date(g.createdAt).getTime() + THREE_DAYS_MS);
+
     return {
       id: g.id,
       name: senderName,
       date: _formatGiftDate(g.createdAt),
+      createdAt: g.createdAt,
+      expiresAt: expiresAtDate.toISOString(),
       message: displayMessage,
       points: g.points,
       claimed: g.claimed,
+      isExpired: g.message ? g.message.includes("[EXPIRED_REVERTED]") : false,
       theme,
     };
   });
@@ -283,6 +388,7 @@ const getGifts = async (db, userId) => {
 // ─── claimGift ─────────────────────────────────────────────────────────────────
 
 const claimGift = async (db, tenantId, userId, giftId) => {
+  await processExpiredGifts();
   const gift = await mainPrisma.gift.findUnique({
     where: { id: giftId },
     include: {
@@ -623,6 +729,7 @@ module.exports = {
   getTransactions,
   transferPoints,
   sendGiftCard,
+  verifyUser,
   getLeaderboard,
   getGifts,
   claimGift,

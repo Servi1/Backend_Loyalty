@@ -40,6 +40,13 @@ const sendGiftCard = catchAsync(async (req, res) => {
   res.json({ success: true, message: "Gift card sent successfully", data: result });
 });
 
+// ─── POST /wallet/verify-user ────────────────────────────────────────────────
+const verifyUser = catchAsync(async (req, res) => {
+  const { phone } = req.body;
+  const result = await walletService.verifyUser(req.user.id, phone);
+  res.json({ success: true, message: "User verified", data: result });
+});
+
 // ─── GET /wallet/gifts ────────────────────────────────────────────────────────
 const getGifts = catchAsync(async (req, res) => {
   const gifts = await walletService.getGifts(req.tenantDb, req.user.id);
@@ -88,6 +95,7 @@ module.exports = {
   getTransactions,
   transferPoints,
   sendGiftCard,
+  verifyUser,
   getLeaderboard,
   getGifts,
   claimGift,
