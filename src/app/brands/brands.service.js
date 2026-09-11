@@ -132,7 +132,7 @@ const addFavorite = async (userId, brandId) => {
   const updated = await mainPrisma.appUser.update({
     where: { id: userId },
     data: { favoriteBrands: favBrands },
-    include: { wallet: true }
+    include: { wallets: true }
   });
 
   return formatProfile(updated);
@@ -160,7 +160,7 @@ const removeFavorite = async (userId, brandId) => {
   const updated = await mainPrisma.appUser.update({
     where: { id: userId },
     data: { favoriteBrands: favBrands },
-    include: { wallet: true }
+    include: { wallets: true }
   });
 
   return formatProfile(updated);

@@ -597,7 +597,7 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
     try {
       const customer = await mainPrisma.appUser.findUnique({
         where: { id: targetCustomerId },
-        include: { wallet: true }
+        include: { wallets: true }
       });
       if (customer) {
         const loyaltyService = require("../loyalty/loyalty.service");

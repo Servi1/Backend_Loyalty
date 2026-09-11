@@ -557,11 +557,12 @@ const reverseOrderPoints = async (db, customerId, orderNumber, pointsRedeemed, t
   if (!customerId) return;
   const customer = await mainPrisma.appUser.findUnique({
     where: { id: customerId },
-    include: { wallet: true }
+    include: { wallets: true }
   });
-  if (!customer || !customer.wallet) return;
+  if (!customer) return;
 
-  const wallet = customer.wallet;
+  const wallet = await getWallet(db, customerId, tenantId);
+  if (!wallet) return;
 
   // 1. Reverse Earned Points
   const earnTx = await mainPrisma.walletTransaction.findFirst({

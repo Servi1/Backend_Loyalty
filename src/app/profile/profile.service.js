@@ -16,7 +16,7 @@ const path = require("path");
 const updateProfile = async (db, userId, { name, email, avatarUrl, cars, addresses, paymentMethods, favoriteBrands, lastName, gender, dob }, tenantId) => {
   const user = await mainPrisma.appUser.findUnique({
     where: { id: userId },
-    include: { wallet: true },
+    include: { wallets: true },
   });
   if (!user) throw new ApiError(404, "User not found");
 
@@ -95,7 +95,7 @@ const updateProfile = async (db, userId, { name, email, avatarUrl, cars, address
       ...(gender !== undefined && { gender }),
       ...(dob !== undefined && { dob: dob ? new Date(dob) : null }),
     },
-    include: { wallet: true },
+    include: { wallets: true },
   });
 
   const ordersCount = db
@@ -130,7 +130,7 @@ const updateProfile = async (db, userId, { name, email, avatarUrl, cars, address
 const deleteAccount = async (db, userId) => {
   const user = await mainPrisma.appUser.findUnique({
     where: { id: userId },
-    include: { wallet: true }
+    include: { wallets: true }
   });
   if (!user) throw new ApiError(404, "User not found");
 
