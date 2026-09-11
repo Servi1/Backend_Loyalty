@@ -30,13 +30,14 @@ const processExpiredGifts = async () => {
         createdAt: { lt: expiryThreshold }
       },
       include: {
-        sender: { include: { wallet: true } },
+        sender: { include: { wallets: true } },
         recipient: true
       }
     });
 
     for (const gift of expiredGifts) {
-      if (gift.sender && gift.sender.wallet) {
+      const senderWallet = (gift.sender?.wallets && gift.sender.wallets[0]) || gift.sender?.wallet;
+      if (gift.sender && senderWallet) {
         let recipientDisplay = gift.recipient?.name || gift.recipient?.phone || "recipient";
         let isCard = false;
         let cardTheme = "";
@@ -64,12 +65,12 @@ const processExpiredGifts = async () => {
             }
           }),
           mainPrisma.wallet.update({
-            where: { id: gift.sender.wallet.id },
+            where: { id: senderWallet.id },
             data: { points: { increment: gift.points } }
           }),
           mainPrisma.walletTransaction.create({
             data: {
-              walletId: gift.sender.wallet.id,
+              walletId: senderWallet.id,
               points: gift.points,
               description: desc
             }
@@ -207,14 +208,16 @@ const transferPoints = async (db, tenantId, senderId, { recipientPhone, points, 
 
   const sender = await mainPrisma.appUser.findUnique({
     where: { id: senderId },
-    include: { wallet: true },
+    include: { wallets: true },
   });
 
-  if (!sender || !sender.wallet) {
+  const senderWallet = (sender?.wallets && sender.wallets[0]) || sender?.wallet;
+
+  if (!sender || !senderWallet) {
     throw new ApiError(404, "Sender wallet not found");
   }
 
-  if (sender.wallet.points < points) {
+  if (senderWallet.points < points) {
     throw new ApiError(400, "Insufficient points in wallet");
   }
 
@@ -222,8 +225,10 @@ const transferPoints = async (db, tenantId, senderId, { recipientPhone, points, 
 
   const recipient = await mainPrisma.appUser.findUnique({
     where: { phone: normalisedPhone },
-    include: { wallet: true },
+    include: { wallets: true },
   });
+
+  const recipientWallet = (recipient?.wallets && recipient.wallets[0]) || recipient?.wallet;
 
   if (!recipient) {
     throw new ApiError(404, `Recipient user not found with phone ${normalisedPhone}`);
@@ -233,19 +238,19 @@ const transferPoints = async (db, tenantId, senderId, { recipientPhone, points, 
     throw new ApiError(400, "Cannot transfer points to yourself");
   }
 
-  if (!recipient.wallet) {
+  if (!recipientWallet) {
     throw new ApiError(404, "Recipient wallet not found");
   }
 
   // Deduct from sender and create a pending Gift record in mainPrisma
   await mainPrisma.$transaction([
     mainPrisma.wallet.update({
-      where: { id: sender.wallet.id },
+      where: { id: senderWallet.id },
       data: { points: { decrement: points } },
     }),
     mainPrisma.walletTransaction.create({
       data: {
-        walletId: sender.wallet.id,
+        walletId: senderWallet.id,
         points: -points,
         description: message ? `Gift sent to ${recipient.name || normalisedPhone}: ${message}` : `Gift sent to ${recipient.name || normalisedPhone}`,
         tenantId: tenantId || null,
@@ -274,14 +279,16 @@ const sendGiftCard = async (db, tenantId, senderId, { recipientPhone, points, th
 
   const sender = await mainPrisma.appUser.findUnique({
     where: { id: senderId },
-    include: { wallet: true },
+    include: { wallets: true },
   });
 
-  if (!sender || !sender.wallet) {
+  const senderWallet = (sender?.wallets && sender.wallets[0]) || sender?.wallet;
+
+  if (!sender || !senderWallet) {
     throw new ApiError(404, "Sender wallet not found");
   }
 
-  if (sender.wallet.points < points) {
+  if (senderWallet.points < points) {
     throw new ApiError(400, "Insufficient points in wallet");
   }
 
@@ -289,8 +296,10 @@ const sendGiftCard = async (db, tenantId, senderId, { recipientPhone, points, th
 
   const recipient = await mainPrisma.appUser.findUnique({
     where: { phone: normalisedPhone },
-    include: { wallet: true },
+    include: { wallets: true },
   });
+
+  const recipientWallet = (recipient?.wallets && recipient.wallets[0]) || recipient?.wallet;
 
   if (!recipient) {
     throw new ApiError(404, `Recipient user not found with phone ${normalisedPhone}`);
@@ -300,7 +309,7 @@ const sendGiftCard = async (db, tenantId, senderId, { recipientPhone, points, th
     throw new ApiError(400, "Cannot send a gift card to yourself");
   }
 
-  if (!recipient.wallet) {
+  if (!recipientWallet) {
     throw new ApiError(404, "Recipient wallet not found");
   }
 
@@ -317,12 +326,12 @@ const sendGiftCard = async (db, tenantId, senderId, { recipientPhone, points, th
 
   await mainPrisma.$transaction([
     mainPrisma.wallet.update({
-      where: { id: sender.wallet.id },
+      where: { id: senderWallet.id },
       data: { points: { decrement: points } },
     }),
     mainPrisma.walletTransaction.create({
       data: {
-        walletId: sender.wallet.id,
+        walletId: senderWallet.id,
         points: -points,
         description: `Gift Card (${theme}) sent to ${recipientName || recipient.name || normalisedPhone}`,
         tenantId: tenantId || null,
@@ -405,7 +414,7 @@ const claimGift = async (db, tenantId, userId, giftId) => {
     include: {
       sender: true,
       recipient: {
-        include: { wallet: true }
+        include: { wallets: true }
       }
     }
   });
@@ -414,7 +423,7 @@ const claimGift = async (db, tenantId, userId, giftId) => {
   if (gift.recipientId !== userId) throw new ApiError(403, "You are not authorized to claim this gift");
   if (gift.claimed) throw new ApiError(400, "Gift has already been claimed");
 
-  const recipientWallet = gift.recipient.wallet;
+  const recipientWallet = (gift.recipient?.wallets && gift.recipient.wallets[0]) || gift.recipient?.wallet;
   if (!recipientWallet) throw new ApiError(404, "Recipient wallet not found");
 
   await mainPrisma.$transaction([
@@ -466,10 +475,12 @@ const claimAllGifts = async (db, tenantId, userId) => {
 
   const user = await mainPrisma.appUser.findUnique({
     where: { id: userId },
-    include: { wallet: true },
+    include: { wallets: true },
   });
 
-  if (!user || !user.wallet) throw new ApiError(404, "Wallet not found");
+  const userWallet = (user?.wallets && user.wallets[0]) || user?.wallet;
+
+  if (!user || !userWallet) throw new ApiError(404, "Wallet not found");
 
   const totalPoints = unclaimedGifts.reduce((sum, gift) => sum + gift.points, 0);
 
@@ -481,7 +492,7 @@ const claimAllGifts = async (db, tenantId, userId) => {
       data: { claimed: true }
     }),
     mainPrisma.wallet.update({
-      where: { id: user.wallet.id },
+      where: { id: userWallet.id },
       data: {
         points: { increment: totalPoints },
         lifetimeEarn: { increment: totalPoints },
@@ -489,7 +500,7 @@ const claimAllGifts = async (db, tenantId, userId) => {
     }),
     ...unclaimedGifts.map(gift => mainPrisma.walletTransaction.create({
       data: {
-        walletId: user.wallet.id,
+        walletId: userWallet.id,
         points: gift.points,
         description: (() => {
           if (gift.message && gift.message.startsWith("{")) {
@@ -518,19 +529,6 @@ const getLeaderboard = async (db, sortBy = 'points') => {
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
 
-  const AVATARS = [
-    "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop",
-    "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100&h=100&fit=crop",
-    "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop",
-    "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop",
-    "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&h=100&fit=crop",
-    "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop",
-    "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop",
-    "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=100&h=100&fit=crop",
-    "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&h=100&fit=crop",
-    "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=100&h=100&fit=crop"
-  ];
-
   let rankedUsers = [];
 
   if (sortBy === 'orders') {
@@ -558,15 +556,16 @@ const getLeaderboard = async (db, sortBy = 'points') => {
     // 2. Fetch user information
     const users = await mainPrisma.appUser.findMany({
       where: { id: { in: activeUserIds } },
-      include: { wallet: true },
+      include: { wallets: true },
     });
 
     rankedUsers = orderGroups.map(g => {
       const user = users.find(u => u.id === g.appUserId);
+      const userWallet = (user?.wallets && user.wallets[0]) || user?.wallet;
       return {
         id: g.appUserId,
         name: user?.name || user?.phone || "Loyal Customer",
-        points: user?.wallet?.points || 0, // Fallback to overall points
+        points: userWallet?.points || 0, // Fallback to overall points
         orders: g._count.id, // Monthly orders count
         avatar: user?.avatarUrl || null,
       };
@@ -623,65 +622,92 @@ const getLeaderboard = async (db, sortBy = 'points') => {
   // ── Fallback overall ranking if there is not enough monthly data ──
   if (rankedUsers.length < 10) {
     const existingIds = rankedUsers.map(u => u.id).filter(Boolean);
-    
-    let overallOrderBy = {
-      wallet: {
-        points: "desc"
-      }
-    };
+    const remainingCount = 10 - rankedUsers.length;
+
+    let fallbackRanked = [];
 
     if (sortBy === 'orders') {
-      overallOrderBy = {
-        orders: {
-          _count: "desc"
-        }
-      };
-    }
+      const fallbackUsers = await mainPrisma.appUser.findMany({
+        where: {
+          id: { notIn: existingIds },
+        },
+        take: remainingCount,
+        include: {
+          wallets: true,
+          _count: {
+            select: {
+              orders: { where: { status: 'COMPLETED' } },
+            }
+          }
+        },
+        orderBy: {
+          orders: {
+            _count: "desc"
+          }
+        },
+      });
 
-    const remainingCount = 10 - rankedUsers.length;
-    const fallbackUsers = await mainPrisma.appUser.findMany({
-      where: {
-        id: { notIn: existingIds },
-      },
-      take: remainingCount,
-      include: {
-        wallet: true,
-        _count: {
-          select: {
-            orders: { where: { status: 'COMPLETED' } },
+      const fallbackUserWallets = fallbackUsers.map(u => (u.wallets && u.wallets[0])?.id).filter(Boolean);
+      const fallbackMonthlyPoints = await mainPrisma.walletTransaction.groupBy({
+        by: ['walletId'],
+        where: {
+          walletId: { in: fallbackUserWallets },
+          points: { gt: 0 },
+          createdAt: { gte: startOfMonth },
+        },
+        _sum: {
+          points: true,
+        }
+      });
+
+      fallbackRanked = fallbackUsers.map(user => {
+        const userWallet = (user.wallets && user.wallets[0]) || user.wallet;
+        const mPoints = fallbackMonthlyPoints.find(p => p.walletId === userWallet?.id)?._sum?.points || 0;
+        const points = mPoints > 0 ? mPoints : (userWallet?.points || 0);
+        const orders = user._count?.orders || 0;
+
+        return {
+          id: user.id,
+          name: user.name || user.phone || "Loyal Customer",
+          points,
+          orders,
+          avatar: user.avatarUrl || null,
+        };
+      });
+    } else {
+      // sortBy === 'points'
+      const fallbackWallets = await mainPrisma.wallet.findMany({
+        where: {
+          appUserId: { notIn: existingIds },
+        },
+        take: remainingCount,
+        orderBy: {
+          points: "desc",
+        },
+        include: {
+          appUser: {
+            include: {
+              _count: {
+                select: {
+                  orders: { where: { status: 'COMPLETED' } },
+                }
+              }
+            }
           }
         }
-      },
-      orderBy: overallOrderBy,
-    });
+      });
 
-    // Query monthly earned points for these fallback users to display consistent monthly values
-    const fallbackUserWallets = fallbackUsers.map(u => u.wallet?.id).filter(Boolean);
-    const fallbackMonthlyPoints = await mainPrisma.walletTransaction.groupBy({
-      by: ['walletId'],
-      where: {
-        walletId: { in: fallbackUserWallets },
-        points: { gt: 0 },
-        createdAt: { gte: startOfMonth },
-      },
-      _sum: {
-        points: true,
-      }
-    });
-
-    const fallbackRanked = fallbackUsers.map(user => {
-      const mPoints = fallbackMonthlyPoints.find(p => p.walletId === user.wallet?.id)?._sum?.points || 0;
-      const points = mPoints > 0 ? mPoints : (user.wallet?.points || 0);
-      const orders = user._count?.orders || 0;
-
-      return {
-        id: user.id,
-        name: user.name || user.phone || "Loyal Customer",
-        points,
-        orders,
-        avatar: user.avatarUrl || null,
-      };
-    });
+      fallbackRanked = fallbackWallets.map(w => {
+        const user = w.appUser;
+        return {
+          id: user?.id || null,
+          name: user?.name || user?.phone || "Loyal Customer",
+          points: w.points || 0,
+          orders: user?._count?.orders || 0,
+          avatar: user?.avatarUrl || null,
+        };
+      }).filter(item => item.id !== null);
+    }
 
     rankedUsers = [...rankedUsers, ...fallbackRanked];
   }
