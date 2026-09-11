@@ -9,7 +9,7 @@ const { getTenantClient } = require("../config/tenantManager");
 const extractTenant = async (req, _res, next) => {
   try {
     const tenantId =
-      req.headers["x-tenant-id"] || req.params.tenantId || req.query.tenantId;
+      req.params.tenantId || req.headers["x-tenant-id"] || req.query.tenantId;
 
     console.log(`[DEBUG extractTenant] tenantId: "${tenantId}"`);
 
