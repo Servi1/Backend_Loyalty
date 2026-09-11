@@ -19,7 +19,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
   if (!tenantId) return;
   try {
     const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-    const resolvedFeeRate = (order.feeRate && Number(order.feeRate) > 0) 
+    const resolvedFeeRate = (order.feeRate !== undefined && order.feeRate !== null && !isNaN(Number(order.feeRate))) 
       ? Number(order.feeRate) 
       : resolveTenantFeeRate(tenant, order.source);
 

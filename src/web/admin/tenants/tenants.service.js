@@ -1170,7 +1170,7 @@ const getSuperAdminOrders = async ({ tenantId, startDate, endDate, status, page 
   ]);
 
   const formattedOrders = orders.map((order) => {
-    const resolvedFee = (order.feeRate && Number(order.feeRate) > 0)
+    const resolvedFee = (order.feeRate !== undefined && order.feeRate !== null && !isNaN(Number(order.feeRate)))
       ? Number(order.feeRate)
       : resolveTenantFeeRate(order.tenant, order.source);
     return {
@@ -1232,7 +1232,7 @@ const syncAllTenantOrders = async () => {
         });
 
         for (const order of orders) {
-          const resolvedFee = (order.feeRate && Number(order.feeRate) > 0)
+          const resolvedFee = (order.feeRate !== undefined && order.feeRate !== null && !isNaN(Number(order.feeRate)))
             ? Number(order.feeRate)
             : resolveTenantFeeRate(tenant, order.source);
 
