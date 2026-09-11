@@ -82,19 +82,18 @@ const getCustomerTierDetails = (customer, wallet, configuredTiers) => {
   return sortedTiers[sortedTiers.length - 1] || DEFAULT_LOYALTY_TIERS[0];
 };
 
-const getWallet = async (db, customerId) => {
+const getWallet = async (db, customerId, tenantId = null) => {
   const customer = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
   if (!customer) throw new ApiError(404, "Customer not found");
 
-  let wallet = await mainPrisma.wallet.findUnique({
-    where: { appUserId: customerId },
+  let wallet = await mainPrisma.wallet.findFirst({
+    where: { appUserId: customerId, tenantId: tenantId || null },
     include: { transactions: { orderBy: { createdAt: "desc" }, take: 20 } },
   });
 
   if (!wallet) {
-    // Auto-create global wallet if missing
     wallet = await mainPrisma.wallet.create({
-      data: { appUserId: customerId, points: 0, lifetimeEarn: 0 },
+      data: { appUserId: customerId, tenantId: tenantId || null, points: 0, lifetimeEarn: 0 },
       include: { transactions: { orderBy: { createdAt: "desc" }, take: 20 } },
     });
   }
@@ -132,10 +131,12 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
   const customer = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
   if (!customer) throw new ApiError(404, "Customer not found");
 
-  let wallet = await mainPrisma.wallet.findUnique({ where: { appUserId: customerId } });
+  let wallet = await mainPrisma.wallet.findFirst({
+    where: { appUserId: customerId, tenantId: tenantId || null },
+  });
   if (!wallet) {
     wallet = await mainPrisma.wallet.create({
-      data: { appUserId: customerId, points: 0, lifetimeEarn: 0 },
+      data: { appUserId: customerId, tenantId: tenantId || null, points: 0, lifetimeEarn: 0 },
     });
   }
 
@@ -168,7 +169,7 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
 
   const [updatedWallet] = await mainPrisma.$transaction([
     mainPrisma.wallet.update({
-      where: { appUserId: customerId },
+      where: { id: wallet.id },
       data: { points: { increment: finalPointsToEarn }, lifetimeEarn: { increment: finalPointsToEarn } },
     }),
     mainPrisma.walletTransaction.create({
@@ -213,9 +214,11 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
   const customer = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
   if (!customer) throw new ApiError(404, "Customer not found");
 
-  const wallet = await mainPrisma.wallet.findUnique({ where: { appUserId: customerId } });
-  if (!wallet) throw new ApiError(404, "Wallet not found");
-  if (wallet.points < points) throw new ApiError(400, "Insufficient points");
+  let wallet = await mainPrisma.wallet.findFirst({
+    where: { appUserId: customerId, tenantId: tenantId || null },
+  });
+  if (!wallet) throw new ApiError(404, "Wallet not found for this brand");
+  if (wallet.points < points) throw new ApiError(400, "Insufficient points for this brand");
 
   // Enforce Tier Daily Redemption Cap
   const customerTier = getCustomerTierDetails(customer, wallet, tenantTiers);
@@ -272,7 +275,7 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
 
   const [updatedWallet] = await mainPrisma.$transaction([
     mainPrisma.wallet.update({
-      where: { appUserId: customerId },
+      where: { id: wallet.id },
       data: { points: { decrement: points } },
     }),
     mainPrisma.walletTransaction.create({
@@ -290,7 +293,7 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
   return updatedWallet;
 };
 
-const searchCustomers = async (db, search) => {
+const searchCustomers = async (db, search, tenantId = null) => {
   const query = search ? search.trim() : "";
   if (!query) return [];
   const cleanDigits = query.replace(/\D/g, "");
@@ -304,21 +307,22 @@ const searchCustomers = async (db, search) => {
     searchConditions.push({ phone: { contains: cleanDigits, mode: "insensitive" } });
   }
 
-  // Search globally in AppUser registry
+  // Search globally in AppUser registry with tenant-filtered wallets
   const customers = await mainPrisma.appUser.findMany({
     where: { OR: searchConditions },
-    include: { wallet: true },
+    include: { wallets: tenantId ? { where: { tenantId } } : true },
     take: 15,
   });
 
   return customers.map(c => {
-    const tier = getCustomerTierDetails(c, c.wallet, DEFAULT_LOYALTY_TIERS);
+    const wallet = tenantId ? c.wallets.find(w => w.tenantId === tenantId) : c.wallets[0];
+    const tier = getCustomerTierDetails(c, wallet, DEFAULT_LOYALTY_TIERS);
     return {
       id: c.id,
       name: c.name || "Unnamed",
       phone: c.phone,
       email: c.email,
-      points: c.wallet?.points || 0,
+      points: wallet?.points || 0,
       tier: tier.name,
       tierLevel: tier.level,
       tierIcon: tier.icon,
@@ -326,28 +330,29 @@ const searchCustomers = async (db, search) => {
   });
 };
 
-const getCustomerByPhone = async (db, phone) => {
+const getCustomerByPhone = async (db, phone, tenantId = null) => {
   if (!phone) return null;
   const normalized = normalizePhone(phone);
   const customer = await mainPrisma.appUser.findUnique({
     where: { phone: normalized },
-    include: { wallet: true },
+    include: { wallets: tenantId ? { where: { tenantId } } : true },
   });
   if (!customer) return null;
-  const tier = getCustomerTierDetails(customer, customer.wallet, DEFAULT_LOYALTY_TIERS);
+  const wallet = tenantId ? customer.wallets.find(w => w.tenantId === tenantId) : customer.wallets[0];
+  const tier = getCustomerTierDetails(customer, wallet, DEFAULT_LOYALTY_TIERS);
   return {
     id: customer.id,
     name: customer.name || "Unnamed",
     phone: customer.phone,
     email: customer.email,
-    points: customer.wallet?.points || 0,
+    points: wallet?.points || 0,
     tier: tier.name,
     tierLevel: tier.level,
     tierIcon: tier.icon,
   };
 };
 
-const getAllCustomersForReport = async (db, tenantId) => {
+const getAllCustomersForReport = async (db, tenantId = null) => {
   let configuredTiers = DEFAULT_LOYALTY_TIERS;
   if (tenantId) {
     const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
@@ -357,19 +362,20 @@ const getAllCustomersForReport = async (db, tenantId) => {
   }
 
   const customers = await mainPrisma.appUser.findMany({
-    include: { wallet: true },
+    include: { wallets: tenantId ? { where: { tenantId } } : true },
     orderBy: { createdAt: "desc" },
   });
 
   return customers.map(c => {
-    const tier = getCustomerTierDetails(c, c.wallet, configuredTiers);
+    const wallet = tenantId ? c.wallets.find(w => w.tenantId === tenantId) : c.wallets[0];
+    const tier = getCustomerTierDetails(c, wallet, configuredTiers);
     return {
       id: c.id,
       name: c.name || "Unnamed",
       phone: c.phone,
       email: c.email,
-      points: c.wallet?.points || 0,
-      lifetimeEarn: c.wallet?.lifetimeEarn || 0,
+      points: wallet?.points || 0,
+      lifetimeEarn: wallet?.lifetimeEarn || 0,
       joinedAt: c.createdAt,
       tier: tier.name,
       tierLevel: tier.level,
@@ -415,18 +421,21 @@ const createCustomer = async (db, { name, phone, email, points = 0 }, tenantId) 
     });
   }
 
-  let wallet = await mainPrisma.wallet.findUnique({ where: { appUserId: customer.id } });
+  let wallet = await mainPrisma.wallet.findFirst({
+    where: { appUserId: customer.id, tenantId: tenantId || null },
+  });
   if (!wallet) {
     wallet = await mainPrisma.wallet.create({
       data: {
         appUserId: customer.id,
+        tenantId: tenantId || null,
         points: points,
         lifetimeEarn: points,
       },
     });
   } else if (points > 0) {
     wallet = await mainPrisma.wallet.update({
-      where: { appUserId: customer.id },
+      where: { id: wallet.id },
       data: {
         points: { increment: points },
         lifetimeEarn: { increment: points },
@@ -464,11 +473,16 @@ const getTiers = async (tenantId) => {
   }
 
   const allUsers = await mainPrisma.appUser.findMany({
-    include: { wallet: true }
+    include: {
+      wallets: tenantId ? { where: { tenantId } } : true
+    }
   });
 
   const allOrders = await mainPrisma.aggregatedOrder.findMany({
-    where: { status: "COMPLETED" },
+    where: {
+      status: "COMPLETED",
+      ...(tenantId && { tenantId })
+    },
     select: { customerPhone: true, customerName: true, total: true }
   });
 
@@ -485,14 +499,18 @@ const getTiers = async (tenantId) => {
   const memberCounts = {};
   const memberDetails = {};
   for (const user of allUsers) {
+    const userWallet = (tenantId && Array.isArray(user.wallets))
+      ? user.wallets.find((w) => w.tenantId === tenantId) || user.wallets[0] || null
+      : (Array.isArray(user.wallets) ? user.wallets[0] : null);
+
     const phone = user.phone ? user.phone.trim() : "";
     const stats = userStatsByPhone[phone] || { count: 0, spend: 0 };
     const userWithStats = {
       ...user,
       completedOrdersCount: stats.count,
-      lifetimeSpend: stats.spend > 0 ? stats.spend : (user.wallet ? Number(user.wallet.lifetimeEarn || 0) : 0)
+      lifetimeSpend: stats.spend > 0 ? stats.spend : (userWallet ? Number(userWallet.lifetimeEarn || 0) : 0)
     };
-    const t = getCustomerTierDetails(userWithStats, user.wallet, tiers);
+    const t = getCustomerTierDetails(userWithStats, userWallet, tiers);
     memberCounts[t.id] = (memberCounts[t.id] || 0) + 1;
     if (!memberDetails[t.id]) memberDetails[t.id] = [];
     memberDetails[t.id].push({
@@ -500,8 +518,8 @@ const getTiers = async (tenantId) => {
       name: user.name || "Walk-in Customer",
       phone: user.phone || "N/A",
       email: user.email || "N/A",
-      points: user.wallet?.points || 0,
-      lifetimeEarn: user.wallet?.lifetimeEarn || 0,
+      points: userWallet?.points || 0,
+      lifetimeEarn: userWallet?.lifetimeEarn || 0,
       completedOrdersCount: stats.count,
       lifetimeSpend: userWithStats.lifetimeSpend,
       createdAt: user.createdAt
@@ -539,11 +557,12 @@ const reverseOrderPoints = async (db, customerId, orderNumber, pointsRedeemed, t
   if (!customerId) return;
   const customer = await mainPrisma.appUser.findUnique({
     where: { id: customerId },
-    include: { wallet: true }
+    include: { wallets: true }
   });
-  if (!customer || !customer.wallet) return;
+  if (!customer) return;
 
-  const wallet = customer.wallet;
+  const wallet = await getWallet(db, customerId, tenantId);
+  if (!wallet) return;
 
   // 1. Reverse Earned Points
   const earnTx = await mainPrisma.walletTransaction.findFirst({

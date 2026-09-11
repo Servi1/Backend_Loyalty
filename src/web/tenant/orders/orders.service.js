@@ -19,7 +19,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
   if (!tenantId) return;
   try {
     const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-    const resolvedFeeRate = (order.feeRate && Number(order.feeRate) > 0) 
+    const resolvedFeeRate = (order.feeRate !== undefined && order.feeRate !== null && !isNaN(Number(order.feeRate))) 
       ? Number(order.feeRate) 
       : resolveTenantFeeRate(tenant, order.source);
 
@@ -306,6 +306,16 @@ const normalizePhone = (rawPhone) => {
     try {
       const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
       if (tenant) {
+        if (paymentMethod === "points" || (notes && (notes.includes("Paid by Loyalty Points") || notes.includes("Points Payment")))) {
+          if (tenant.loyaltyEnabled === false) {
+            throw new ApiError(400, "Loyalty points program is currently disabled for this brand.");
+          }
+          const src = (orderSource || "").toLowerCase();
+          if (src === "pos" && tenant.loyaltyRedeemPoints === false) {
+            throw new ApiError(400, "Redeeming loyalty points is currently disabled for POS Cashier.");
+          }
+        }
+
         feeRate = resolveTenantFeeRate(tenant, orderSource);
         if (tenant.loyaltyEnabled !== false) {
           const src = (orderSource || "").toLowerCase();
@@ -315,6 +325,7 @@ const normalizePhone = (rawPhone) => {
         }
       }
     } catch (e) {
+      if (e instanceof ApiError) throw e;
       console.error("Failed to query tenant fee and loyalty settings:", e.message);
     }
   }
@@ -397,6 +408,10 @@ const normalizePhone = (rawPhone) => {
 
   // Sync to super admin aggregated orders synchronously
   await syncToAggregatedOrder(db, tenantId, order).catch(console.error);
+
+  if ((order.status || "").toUpperCase() === "COMPLETED") {
+    await handleOrderStatusLoyalty(db, order, order.status, tenantId).catch(console.error);
+  }
 
   return order;
 };
@@ -551,7 +566,28 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
 };
 
 const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
-  if (!updated || !updated.customerId) return;
+  if (!updated) return;
+
+  let targetCustomerId = updated.customerId || updated.userId;
+  if (!targetCustomerId && updated.customerPhone) {
+    const cleanPhone = updated.customerPhone.trim().replace(/\s+/g, "");
+    const withoutPlus = cleanPhone.replace(/^\+/, "");
+    const withPlus = `+${withoutPlus}`;
+    const userByPhone = await mainPrisma.appUser.findFirst({
+      where: {
+        OR: [
+          { phone: cleanPhone },
+          { phone: withoutPlus },
+          { phone: withPlus }
+        ]
+      }
+    });
+    if (userByPhone) {
+      targetCustomerId = userByPhone.id;
+    }
+  }
+
+  if (!targetCustomerId) return;
 
   if (status === "COMPLETED") {
     if ((updated.paymentMethod || "").toLowerCase() === "points" || (updated.notes && (updated.notes.includes("Paid by Loyalty Points") || updated.notes.includes("Points Payment")))) {
@@ -560,12 +596,12 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
 
     try {
       const customer = await mainPrisma.appUser.findUnique({
-        where: { id: updated.customerId },
-        include: { wallet: true }
+        where: { id: targetCustomerId },
+        include: { wallets: true }
       });
       if (customer) {
         const loyaltyService = require("../loyalty/loyalty.service");
-        const wallet = customer.wallet || (await loyaltyService.getWallet(db, updated.customerId));
+        const wallet = await loyaltyService.getWallet(db, targetCustomerId, tenantId);
 
         const description = `Earned on Order #${updated.orderNumber}`;
         const tx = await mainPrisma.walletTransaction.findFirst({
@@ -586,15 +622,15 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
             return;
           }
           let earnRate = 0.0;
-          if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null && Number(updated.loyaltyEarnRate) === 0) {
-            earnRate = 0.0;
+          if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null) {
+            earnRate = Number(updated.loyaltyEarnRate);
           } else {
             earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
           }
 
           const pointsToEarn = Math.floor(updated.total * earnRate);
           if (pointsToEarn > 0) {
-            await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId, {
+            await loyaltyService.earnPoints(db, targetCustomerId, pointsToEarn, description, tenantId, {
               orderId: updated.id,
               orderNumber: updated.orderNumber
             });

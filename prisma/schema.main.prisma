@@ -162,6 +162,7 @@ model Tenant {
   aggregatedOrders    AggregatedOrder[]
   spinItems           GlobalSpinItem[]
   slotAddons          TenantSlotAddon[]
+  wallets             Wallet[]
 
   lastOrderSyncAt DateTime?
 
@@ -235,7 +236,7 @@ model AppUser {
   isDelete       Boolean  @default(false)
   // Relations
   orders        Order[]
-  wallet        Wallet?
+  wallets       Wallet[]
   sentGifts     Gift[]   @relation("SentGifts")
   receivedGifts Gift[]   @relation("ReceivedGifts")
   cart          CartItem[]
@@ -308,10 +309,16 @@ model Wallet {
   tier         String?             @default("bronze")
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
-  appUserId    String              @unique
+  appUserId    String
   appUser      AppUser             @relation(fields: [appUserId], references: [id], onDelete: Cascade)
+  tenantId     String?
+  tenant       Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   transactions WalletTransaction[]
+
+  @@unique([appUserId, tenantId])
+  @@index([appUserId])
+  @@index([tenantId])
 }
 model WalletTransaction {
   id          String   @id @default(uuid())

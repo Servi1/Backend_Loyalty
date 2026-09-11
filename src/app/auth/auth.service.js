@@ -90,7 +90,7 @@ const verifyOtp = async (rawPhone, code, tenantId = null) => {
   // ── Find or create user globally ──────────────────────────────────────────
   let user = await mainPrisma.appUser.findUnique({
     where: { phone },
-    include: { wallet: { include: { transactions: { orderBy: { createdAt: "desc" }, take: 10 } } } },
+    include: { wallets: { include: { transactions: { orderBy: { createdAt: "desc" }, take: 10 } } } },
   });
   if (user && user.isDelete) {
     throw new ApiError(400, "user already exists, please contact the admin.");
@@ -114,7 +114,7 @@ const verifyOtp = async (rawPhone, code, tenantId = null) => {
       include: { transactions: true }
     });
 
-    user = { ...user, wallet };
+    user = { ...user, wallets: [wallet] };
   }
 
   const token = signToken(user.id);
@@ -157,7 +157,7 @@ const getMe = async (db, userId) => {
   const user = await mainPrisma.appUser.findUnique({
     where: { id: userId },
     include: {
-      wallet: {
+      wallets: {
         include: {
           transactions: {
             orderBy: { createdAt: "desc" },
@@ -269,14 +269,17 @@ const _formatUser = async (user) => {
     paymentMethods: user.paymentMethods || [],
     favoriteBrands: user.favoriteBrands || [],
     favoriteBrandsDetails,
-    wallet: user.wallet
-      ? {
-          id: user.wallet.id,
-          points: user.wallet.points,
-          lifetimeEarn: user.wallet.lifetimeEarn,
-          transactions: user.wallet.transactions ?? [],
-        }
-      : null,
+    wallet: (() => {
+      const w = (user.wallets && user.wallets[0]) || user.wallet;
+      return w
+        ? {
+            id: w.id,
+            points: w.points,
+            lifetimeEarn: w.lifetimeEarn,
+            transactions: w.transactions ?? [],
+          }
+        : null;
+    })(),
     createdAt: user.createdAt,
   };
 };

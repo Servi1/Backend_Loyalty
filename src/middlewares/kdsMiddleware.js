@@ -14,7 +14,7 @@ const { getTenantClient } = require("../config/tenantManager");
 const authenticateKds = async (req, res, next) => {
   try {
     // 1. Tenant Extraction
-    const tenantId = req.headers["x-tenant-id"] || req.params.tenantId || req.query.tenantId;
+    const tenantId = req.params.tenantId || req.headers["x-tenant-id"] || req.query.tenantId;
     if (!tenantId) {
       return next(new ApiError(400, "Tenant ID is required (x-tenant-id header)"));
     }

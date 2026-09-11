@@ -264,7 +264,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerName,
         customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
-        feeRate: order.feeRate || 0.0,
+        feeRate: order.feeRate !== undefined && order.feeRate !== null ? Number(order.feeRate) : 0.0,
         loyaltyEarnRate: order.loyaltyEarnRate ?? 0.0,
         source: order.source || "pos",
         staffId: order.staffId || null,
@@ -281,7 +281,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerName,
         customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
-        feeRate: order.feeRate || 0.0,
+        feeRate: order.feeRate !== undefined && order.feeRate !== null ? Number(order.feeRate) : 0.0,
         loyaltyEarnRate: order.loyaltyEarnRate ?? 0.0,
         source: order.source || "pos",
         staffId: order.staffId || null,
@@ -360,11 +360,11 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
       const mainPrisma = require("../config/prisma");
       const customer = await mainPrisma.appUser.findUnique({
         where: { id: updated.customerId },
-        include: { wallet: true }
+        include: { wallets: true }
       });
       if (customer) {
         const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
-        const wallet = customer.wallet || (await loyaltyService.getWallet(db, updated.customerId));
+        const wallet = await loyaltyService.getWallet(db, updated.customerId, tenantId);
         const description = `Earned on Order #${updated.orderNumber}`;
         const tx = await mainPrisma.walletTransaction.findFirst({
           where: {
@@ -412,16 +412,20 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
         const mainPrisma = require("../config/prisma");
         const customer = await mainPrisma.appUser.findUnique({
           where: { id: updated.customerId },
-          include: { wallet: true }
+          include: { wallets: true }
         });
         if (customer) {
           const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
-          const wallet = customer.wallet || (await loyaltyService.getWallet(db, updated.customerId));
+          const wallet = await loyaltyService.getWallet(db, updated.customerId, tenantId);
           const description = `Earned on Order #${updated.orderNumber}`;
           const tx = await mainPrisma.walletTransaction.findFirst({
             where: {
               walletId: wallet.id,
-              description,
+              OR: [
+                { orderNumber: updated.orderNumber },
+                { orderId: updated.id },
+                { description }
+              ]
             }
           });
 
@@ -431,15 +435,14 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
               console.log(`[POS LOYALTY] Loyalty disabled or addPoints false. Skipping points for order #${updated.orderNumber}`);
             } else {
               let earnRate = 0.0;
-              if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null && Number(updated.loyaltyEarnRate) === 0) {
-                earnRate = 0.0;
+              if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null) {
+                earnRate = Number(updated.loyaltyEarnRate);
               } else {
                 earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
               }
 
               const pointsToEarn = Math.floor(updated.total * earnRate);
               if (pointsToEarn > 0) {
-                const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
                 await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId, { source: "pos", orderId: updated.id, orderNumber: updated.orderNumber });
               }
             }

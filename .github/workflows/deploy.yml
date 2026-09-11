@@ -23,4 +23,5 @@ jobs:
             npm run prisma:generate
             npx prisma db push --schema=prisma/schema.main.prisma --accept-data-loss
             node sync_tenant_schemas.js
+            node scripts/migrate-wallets-to-brands.js
             pm2 restart server || pm2 start server.js
