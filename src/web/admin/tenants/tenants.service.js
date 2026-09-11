@@ -1719,11 +1719,25 @@ const bulkUploadSuperAdminCustomers = async ({ tenantId, customers }) => {
     throw new ApiError(400, "No customer data provided for bulk upload");
   }
 
-  const targetTenantId = (tenantId && tenantId !== "null" && tenantId !== "undefined" && tenantId !== "all")
-    ? tenantId
-    : null;
+  // Resolve target brand(s)
+  let targetTenantIds = [];
+  if (tenantId && tenantId !== "null" && tenantId !== "undefined" && tenantId !== "all") {
+    const tenant = await mainPrisma.tenant.findFirst({
+      where: { OR: [{ id: tenantId }, { slug: tenantId }] }
+    });
+    if (tenant) {
+      targetTenantIds = [tenant.id];
+    }
+  }
 
-  const tenant = targetTenantId ? await mainPrisma.tenant.findUnique({ where: { id: targetTenantId } }) : null;
+  // If no specific brand selected or "all", apply to all active brands
+  if (targetTenantIds.length === 0) {
+    const activeTenants = await mainPrisma.tenant.findMany({
+      where: { isActive: true },
+      select: { id: true }
+    });
+    targetTenantIds = activeTenants.map(t => t.id);
+  }
 
   let createdCount = 0;
   let updatedCount = 0;
@@ -1762,43 +1776,46 @@ const bulkUploadSuperAdminCustomers = async ({ tenantId, customers }) => {
         updatedCount++;
       }
 
-      let wallet = await mainPrisma.wallet.findFirst({
-        where: { appUserId: customer.id, tenantId: targetTenantId },
-      });
-      if (!wallet) {
-        wallet = await mainPrisma.wallet.create({
-          data: {
-            appUserId: customer.id,
-            tenantId: targetTenantId,
-            points,
-            lifetimeEarn: points,
-            tier: tier || "bronze",
-          },
+      // Create or update brand wallet for each target brand
+      for (const tId of targetTenantIds) {
+        let wallet = await mainPrisma.wallet.findFirst({
+          where: { appUserId: customer.id, tenantId: tId },
         });
-      } else {
-        const updateData = {};
-        if (points > 0) {
-          updateData.points = { increment: points };
-          updateData.lifetimeEarn = { increment: points };
+        if (!wallet) {
+          wallet = await mainPrisma.wallet.create({
+            data: {
+              appUserId: customer.id,
+              tenantId: tId,
+              points,
+              lifetimeEarn: points,
+              tier: tier || "bronze",
+            },
+          });
+        } else {
+          const updateData = {};
+          if (points > 0) {
+            updateData.points = { increment: points };
+            updateData.lifetimeEarn = { increment: points };
+          }
+          if (tier) {
+            updateData.tier = tier;
+          }
+          wallet = await mainPrisma.wallet.update({
+            where: { id: wallet.id },
+            data: updateData,
+          });
         }
-        if (tier) {
-          updateData.tier = tier;
-        }
-        wallet = await mainPrisma.wallet.update({
-          where: { id: wallet.id },
-          data: updateData,
-        });
-      }
 
-      if (points > 0) {
-        await mainPrisma.walletTransaction.create({
-          data: {
-            walletId: wallet.id,
-            points,
-            description: "Bulk Upload by Super Admin",
-            tenantId: targetTenantId,
-          },
-        });
+        if (points > 0) {
+          await mainPrisma.walletTransaction.create({
+            data: {
+              walletId: wallet.id,
+              points,
+              description: "Bulk Upload by Super Admin",
+              tenantId: tId,
+            },
+          });
+        }
       }
     } catch (err) {
       console.error(`Error processing bulk row ${rowNum}:`, err.message);
