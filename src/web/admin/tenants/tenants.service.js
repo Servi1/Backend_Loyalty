@@ -1754,16 +1754,43 @@ const bulkUploadSuperAdminCustomers = async ({ tenantId, customers }) => {
       continue;
     }
 
-    const normalizedPhone = normalizeSaudiPhone(rawPhone);
+    const formatSaudiPhone = (raw) => {
+      if (!raw) return "";
+      let digits = raw.toString().trim().replace(/\D/g, "");
+      while (digits.length > 9) {
+        if (digits.startsWith("966")) {
+          digits = digits.substring(3);
+        } else if (digits.startsWith("0")) {
+          digits = digits.substring(1);
+        } else {
+          break;
+        }
+      }
+      if (digits.startsWith("0")) {
+        digits = digits.substring(1);
+      }
+      if (digits.length === 9) {
+        return "+966" + digits;
+      }
+      return raw.toString().startsWith("+") ? raw.toString().trim() : `+${digits}`;
+    };
+
+    const normalizedPhone = formatSaudiPhone(rawPhone);
     const points = Math.max(0, Number(row.points) || 0);
     const tier = (row.tier || "bronze").toString().trim().toLowerCase();
-    const email = (row.email || "").trim() || null;
+    const rawEmail = (row.email || "").trim();
+    const email = (rawEmail && rawEmail.includes("@")) ? rawEmail : null;
 
     try {
       let customer = await mainPrisma.appUser.findUnique({ where: { phone: normalizedPhone } });
       if (!customer) {
+        let safeEmail = email;
+        if (safeEmail) {
+          const existingEmail = await mainPrisma.appUser.findUnique({ where: { email: safeEmail } });
+          if (existingEmail) safeEmail = null;
+        }
         customer = await mainPrisma.appUser.create({
-          data: { name, phone: normalizedPhone, email },
+          data: { name, phone: normalizedPhone, email: safeEmail },
         });
         createdCount++;
       } else {
