@@ -306,6 +306,16 @@ const normalizePhone = (rawPhone) => {
     try {
       const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
       if (tenant) {
+        if (paymentMethod === "points" || (notes && (notes.includes("Paid by Loyalty Points") || notes.includes("Points Payment")))) {
+          if (tenant.loyaltyEnabled === false) {
+            throw new ApiError(400, "Loyalty points program is currently disabled for this brand.");
+          }
+          const src = (orderSource || "").toLowerCase();
+          if (src === "pos" && tenant.loyaltyRedeemPoints === false) {
+            throw new ApiError(400, "Redeeming loyalty points is currently disabled for POS Cashier.");
+          }
+        }
+
         feeRate = resolveTenantFeeRate(tenant, orderSource);
         if (tenant.loyaltyEnabled !== false) {
           const src = (orderSource || "").toLowerCase();
@@ -315,6 +325,7 @@ const normalizePhone = (rawPhone) => {
         }
       }
     } catch (e) {
+      if (e instanceof ApiError) throw e;
       console.error("Failed to query tenant fee and loyalty settings:", e.message);
     }
   }
