@@ -398,6 +398,10 @@ const normalizePhone = (rawPhone) => {
   // Sync to super admin aggregated orders synchronously
   await syncToAggregatedOrder(db, tenantId, order).catch(console.error);
 
+  if ((order.status || "").toUpperCase() === "COMPLETED") {
+    await handleOrderStatusLoyalty(db, order, order.status, tenantId).catch(console.error);
+  }
+
   return order;
 };
 
@@ -565,7 +569,7 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
       });
       if (customer) {
         const loyaltyService = require("../loyalty/loyalty.service");
-        const wallet = customer.wallet || (await loyaltyService.getWallet(db, updated.customerId));
+        const wallet = await loyaltyService.getWallet(db, updated.customerId, tenantId);
 
         const description = `Earned on Order #${updated.orderNumber}`;
         const tx = await mainPrisma.walletTransaction.findFirst({
