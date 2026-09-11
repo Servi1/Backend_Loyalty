@@ -1507,6 +1507,12 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     allTransactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }
 
+  const ordersMap = new Map();
+  orders.forEach((o) => {
+    if (o.orderNumber) ordersMap.set(o.orderNumber, o);
+    if (o.id) ordersMap.set(o.id, o);
+  });
+
   const seenTxKeys = new Set();
   const pointsHistory = [];
 
@@ -1527,9 +1533,12 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
       type = "received";
     }
 
+    const linkedOrder = orderRef ? ordersMap.get(orderRef) : null;
+    const txDate = linkedOrder?.createdAt || t.createdAt;
+
     pointsHistory.push({
       id: t.id,
-      date: t.createdAt.toISOString().slice(0, 10),
+      date: new Date(txDate).toISOString().slice(0, 10),
       type,
       points: Math.abs(t.points),
       rawPoints: t.points,
