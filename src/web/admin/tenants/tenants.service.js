@@ -1933,9 +1933,26 @@ const adjustSuperAdminCustomerPoints = async (tenantId, customerId, { action = "
 };
 
 const deleteSuperAdminCustomer = async (tenantId, customerId) => {
-  await mainPrisma.appUser.delete({
-    where: { id: customerId }
-  });
+  if (tenantId && tenantId !== "all" && tenantId !== "null" && tenantId !== "undefined") {
+    // Remove brand-specific wallet and transactions
+    await mainPrisma.wallet.deleteMany({
+      where: { appUserId: customerId, tenantId }
+    });
+    // Check if user has any remaining wallets across other brands
+    const remainingWallets = await mainPrisma.wallet.count({
+      where: { appUserId: customerId }
+    });
+    if (remainingWallets === 0) {
+      await mainPrisma.appUser.delete({
+        where: { id: customerId }
+      }).catch(() => {});
+    }
+  } else {
+    // Delete entire user account (cascades to all wallets and transactions)
+    await mainPrisma.appUser.delete({
+      where: { id: customerId }
+    });
+  }
 };
 
 const getTenantUsers = async (tenantId) => {
