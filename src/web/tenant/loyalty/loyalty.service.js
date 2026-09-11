@@ -473,11 +473,16 @@ const getTiers = async (tenantId) => {
   }
 
   const allUsers = await mainPrisma.appUser.findMany({
-    include: { wallet: true }
+    include: {
+      wallets: tenantId ? { where: { tenantId } } : true
+    }
   });
 
   const allOrders = await mainPrisma.aggregatedOrder.findMany({
-    where: { status: "COMPLETED" },
+    where: {
+      status: "COMPLETED",
+      ...(tenantId && { tenantId })
+    },
     select: { customerPhone: true, customerName: true, total: true }
   });
 
@@ -494,14 +499,18 @@ const getTiers = async (tenantId) => {
   const memberCounts = {};
   const memberDetails = {};
   for (const user of allUsers) {
+    const userWallet = (tenantId && Array.isArray(user.wallets))
+      ? user.wallets.find((w) => w.tenantId === tenantId) || user.wallets[0] || null
+      : (Array.isArray(user.wallets) ? user.wallets[0] : null);
+
     const phone = user.phone ? user.phone.trim() : "";
     const stats = userStatsByPhone[phone] || { count: 0, spend: 0 };
     const userWithStats = {
       ...user,
       completedOrdersCount: stats.count,
-      lifetimeSpend: stats.spend > 0 ? stats.spend : (user.wallet ? Number(user.wallet.lifetimeEarn || 0) : 0)
+      lifetimeSpend: stats.spend > 0 ? stats.spend : (userWallet ? Number(userWallet.lifetimeEarn || 0) : 0)
     };
-    const t = getCustomerTierDetails(userWithStats, user.wallet, tiers);
+    const t = getCustomerTierDetails(userWithStats, userWallet, tiers);
     memberCounts[t.id] = (memberCounts[t.id] || 0) + 1;
     if (!memberDetails[t.id]) memberDetails[t.id] = [];
     memberDetails[t.id].push({
@@ -509,8 +518,8 @@ const getTiers = async (tenantId) => {
       name: user.name || "Walk-in Customer",
       phone: user.phone || "N/A",
       email: user.email || "N/A",
-      points: user.wallet?.points || 0,
-      lifetimeEarn: user.wallet?.lifetimeEarn || 0,
+      points: userWallet?.points || 0,
+      lifetimeEarn: userWallet?.lifetimeEarn || 0,
       completedOrdersCount: stats.count,
       lifetimeSpend: userWithStats.lifetimeSpend,
       createdAt: user.createdAt
