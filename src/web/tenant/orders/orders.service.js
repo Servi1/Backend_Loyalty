@@ -590,8 +590,8 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
             return;
           }
           let earnRate = 0.0;
-          if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null && Number(updated.loyaltyEarnRate) === 0) {
-            earnRate = 0.0;
+          if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null) {
+            earnRate = Number(updated.loyaltyEarnRate);
           } else {
             earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
           }
