@@ -62,9 +62,9 @@ const _formatGiftDate = (date) => {
 
 // ─── getWallet ────────────────────────────────────────────────────────────────
 
-const getWallet = async (db, userId) => {
-  const wallet = await mainPrisma.wallet.findUnique({
-    where: { appUserId: userId },
+const getWallet = async (db, userId, tenantId = null) => {
+  const wallet = await mainPrisma.wallet.findFirst({
+    where: { appUserId: userId, tenantId: tenantId || null },
     include: {
       transactions: {
         orderBy: { createdAt: "desc" },
@@ -85,8 +85,8 @@ const getWallet = async (db, userId) => {
 
 // ─── getTransactions ──────────────────────────────────────────────────────────
 
-const getTransactions = async (db, userId, { page = 1, limit = 30 } = {}) => {
-  const wallet = await mainPrisma.wallet.findUnique({ where: { appUserId: userId } });
+const getTransactions = async (db, userId, { page = 1, limit = 30, tenantId = null } = {}) => {
+  const wallet = await mainPrisma.wallet.findFirst({ where: { appUserId: userId, tenantId: tenantId || null } });
   if (!wallet) throw new ApiError(404, "Wallet not found");
 
   const skip = (page - 1) * limit;
@@ -674,9 +674,16 @@ const lookupWalletByPhone = async (db, tenantId, phone) => {
     };
   }
 
-  let wallet = await mainPrisma.wallet.findUnique({
-    where: { appUserId: appUser.id },
+  let wallet = await mainPrisma.wallet.findFirst({
+    where: { appUserId: appUser.id, tenantId: tenantId || null },
   });
+
+  if (!wallet && tenantId) {
+    wallet = await mainPrisma.wallet.findFirst({
+      where: { appUserId: appUser.id },
+      orderBy: { createdAt: "asc" }
+    });
+  }
 
   if (!wallet) {
     wallet = { points: 0, lifetimeEarn: 0 };
