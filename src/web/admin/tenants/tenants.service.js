@@ -1492,64 +1492,9 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     date: new Date(o.createdAt).toISOString().slice(0, 10),
     branch: o.branch?.name || "Register Terminal",
     city: o.branch?.city || "Riyadh",
-    duration: `${Math.floor(20 + (o.total % 40))} min`,
   }));
 
-  // Auto-backfill points transactions for COMPLETED orders created before wallet auto-creation
-  const loyaltyService = require("../../tenant/loyalty/loyalty.service");
-  let updatedTx = false;
-  for (const o of orders) {
-    if ((o.status || "").toUpperCase() === "COMPLETED" && (o.paymentMethod || "").toLowerCase() !== "points") {
-      const allTxs = customerWallets.flatMap((w) => w.transactions || []);
-      const tx = allTxs.find(
-        (t) => (t.orderNumber && t.orderNumber === o.orderNumber) ||
-               (t.orderId && t.orderId === o.id) ||
-               (t.description && t.description.includes(o.orderNumber))
-      );
-      if (!tx) {
-        let earnRate = 0.0;
-        if (o.loyaltyEarnRate !== undefined && o.loyaltyEarnRate !== null && Number(o.loyaltyEarnRate) === 0) {
-          earnRate = 0.0;
-        } else {
-          const oTenant = targetTenants.find((t) => t.id === o.tenantId);
-          if (!oTenant || oTenant.loyaltyEnabled === false) continue;
-          earnRate = Number(oTenant.loyaltyEarnRate !== undefined && oTenant.loyaltyEarnRate !== null ? oTenant.loyaltyEarnRate : 1.0);
-        }
-        const pointsToEarn = Math.floor(Number(o.total || 0) * earnRate);
-        if (pointsToEarn > 0) {
-          try {
-            await loyaltyService.earnPoints(null, customerId, pointsToEarn, `Earned on Order #${o.orderNumber}`, o.tenantId, {
-              orderId: o.id,
-              orderNumber: o.orderNumber
-            });
-            updatedTx = true;
-          } catch (e) {
-            console.error(`[LOYALTY AUTO-BACKFILL] Failed to award points for order ${o.orderNumber}:`, e.message);
-          }
-        }
-      }
-    }
-  }
-
-  if (updatedTx) {
-    customerWallets = await mainPrisma.wallet.findMany({
-      where: { appUserId: customerId },
-      include: {
-        tenant: { select: { id: true, name: true } },
-        transactions: {
-          orderBy: { createdAt: "desc" },
-          take: 100,
-        },
-      },
-    });
-    if (targetTenantId) {
-      wallet = customerWallets.find((w) => w.tenantId === targetTenantId) || null;
-    } else {
-      wallet = customerWallets[0] || null;
-    }
-  }
-
-  // Collect transactions for display
+  // Collect transactions for display from database
   let allTransactions = [];
   if (targetTenantId && wallet) {
     allTransactions = wallet.transactions || [];
@@ -1562,7 +1507,15 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     allTransactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }
 
-  const pointsHistory = allTransactions.map((t) => {
+  const seenTxKeys = new Set();
+  const pointsHistory = [];
+
+  for (const t of allTransactions) {
+    const orderRef = t.orderNumber || t.orderId;
+    const key = orderRef ? `${t.walletId}_${orderRef}_${t.points}` : t.id;
+    if (seenTxKeys.has(key)) continue;
+    seenTxKeys.add(key);
+
     const desc = (t.description || "").toLowerCase();
     let type = t.points >= 0 ? "earned" : "redeemed";
 
@@ -1574,15 +1527,15 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
       type = "received";
     }
 
-    return {
+    pointsHistory.push({
       id: t.id,
       date: t.createdAt.toISOString().slice(0, 10),
       type,
       points: Math.abs(t.points),
       rawPoints: t.points,
       reason: t.description || "Loyalty points transaction",
-    };
-  });
+    });
+  }
 
   const orderHistory = orders.map((o) => {
     const earnPointsTx = allTransactions.find(
@@ -1595,10 +1548,6 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     if ((o.status || "").toUpperCase() === "COMPLETED" && (o.paymentMethod || "").toLowerCase() !== "points") {
       if (earnPointsTx) {
         pointsEarned = Math.abs(earnPointsTx.points);
-      } else if (o.loyaltyEarnRate !== undefined && o.loyaltyEarnRate !== null && Number(o.loyaltyEarnRate) > 0) {
-        pointsEarned = Math.floor(Number(o.total || 0) * Number(o.loyaltyEarnRate));
-      } else {
-        pointsEarned = 0;
       }
     }
 
