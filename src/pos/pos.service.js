@@ -360,11 +360,11 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
       const mainPrisma = require("../config/prisma");
       const customer = await mainPrisma.appUser.findUnique({
         where: { id: updated.customerId },
-        include: { wallet: true }
+        include: { wallets: true }
       });
       if (customer) {
         const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
-        const wallet = customer.wallet || (await loyaltyService.getWallet(db, updated.customerId));
+        const wallet = await loyaltyService.getWallet(db, updated.customerId, tenantId);
         const description = `Earned on Order #${updated.orderNumber}`;
         const tx = await mainPrisma.walletTransaction.findFirst({
           where: {

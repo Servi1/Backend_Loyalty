@@ -344,7 +344,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     }
     const redeemRate = Number(tenant?.loyaltyRedeemRate || 100.0);
     const pointsCost = Math.round(subtotal * redeemRate);
-    const wallet = await loyaltyService.getWallet(db, targetUserId);
+    const wallet = await loyaltyService.getWallet(db, targetUserId, tenantId);
     if (!wallet || wallet.points < pointsCost) {
       throw new ApiError(400, `Insufficient points balance. Order requires ${pointsCost} pts, but available balance is ${wallet?.points || 0} pts.`);
     }
