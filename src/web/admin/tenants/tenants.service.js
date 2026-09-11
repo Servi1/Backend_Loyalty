@@ -1398,10 +1398,11 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
   });
   if (!customer) throw new ApiError(404, "Customer not found");
 
-  // Get or auto-create brand-specific wallet
-  let wallet = await mainPrisma.wallet.findFirst({
-    where: { appUserId: customerId, tenantId: targetTenantId },
+  // Fetch all wallets belonging to this customer
+  let customerWallets = await mainPrisma.wallet.findMany({
+    where: { appUserId: customerId },
     include: {
+      tenant: { select: { id: true, name: true } },
       transactions: {
         orderBy: { createdAt: "desc" },
         take: 100,
@@ -1409,25 +1410,30 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     },
   });
 
-  if (!wallet) {
-    try {
-      wallet = await mainPrisma.wallet.create({
-        data: {
-          appUserId: customerId,
-          tenantId: targetTenantId,
-          points: 0,
-          lifetimeEarn: 0,
-        },
-        include: {
-          transactions: {
-            orderBy: { createdAt: "desc" },
-            take: 100,
+  let wallet = null;
+  if (targetTenantId) {
+    wallet = customerWallets.find((w) => w.tenantId === targetTenantId) || null;
+    if (!wallet) {
+      try {
+        wallet = await mainPrisma.wallet.create({
+          data: {
+            appUserId: customerId,
+            tenantId: targetTenantId,
+            points: 0,
+            lifetimeEarn: 0,
           },
-        },
-      });
-    } catch (e) {
-      console.error("Failed to auto-create wallet in customer details:", e.message);
+          include: {
+            tenant: { select: { id: true, name: true } },
+            transactions: { orderBy: { createdAt: "desc" }, take: 100 },
+          },
+        });
+        customerWallets.push(wallet);
+      } catch (e) {
+        console.error("Failed to auto-create wallet in customer details:", e.message);
+      }
     }
+  } else {
+    wallet = customerWallets[0] || null;
   }
 
   // Construct phone variations for flexible matching (+966550505994, 966550505994, 0550505994, 550505994)
@@ -1494,7 +1500,8 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
   let updatedTx = false;
   for (const o of orders) {
     if ((o.status || "").toUpperCase() === "COMPLETED" && (o.paymentMethod || "").toLowerCase() !== "points") {
-      const tx = wallet?.transactions?.find(
+      const allTxs = customerWallets.flatMap((w) => w.transactions || []);
+      const tx = allTxs.find(
         (t) => (t.orderNumber && t.orderNumber === o.orderNumber) ||
                (t.orderId && t.orderId === o.id) ||
                (t.description && t.description.includes(o.orderNumber))
@@ -1525,18 +1532,37 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
   }
 
   if (updatedTx) {
-    wallet = await mainPrisma.wallet.findFirst({
-      where: { appUserId: customerId, tenantId: targetTenantId },
+    customerWallets = await mainPrisma.wallet.findMany({
+      where: { appUserId: customerId },
       include: {
+        tenant: { select: { id: true, name: true } },
         transactions: {
           orderBy: { createdAt: "desc" },
           take: 100,
         },
       },
     });
+    if (targetTenantId) {
+      wallet = customerWallets.find((w) => w.tenantId === targetTenantId) || null;
+    } else {
+      wallet = customerWallets[0] || null;
+    }
   }
 
-  const pointsHistory = (wallet?.transactions || []).map((t) => {
+  // Collect transactions for display
+  let allTransactions = [];
+  if (targetTenantId && wallet) {
+    allTransactions = wallet.transactions || [];
+  } else {
+    customerWallets.forEach((w) => {
+      if (Array.isArray(w.transactions)) {
+        allTransactions.push(...w.transactions);
+      }
+    });
+    allTransactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }
+
+  const pointsHistory = allTransactions.map((t) => {
     const desc = (t.description || "").toLowerCase();
     let type = t.points >= 0 ? "earned" : "redeemed";
 
@@ -1559,7 +1585,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
   });
 
   const orderHistory = orders.map((o) => {
-    const earnPointsTx = (wallet?.transactions || []).find(
+    const earnPointsTx = allTransactions.find(
       (tx) => tx.points > 0 &&
               ((tx.orderNumber && tx.orderNumber === o.orderNumber) ||
                (tx.orderId && tx.orderId === o.id) ||
@@ -1600,6 +1626,10 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     };
   });
 
+  const displayPoints = targetTenantId && wallet
+    ? (wallet.points || 0)
+    : customerWallets.reduce((acc, w) => acc + (w.points || 0), 0);
+
   return {
     id: customer.id,
     customerId: customer.id,
@@ -1608,7 +1638,13 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     phone: customer.phone,
     email: customer.email,
     tenantName: tenant?.name || "Servi Platform",
-    points: wallet?.points || 0,
+    points: displayPoints,
+    wallets: customerWallets.map((w) => ({
+      tenantId: w.tenantId,
+      tenantName: w.tenant?.name || "Global",
+      points: w.points,
+      tier: getCustomerTier(w, tenant, customer),
+    })),
     tier: getCustomerTier(wallet, tenant, customer),
     joinedAt: customer.createdAt,
     pointsHistory,
