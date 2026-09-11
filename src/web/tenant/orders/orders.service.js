@@ -555,7 +555,28 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
 };
 
 const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
-  if (!updated || !updated.customerId) return;
+  if (!updated) return;
+
+  let targetCustomerId = updated.customerId || updated.userId;
+  if (!targetCustomerId && updated.customerPhone) {
+    const cleanPhone = updated.customerPhone.trim().replace(/\s+/g, "");
+    const withoutPlus = cleanPhone.replace(/^\+/, "");
+    const withPlus = `+${withoutPlus}`;
+    const userByPhone = await mainPrisma.appUser.findFirst({
+      where: {
+        OR: [
+          { phone: cleanPhone },
+          { phone: withoutPlus },
+          { phone: withPlus }
+        ]
+      }
+    });
+    if (userByPhone) {
+      targetCustomerId = userByPhone.id;
+    }
+  }
+
+  if (!targetCustomerId) return;
 
   if (status === "COMPLETED") {
     if ((updated.paymentMethod || "").toLowerCase() === "points" || (updated.notes && (updated.notes.includes("Paid by Loyalty Points") || updated.notes.includes("Points Payment")))) {
@@ -564,12 +585,12 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
 
     try {
       const customer = await mainPrisma.appUser.findUnique({
-        where: { id: updated.customerId },
+        where: { id: targetCustomerId },
         include: { wallet: true }
       });
       if (customer) {
         const loyaltyService = require("../loyalty/loyalty.service");
-        const wallet = await loyaltyService.getWallet(db, updated.customerId, tenantId);
+        const wallet = await loyaltyService.getWallet(db, targetCustomerId, tenantId);
 
         const description = `Earned on Order #${updated.orderNumber}`;
         const tx = await mainPrisma.walletTransaction.findFirst({
@@ -598,7 +619,7 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
 
           const pointsToEarn = Math.floor(updated.total * earnRate);
           if (pointsToEarn > 0) {
-            await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId, {
+            await loyaltyService.earnPoints(db, targetCustomerId, pointsToEarn, description, tenantId, {
               orderId: updated.id,
               orderNumber: updated.orderNumber
             });
