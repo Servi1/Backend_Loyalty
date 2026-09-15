@@ -182,14 +182,16 @@ const getWallet = async (db, userId, tenantId = null) => {
 
   let targetWallet = null;
   if (tenantId) {
-    targetWallet = allWallets.find(w => w.tenantId === tenantId);
+    targetWallet = allWallets.find(w => w.tenantId === tenantId || w.tenant?.slug === tenantId);
     if (!targetWallet) {
-      const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+      const tenant = await mainPrisma.tenant.findFirst({
+        where: { OR: [{ id: tenantId }, { slug: tenantId }] }
+      });
       targetWallet = {
         id: null,
         points: 0,
         lifetimeEarn: 0,
-        tenantId,
+        tenantId: tenant ? tenant.id : tenantId,
         tenant: tenant ? { id: tenant.id, name: tenant.name, slug: tenant.slug, logoUrl: tenant.logoUrl } : null,
       };
     }
