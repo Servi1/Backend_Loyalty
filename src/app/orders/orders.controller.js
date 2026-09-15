@@ -18,6 +18,15 @@ const place = catchAsync(async (req, res) => {
     req.tenantId,
     req.tenant
   );
+  // Emit to Socket.io so cashier POS receives instantly
+  try {
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`branch:${order.branchId}`).emit("order:new", order);
+    }
+  } catch (err) {
+    console.error("[APP ORDER] Socket emit failed:", err.message);
+  }
   res.status(201).json({ success: true, data: order });
 });
 
@@ -30,9 +39,13 @@ const placePublic = catchAsync(async (req, res) => {
     req.tenant
   );
   // Emit to Socket.io so cashier POS receives instantly
-  const io = req.app.get("io");
-  if (io) {
-    io.to(`branch:${order.branchId}`).emit("order:new", order);
+  try {
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`branch:${order.branchId}`).emit("order:new", order);
+    }
+  } catch (err) {
+    console.error("[PUBLIC ORDER] Socket emit failed:", err.message);
   }
   res.status(201).json({ success: true, data: order });
 });

@@ -480,7 +480,11 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
 
   let user = null;
   if (userId) {
-    user = await mainPrisma.appUser.findUnique({ where: { id: userId } });
+    try {
+      user = await mainPrisma.appUser.findUnique({ where: { id: userId } });
+    } catch (err) {
+      console.error("[APP ORDER] Failed to lookup appUser for order:", err.message);
+    }
   }
   order.user = user;
 
