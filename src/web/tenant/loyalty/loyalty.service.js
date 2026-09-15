@@ -82,18 +82,31 @@ const getCustomerTierDetails = (customer, wallet, configuredTiers) => {
   return sortedTiers[sortedTiers.length - 1] || DEFAULT_LOYALTY_TIERS[0];
 };
 
+const resolveTenant = async (tenantId) => {
+  if (!tenantId) return null;
+  return mainPrisma.tenant.findFirst({
+    where: { OR: [{ id: tenantId }, { slug: tenantId }] }
+  });
+};
+
 const getWallet = async (db, customerId, tenantId = null) => {
   const customer = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
   if (!customer) throw new ApiError(404, "Customer not found");
 
+  let targetTenantId = tenantId;
+  if (tenantId) {
+    const tenant = await resolveTenant(tenantId);
+    if (tenant) targetTenantId = tenant.id;
+  }
+
   let wallet = await mainPrisma.wallet.findFirst({
-    where: { appUserId: customerId, tenantId: tenantId || null },
+    where: { appUserId: customerId, tenantId: targetTenantId || null },
     include: { transactions: { orderBy: { createdAt: "desc" }, take: 20 } },
   });
 
   if (!wallet) {
     wallet = await mainPrisma.wallet.create({
-      data: { appUserId: customerId, tenantId: tenantId || null, points: 0, lifetimeEarn: 0 },
+      data: { appUserId: customerId, tenantId: targetTenantId || null, points: 0, lifetimeEarn: 0 },
       include: { transactions: { orderBy: { createdAt: "desc" }, take: 20 } },
     });
   }
@@ -107,10 +120,12 @@ const getWallet = async (db, customerId, tenantId = null) => {
  */
 const earnPoints = async (db, customerId, points, description, tenantId, opts = {}) => {
   let tenantTiers = DEFAULT_LOYALTY_TIERS;
+  let targetTenantId = tenantId;
 
   if (tenantId) {
-    const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+    const tenant = await resolveTenant(tenantId);
     if (tenant) {
+      targetTenantId = tenant.id;
       if (Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
         tenantTiers = tenant.loyaltyTiers;
       }
@@ -132,11 +147,11 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
   if (!customer) throw new ApiError(404, "Customer not found");
 
   let wallet = await mainPrisma.wallet.findFirst({
-    where: { appUserId: customerId, tenantId: tenantId || null },
+    where: { appUserId: customerId, tenantId: targetTenantId || null },
   });
   if (!wallet) {
     wallet = await mainPrisma.wallet.create({
-      data: { appUserId: customerId, tenantId: tenantId || null, points: 0, lifetimeEarn: 0 },
+      data: { appUserId: customerId, tenantId: targetTenantId || null, points: 0, lifetimeEarn: 0 },
     });
   }
 
@@ -177,7 +192,7 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
         walletId: wallet.id,
         points: finalPointsToEarn,
         description: description || "Points earned",
-        tenantId,
+        tenantId: targetTenantId || null,
         orderId: opts.orderId || null,
         orderNumber: opts.orderNumber || null,
       },
@@ -193,9 +208,12 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
  */
 const redeemPoints = async (db, customerId, points, description, tenantId, opts = {}) => {
   let tenantTiers = DEFAULT_LOYALTY_TIERS;
+  let targetTenantId = tenantId;
+
   if (tenantId) {
-    const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+    const tenant = await resolveTenant(tenantId);
     if (tenant) {
+      targetTenantId = tenant.id;
       if (Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
         tenantTiers = tenant.loyaltyTiers;
       }
@@ -215,10 +233,10 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
   if (!customer) throw new ApiError(404, "Customer not found");
 
   let wallet = await mainPrisma.wallet.findFirst({
-    where: { appUserId: customerId, tenantId: tenantId || null },
+    where: { appUserId: customerId, tenantId: targetTenantId || null },
   });
   if (!wallet) throw new ApiError(404, "Wallet not found for this brand");
-  if (wallet.points < points) throw new ApiError(400, "Insufficient points for this brand");
+  if (wallet.points < points) throw new ApiError(400, `Insufficient points for this brand. Order requires ${points} pts, but available balance is ${wallet.points} pts.`);
 
   // Enforce Tier Daily Redemption Cap
   const customerTier = getCustomerTierDetails(customer, wallet, tenantTiers);
@@ -283,7 +301,7 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
         walletId: wallet.id,
         points: -points,
         description: description || "Points redeemed",
-        tenantId,
+        tenantId: targetTenantId || null,
         orderId: opts.orderId || null,
         orderNumber: opts.orderNumber || null,
       },
