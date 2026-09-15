@@ -1465,8 +1465,8 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
   const uniquePhones = Array.from(new Set(phoneVariations)).filter(Boolean);
 
   const rawOrders = [];
-  // Determine list of tenants to search: if tenant is specified, search it; otherwise search all active tenants
-  const targetTenants = tenant ? [tenant] : await mainPrisma.tenant.findMany();
+  // Search all active brand tenant databases to gather complete order history across all brands for this customer
+  const targetTenants = await mainPrisma.tenant.findMany();
 
   for (const t of targetTenants) {
     try {
@@ -1512,22 +1512,18 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     date: new Date(o.createdAt).toISOString().slice(0, 10),
     branch: o.branch?.name || "Register Terminal",
     city: o.branch?.city || "Riyadh",
-    tenantId: o.tenantId || tenant?.id || null,
-    tenantName: o.tenantName || tenant?.name || "Servi Platform",
+    tenantId: o.tenantId || null,
+    tenantName: o.tenantName || "Servi Platform",
   }));
 
-  // Collect transactions for display from database
+  // Collect transactions from ALL customer wallets to support per-brand filtering in frontend
   let allTransactions = [];
-  if (targetTenantId && wallet) {
-    allTransactions = wallet.transactions || [];
-  } else {
-    customerWallets.forEach((w) => {
-      if (Array.isArray(w.transactions)) {
-        allTransactions.push(...w.transactions);
-      }
-    });
-    allTransactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }
+  customerWallets.forEach((w) => {
+    if (Array.isArray(w.transactions)) {
+      allTransactions.push(...w.transactions);
+    }
+  });
+  allTransactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   const ordersMap = new Map();
   orders.forEach((o) => {
