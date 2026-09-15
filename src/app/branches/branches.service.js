@@ -197,7 +197,7 @@ const getBranchScheduleSlots = async (db, branchId, dateStr, durationMin = 60) =
       branchId,
       selectedSlotDate: targetDate,
       selectedSlot: { not: null },
-      status: { notIn: ["CANCELLED", "COMPLETED"] }
+      status: { notIn: ["CANCELLED"] }
     },
     select: { selectedSlot: true }
   });
@@ -301,7 +301,7 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
       staffId: staffId,
       selectedSlotDate: targetDateStr,
       status: {
-        notIn: ["CANCELLED", "COMPLETED"]
+        notIn: ["CANCELLED"]
       }
     },
     select: {

@@ -41,7 +41,8 @@ const placePublic = catchAsync(async (req, res) => {
 const myOrders = catchAsync(async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = Math.min(parseInt(req.query.limit) || 20, 50); // cap at 50
-  const result = await ordersService.getMyOrders(req.tenantDb, req.user.id, { page, limit });
+  const tenantId = req.query.tenantId || req.tenantId || null;
+  const result = await ordersService.getMyOrders(req.tenantDb, req.user.id, { page, limit, tenantId });
   res.json({ success: true, ...result });
 });
 

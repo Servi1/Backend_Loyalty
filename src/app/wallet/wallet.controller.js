@@ -3,15 +3,23 @@ const walletService = require("./wallet.service");
 
 // ─── GET /wallet ──────────────────────────────────────────────────────────────
 const getWallet = catchAsync(async (req, res) => {
-  const wallet = await walletService.getWallet(req.tenantDb, req.user.id);
+  const tenantId = req.query.tenantId || req.tenantId || null;
+  const wallet = await walletService.getWallet(req.tenantDb, req.user.id, tenantId);
   res.json({ success: true, data: wallet });
+});
+
+// ─── GET /wallet/all (or /customer/wallets) ──────────────────────────────────
+const getAllWallets = catchAsync(async (req, res) => {
+  const result = await walletService.getAllWallets(req.tenantDb, req.user.id);
+  res.json({ success: true, ...result });
 });
 
 // ─── GET /wallet/transactions ─────────────────────────────────────────────────
 const getTransactions = catchAsync(async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = Math.min(parseInt(req.query.limit) || 30, 100);
-  const result = await walletService.getTransactions(req.tenantDb, req.user.id, { page, limit });
+  const tenantId = req.query.tenantId || req.tenantId || null;
+  const result = await walletService.getTransactions(req.tenantDb, req.user.id, { page, limit, tenantId });
   res.json({ success: true, ...result });
 });
 
@@ -100,6 +108,7 @@ const lookupPhone = catchAsync(async (req, res) => {
 
 module.exports = {
   getWallet,
+  getAllWallets,
   getTransactions,
   transferPoints,
   sendGiftCard,

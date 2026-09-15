@@ -19,11 +19,14 @@ async function checkAndCancelUnacceptedOrders() {
       try {
         const db = getTenantClient(dbUrl);
 
-        // Find pending orders older than 5 minutes that haven't been accepted
+        // Find pending orders older than 5 minutes that haven't been accepted (excluding scheduled orders)
         const unacceptedOrders = await db.order.findMany({
           where: {
             status: "PENDING",
-            createdAt: { lt: cutoffTime }
+            createdAt: { lt: cutoffTime },
+            type: { not: "SCHEDULED" },
+            selectedSlot: null,
+            selectedSlotDate: null,
           },
           select: {
             id: true,
@@ -31,6 +34,10 @@ async function checkAndCancelUnacceptedOrders() {
             customerId: true,
             pointsRedeemed: true,
             paymentMethod: true,
+            type: true,
+            selectedSlot: true,
+            selectedSlotDate: true,
+            slotDetails: true,
           }
         });
 
@@ -38,6 +45,10 @@ async function checkAndCancelUnacceptedOrders() {
           console.log(`[Pending Expiry Worker] Found ${unacceptedOrders.length} unaccepted orders older than 5 mins for tenant: ${tenant.slug}`);
           
           for (const order of unacceptedOrders) {
+            // Skip if scheduled order
+            const isScheduled = order.type === "SCHEDULED" || Boolean(order.selectedSlot) || Boolean(order.selectedSlotDate) || (order.slotDetails && Array.isArray(order.slotDetails) && order.slotDetails.length > 0);
+            if (isScheduled) continue;
+
             // 1. Update in tenant database
             await db.order.update({
               where: { id: order.id },

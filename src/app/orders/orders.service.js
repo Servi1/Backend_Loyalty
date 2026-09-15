@@ -525,10 +525,21 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
 
 // ─── getMyOrders ──────────────────────────────────────────────────────────────
 
-const getMyOrders = async (db, userId, { page = 1, limit = 20 } = {}) => {
+const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null } = {}) => {
   const skip = (page - 1) * limit;
 
-  if (db) {
+  // Resolve target tenantId if tenantId is passed as a slug
+  let targetTenantId = tenantId;
+  if (tenantId) {
+    const tenantObj = await mainPrisma.tenant.findFirst({
+      where: { OR: [{ id: tenantId }, { slug: tenantId }] }
+    });
+    if (tenantObj) {
+      targetTenantId = tenantObj.id;
+    }
+  }
+
+  if (db && !tenantId) {
     const [orders, total] = await db.$transaction([
       db.order.findMany({
         where: { customerId: userId },
@@ -555,10 +566,15 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20 } = {}) => {
     };
   }
 
-  // Global query across all tenants
-  const total = await mainPrisma.order.count({ where: { appUserId: userId } });
+  // Query main database with optional brand filter
+  const whereCondition = {
+    appUserId: userId,
+    ...(targetTenantId ? { tenantId: targetTenantId } : {}),
+  };
+
+  const total = await mainPrisma.order.count({ where: whereCondition });
   const mainOrders = await mainPrisma.order.findMany({
-    where: { appUserId: userId },
+    where: whereCondition,
     orderBy: { createdAt: "desc" },
     skip,
     take: limit,
@@ -580,7 +596,11 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20 } = {}) => {
           },
         });
         if (detailedOrder) {
-          enrichedOrders.push(detailedOrder);
+          enrichedOrders.push({
+            ...detailedOrder,
+            tenantName: tenant.name,
+            tenantSlug: tenant.slug,
+          });
           continue;
         }
       }

@@ -348,8 +348,12 @@ app.post("/api/app/qr/encode", branchCtrl.encodeQrTokenEndpoint);
 // Global app auth router (tenant-independent)
 const globalAuthRouter = require("./src/app/auth/globalAuth.routes");
 const appNotificationsRoutes = require("./src/app/notifications/appNotifications.routes");
+const { authenticateAppUser } = require("./src/app/middlewares/appAuth.middleware");
+const walletCtrl = require("./src/app/wallet/wallet.controller");
+
 app.use("/api/app/auth", globalAuthRouter);
 app.use("/api/app/notifications", appNotificationsRoutes);
+app.use("/api/customer/wallets", authenticateAppUser, walletCtrl.getAllWallets);
 
 const { optionalAppTenant } = require("./src/app/middlewares/appTenant.middleware");
 

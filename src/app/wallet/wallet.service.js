@@ -146,48 +146,159 @@ const _formatGiftDate = (date) => {
 
 const getWallet = async (db, userId, tenantId = null) => {
   await processExpiredGifts();
-  const wallet = await mainPrisma.wallet.findFirst({
-    where: { appUserId: userId, tenantId: tenantId || null },
+
+  // Fetch all brand wallets for this customer
+  const allWallets = await mainPrisma.wallet.findMany({
+    where: { appUserId: userId },
     include: {
-      transactions: {
-        orderBy: { createdAt: "desc" },
-        take: 20,
+      tenant: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          logoUrl: true,
+          loyaltyEnabled: true,
+          loyaltyTiers: true,
+        },
       },
     },
   });
 
-  if (!wallet) throw new ApiError(404, "Wallet not found");
+  const globalPoints = allWallets.reduce((sum, w) => sum + (w.points || 0), 0);
+  const globalLifetime = allWallets.reduce((sum, w) => sum + (w.lifetimeEarn || 0), 0);
+
+  const brandWallets = allWallets
+    .filter(w => Boolean(w.tenantId))
+    .map(w => ({
+      walletId: w.id,
+      tenantId: w.tenantId,
+      brandName: w.tenant?.name || "Brand Wallet",
+      brandSlug: w.tenant?.slug || null,
+      logoUrl: w.tenant?.logoUrl || null,
+      points: w.points || 0,
+      lifetimeEarn: w.lifetimeEarn || 0,
+      tier: w.tier || "bronze",
+    }));
+
+  let targetWallet = null;
+  if (tenantId) {
+    targetWallet = allWallets.find(w => w.tenantId === tenantId);
+    if (!targetWallet) {
+      const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+      targetWallet = {
+        id: null,
+        points: 0,
+        lifetimeEarn: 0,
+        tenantId,
+        tenant: tenant ? { id: tenant.id, name: tenant.name, slug: tenant.slug, logoUrl: tenant.logoUrl } : null,
+      };
+    }
+  }
+
+  // Transactions query: filter by specific wallet if tenantId provided, else across all user's wallets
+  let transactions = [];
+  if (tenantId) {
+    if (targetWallet && targetWallet.id) {
+      transactions = await mainPrisma.walletTransaction.findMany({
+        where: { walletId: targetWallet.id },
+        orderBy: { createdAt: "desc" },
+        take: 30,
+      });
+    }
+  } else {
+    const walletIds = allWallets.map(w => w.id);
+    if (walletIds.length > 0) {
+      transactions = await mainPrisma.walletTransaction.findMany({
+        where: { walletId: { in: walletIds } },
+        orderBy: { createdAt: "desc" },
+        take: 30,
+      });
+    }
+  }
 
   return {
-    id: wallet.id,
-    points: wallet.points,
-    lifetimeEarn: wallet.lifetimeEarn,
-    recentTransactions: wallet.transactions.map(_formatTx),
+    id: targetWallet ? targetWallet.id : (allWallets[0]?.id || null),
+    points: tenantId ? (targetWallet ? targetWallet.points : 0) : globalPoints,
+    lifetimeEarn: tenantId ? (targetWallet ? targetWallet.lifetimeEarn : 0) : globalLifetime,
+    globalPoints,
+    globalLifetime,
+    brandWallets,
+    recentTransactions: transactions.map(_formatTx),
+  };
+};
+
+// ─── getAllWallets ─────────────────────────────────────────────────────────────
+
+const getAllWallets = async (db, userId) => {
+  await processExpiredGifts();
+  const allWallets = await mainPrisma.wallet.findMany({
+    where: { appUserId: userId, tenantId: { not: null } },
+    include: {
+      tenant: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          logoUrl: true,
+        },
+      },
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  const globalPoints = allWallets.reduce((sum, w) => sum + (w.points || 0), 0);
+
+  const walletsData = allWallets.map(w => ({
+    walletId: w.id,
+    tenantId: w.tenantId,
+    brandName: w.tenant?.name || "Brand Wallet",
+    brandSlug: w.tenant?.slug || null,
+    logoUrl: w.tenant?.logoUrl || null,
+    points: w.points || 0,
+    lifetimeEarn: w.lifetimeEarn || 0,
+    tier: w.tier || "bronze",
+  }));
+
+  return {
+    globalPoints,
+    wallets: walletsData,
   };
 };
 
 // ─── getTransactions ──────────────────────────────────────────────────────────
 
 const getTransactions = async (db, userId, { page = 1, limit = 30, tenantId = null } = {}) => {
-  const wallet = await mainPrisma.wallet.findFirst({ where: { appUserId: userId, tenantId: tenantId || null } });
-  if (!wallet) throw new ApiError(404, "Wallet not found");
-
   const skip = (page - 1) * limit;
+
+  let walletIds = [];
+  if (tenantId) {
+    const wallet = await mainPrisma.wallet.findFirst({ where: { appUserId: userId, tenantId } });
+    if (wallet) walletIds = [wallet.id];
+  } else {
+    const wallets = await mainPrisma.wallet.findMany({ where: { appUserId: userId }, select: { id: true } });
+    walletIds = wallets.map(w => w.id);
+  }
+
+  if (walletIds.length === 0) {
+    return {
+      points: 0,
+      lifetimeEarn: 0,
+      transactions: [],
+      pagination: { total: 0, page, limit, totalPages: 0, hasNextPage: false },
+    };
+  }
 
   const [transactions, total] = await mainPrisma.$transaction([
     mainPrisma.walletTransaction.findMany({
-      where: { walletId: wallet.id },
+      where: { walletId: { in: walletIds } },
       orderBy: { createdAt: "desc" },
       skip,
       take: limit,
     }),
-    mainPrisma.walletTransaction.count({ where: { walletId: wallet.id } }),
+    mainPrisma.walletTransaction.count({ where: { walletId: { in: walletIds } } }),
   ]);
 
   return {
-    walletId: wallet.id,
-    points: wallet.points,
-    lifetimeEarn: wallet.lifetimeEarn,
     transactions: transactions.map(_formatTx),
     pagination: {
       total,
@@ -795,13 +906,6 @@ const lookupWalletByPhone = async (db, tenantId, phone) => {
     where: { appUserId: appUser.id, tenantId: tenantId || null },
   });
 
-  if (!wallet && tenantId) {
-    wallet = await mainPrisma.wallet.findFirst({
-      where: { appUserId: appUser.id },
-      orderBy: { createdAt: "asc" }
-    });
-  }
-
   if (!wallet) {
     wallet = { points: 0, lifetimeEarn: 0 };
   }
@@ -855,6 +959,7 @@ const lookupWalletByPhone = async (db, tenantId, phone) => {
 
 module.exports = {
   getWallet,
+  getAllWallets,
   getTransactions,
   transferPoints,
   sendGiftCard,

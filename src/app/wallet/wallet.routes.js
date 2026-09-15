@@ -23,6 +23,8 @@ router.get("/public-lookup", ctrl.lookupPhone);
 router.use(authenticateAppUser);
 
 router.get("/", ctrl.getWallet);
+router.get("/all", ctrl.getAllWallets);
+router.get("/wallets", ctrl.getAllWallets);
 router.get("/transactions", ctrl.getTransactions);
 router.post("/transfer", ctrl.transferPoints);
 router.post("/gift-card", ctrl.sendGiftCard);
