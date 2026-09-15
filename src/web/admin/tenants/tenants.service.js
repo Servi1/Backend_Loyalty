@@ -1609,9 +1609,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     };
   });
 
-  const displayPoints = targetTenantId && wallet
-    ? (wallet.points || 0)
-    : customerWallets.reduce((acc, w) => acc + (w.points || 0), 0);
+  const totalPoints = customerWallets.reduce((acc, w) => acc + (w.points || 0), 0);
 
   return {
     id: customer.id,
@@ -1621,7 +1619,8 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     phone: customer.phone,
     email: customer.email,
     tenantName: tenant?.name || "Servi Platform",
-    points: displayPoints,
+    points: totalPoints,
+    brandPoints: wallet ? wallet.points : totalPoints,
     wallets: customerWallets.map((w) => ({
       tenantId: w.tenantId,
       tenantName: w.tenant?.name || "Global",
