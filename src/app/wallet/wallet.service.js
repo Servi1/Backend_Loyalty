@@ -795,13 +795,6 @@ const lookupWalletByPhone = async (db, tenantId, phone) => {
     where: { appUserId: appUser.id, tenantId: tenantId || null },
   });
 
-  if (!wallet && tenantId) {
-    wallet = await mainPrisma.wallet.findFirst({
-      where: { appUserId: appUser.id },
-      orderBy: { createdAt: "asc" }
-    });
-  }
-
   if (!wallet) {
     wallet = { points: 0, lifetimeEarn: 0 };
   }
