@@ -1536,6 +1536,9 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     const linkedOrder = orderRef ? ordersMap.get(orderRef) : null;
     const txDate = linkedOrder?.createdAt || t.createdAt;
 
+    const walletForTx = customerWallets.find((w) => w.id === t.walletId);
+    const brandName = linkedOrder?.tenantName || walletForTx?.tenant?.name || tenant?.name || "Platform";
+
     pointsHistory.push({
       id: t.id,
       date: new Date(txDate).toISOString().slice(0, 10),
@@ -1543,6 +1546,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
       points: Math.abs(t.points),
       rawPoints: t.points,
       reason: t.description || "Loyalty points transaction",
+      brandName,
     });
   }
 
