@@ -650,35 +650,41 @@ const getInvoices = async (filters = {}) => {
     const cycleEnd = new Date(Math.min(monthEnd.getTime(), endDate.getTime()));
 
     if (activeStart > cycleEnd) {
-      return { daysActive: 0, cycleActiveDays: 0, totalDays, period: "" };
+      return { daysActive: 0, cycleActiveDays: 0, remainingDays: 0, totalDays, period: "" };
     }
 
     // Convert to midnight calendar dates to eliminate time-of-day skew
     const startDay = new Date(activeStart.getFullYear(), activeStart.getMonth(), activeStart.getDate());
     const cycleEndDay = new Date(cycleEnd.getFullYear(), cycleEnd.getMonth(), cycleEnd.getDate());
 
-    const cycleDiffDays = Math.round((cycleEndDay.getTime() - startDay.getTime()) / (24 * 60 * 60 * 1000)) + 1;
-    const cycleActiveDays = Math.min(totalDays, Math.max(1, cycleDiffDays));
+    const cycleDiffDays = Math.round((cycleEndDay.getTime() - startDay.getTime()) / (24 * 60 * 60 * 1000));
+    const cycleActiveDays = Math.min(totalDays, Math.max(1, startDay.getDate() === 1 ? totalDays : cycleDiffDays));
 
     const now = new Date();
     const isCurrentMonth = (year === now.getFullYear() && month === now.getMonth());
-    const effectiveNow = isCurrentMonth ? new Date(Math.min(monthEnd.getTime(), now.getTime())) : monthEnd;
 
-    const elapsedEnd = new Date(Math.min(effectiveNow.getTime(), endDate.getTime()));
-    const elapsedEndDay = new Date(elapsedEnd.getFullYear(), elapsedEnd.getMonth(), elapsedEnd.getDate());
+    const todayDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    let daysActive = 0;
-    if (startDay <= elapsedEndDay) {
-      const elapsedDiffDays = Math.round((elapsedEndDay.getTime() - startDay.getTime()) / (24 * 60 * 60 * 1000)) + 1;
-      daysActive = Math.min(cycleActiveDays, Math.max(1, elapsedDiffDays));
+    let remainingDays = 0;
+    if (isCurrentMonth) {
+      if (todayDay <= cycleEndDay) {
+        remainingDays = Math.max(0, Math.round((cycleEndDay.getTime() - todayDay.getTime()) / (24 * 60 * 60 * 1000)));
+      } else {
+        remainingDays = 0;
+      }
+    } else if (year < now.getFullYear() || (year === now.getFullYear() && month < now.getMonth())) {
+      remainingDays = 0;
+    } else {
+      remainingDays = cycleActiveDays;
     }
 
     const startStr = activeStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
     const endStr = cycleEnd.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
     return {
-      daysActive,
+      daysActive: remainingDays,
       cycleActiveDays,
+      remainingDays,
       totalDays,
       period: `${startStr} - ${endStr}`
     };
@@ -765,7 +771,7 @@ const getInvoices = async (filters = {}) => {
             .sort((a, b) => new Date(a.addedAt).getTime() - new Date(b.addedAt).getTime())[0];
 
           const featureSubscribedAt = featureAddon ? new Date(featureAddon.addedAt) : tenant.createdAt;
-          const { daysActive, cycleActiveDays, totalDays, period } = getDaysActiveInMonth(featureSubscribedAt, currentMonthEnd, currentYear, currentMonth);
+          const { daysActive, cycleActiveDays, remainingDays, totalDays, period } = getDaysActiveInMonth(featureSubscribedAt, currentMonthEnd, currentYear, currentMonth);
 
           if (cycleActiveDays > 0 || daysActive > 0) {
             const unitPrice = tenant[gsvc.priceKey] !== undefined && tenant[gsvc.priceKey] !== null ? Number(tenant[gsvc.priceKey]) : gsvc.defaultPrice;
@@ -844,7 +850,9 @@ const getInvoices = async (filters = {}) => {
                   monthlyTotal: parseFloat(effectiveMonthlyPrice.toFixed(2)),
                   amount: itemCharge,
                   quantity: 1,
-                  daysActive,
+                  daysActive: remainingDays,
+                  cycleActiveDays,
+                  remainingDays,
                   totalDays,
                   yearlyDaysActive,
                   yearlyTotalDays: isYearly ? yearlyTotalDays : 365,
@@ -870,7 +878,9 @@ const getInvoices = async (filters = {}) => {
                 monthlyTotal: parseFloat(monthlyPrice.toFixed(2)),
                 amount: parseFloat(cost.toFixed(2)),
                 quantity: 1,
-                daysActive,
+                daysActive: remainingDays,
+                cycleActiveDays,
+                remainingDays,
                 totalDays,
                 yearlyDaysActive,
                 yearlyTotalDays: isYearly ? yearlyTotalDays : 365,
@@ -899,7 +909,7 @@ const getInvoices = async (filters = {}) => {
       for (const addon of tenantAddons) {
         const addedDate = new Date(addon.addedAt);
         if (addedDate.getFullYear() === currentYear && addedDate.getMonth() === currentMonth) {
-          const { daysActive, cycleActiveDays, totalDays, period } = getDaysActiveInMonth(addedDate, currentMonthEnd, currentYear, currentMonth);
+          const { daysActive, cycleActiveDays, remainingDays, totalDays, period } = getDaysActiveInMonth(addedDate, currentMonthEnd, currentYear, currentMonth);
           if (cycleActiveDays > 0 || daysActive > 0) {
             const unitPrice = Number(addon.pricePerUnit || 0);
             const addonQty = Number(addon.quantity || 1);
@@ -979,7 +989,9 @@ const getInvoices = async (filters = {}) => {
                 monthlyTotal: parseFloat(effectiveMonthlyPrice.toFixed(2)),
                 amount: itemCharge,
                 quantity: 1,
-                daysActive,
+                daysActive: remainingDays,
+                cycleActiveDays,
+                remainingDays,
                 totalDays,
                 yearlyDaysActive,
                 yearlyTotalDays: isYearly ? yearlyTotalDays : 365,
@@ -1001,7 +1013,7 @@ const getInvoices = async (filters = {}) => {
 
         // I. Branch Base Fee (if subBranch is enabled on tenant level)
         if (tenant.subBranch) {
-          const { daysActive, cycleActiveDays, totalDays, period } = getDaysActiveInMonth(branch.createdAt, currentMonthEnd, currentYear, currentMonth);
+          const { daysActive, cycleActiveDays, remainingDays, totalDays, period } = getDaysActiveInMonth(branch.createdAt, currentMonthEnd, currentYear, currentMonth);
           if (cycleActiveDays > 0 || daysActive > 0) {
             const price = tenant.priceBranch !== undefined ? tenant.priceBranch : 19.0;
             const cost = price * (cycleActiveDays / totalDays);
@@ -1010,7 +1022,9 @@ const getInvoices = async (filters = {}) => {
               name: "Branch Base Fee",
               price,
               amount: parseFloat(cost.toFixed(2)),
-              daysActive,
+              daysActive: remainingDays,
+              cycleActiveDays,
+              remainingDays,
               totalDays,
               period,
               prorated: cycleActiveDays < totalDays
@@ -1295,16 +1309,18 @@ const syncAllTenantOrders = async () => {
 };
 
 const getCustomerTier = (wallet, tenant = null, customer = null) => {
+  if (wallet && wallet.tier) return wallet.tier.toLowerCase();
   if (tenant && Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
     const loyaltyService = require("../../tenant/loyalty/loyalty.service");
     const tierObj = loyaltyService.getCustomerTierDetails(customer, wallet, tenant.loyaltyTiers);
-    if (tierObj && tierObj.name) return tierObj.name;
+    if (tierObj && tierObj.name) return tierObj.name.toLowerCase();
   }
-  if (wallet && wallet.tier) return wallet.tier;
   const points = wallet?.points || 0;
-  if (points >= 3000) return "gold";
-  if (points >= 1000) return "silver";
-  return "bronze";
+  if (points >= 1000) return "platinum";
+  if (points >= 600) return "gold";
+  if (points >= 450) return "silver";
+  if (points >= 100) return "bronze";
+  return "starter";
 };
 
 const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, startDate, endDate }) => {
@@ -1467,7 +1483,11 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
         where: { OR },
         include: {
           branch: true,
-          items: true,
+          items: {
+            include: {
+              menuItem: true,
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
         take: 50,
@@ -1492,6 +1512,8 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     date: new Date(o.createdAt).toISOString().slice(0, 10),
     branch: o.branch?.name || "Register Terminal",
     city: o.branch?.city || "Riyadh",
+    tenantId: o.tenantId || tenant?.id || null,
+    tenantName: o.tenantName || tenant?.name || "Servi Platform",
   }));
 
   // Collect transactions for display from database
@@ -1538,6 +1560,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
 
     const walletForTx = customerWallets.find((w) => w.id === t.walletId);
     const brandName = linkedOrder?.tenantName || walletForTx?.tenant?.name || tenant?.name || "Platform";
+    const txTenantId = walletForTx?.tenantId || linkedOrder?.tenantId || tenant?.id || null;
 
     pointsHistory.push({
       id: t.id,
@@ -1547,6 +1570,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
       rawPoints: t.points,
       reason: t.description || "Loyalty points transaction",
       brandName,
+      tenantId: txTenantId,
     });
   }
 
@@ -1571,6 +1595,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
       date: new Date(o.createdAt).toISOString().slice(0, 10),
       branch: o.branch?.name || "Register Terminal",
       branchName: o.branch?.name || "Register Terminal",
+      tenantId: o.tenantId || tenant?.id || null,
       tenantName: o.tenantName || tenant?.name || "Servi Platform",
       source: o.source || "pos",
       type: o.type || "DINE_IN",
@@ -1581,7 +1606,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
         id: i.id,
         quantity: i.quantity,
         price: Number(i.price || 0),
-        name: i.name || "Item",
+        name: i.menuItem?.name || i.name || i.title || "Menu Item",
       })),
       total: Number(o.total || 0),
       pointsEarned,
@@ -1900,12 +1925,22 @@ const adjustSuperAdminCustomerPoints = async (tenantId, customerId, { action = "
     }
   }
 
+  const updatedWalletForTier = {
+    ...wallet,
+    points: newTotalPoints,
+    lifetimeEarn: wallet.lifetimeEarn + (deltaPoints > 0 ? deltaPoints : 0),
+  };
+
+  const autoTier = getCustomerTier(updatedWalletForTier, tenant, customer);
+
   const updateData = { points: newTotalPoints };
   if (deltaPoints > 0) {
     updateData.lifetimeEarn = { increment: deltaPoints };
   }
-  if (tier) {
-    updateData.tier = tier;
+  if (tier && typeof tier === "string" && tier.trim() !== "") {
+    updateData.tier = tier.toLowerCase();
+  } else {
+    updateData.tier = (autoTier || "bronze").toLowerCase();
   }
 
   wallet = await mainPrisma.wallet.update({

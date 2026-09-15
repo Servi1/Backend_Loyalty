@@ -99,8 +99,18 @@ const getCustomerTierDetails = (customer, wallet, configuredTiers) => {
     ? configuredTiers
     : DEFAULT_LOYALTY_TIERS;
 
+  if (wallet && wallet.tier) {
+    const targetTierName = String(wallet.tier).trim().toLowerCase();
+    const matchedTier = tiers.find(
+      (t) => (t.id || "").toLowerCase() === targetTierName || (t.name || "").toLowerCase() === targetTierName
+    );
+    if (matchedTier) {
+      return matchedTier;
+    }
+  }
+
   const ordersCount = Number(customer?.completedOrdersCount || customer?.ratingCount || 0);
-  const lifetimeSpend = Number(customer?.lifetimeSpend || (wallet ? wallet.lifetimeEarn : 0) || 0);
+  const lifetimeSpend = Number(customer?.lifetimeSpend || (wallet ? Math.max(wallet.lifetimeEarn || 0, wallet.points || 0) : 0) || 0);
 
   const sortedTiers = [...tiers].sort((a, b) => Number(b.level || 0) - Number(a.level || 0));
 
