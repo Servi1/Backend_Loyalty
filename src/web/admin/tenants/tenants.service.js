@@ -657,7 +657,7 @@ const getInvoices = async (filters = {}) => {
     const startDay = new Date(activeStart.getFullYear(), activeStart.getMonth(), activeStart.getDate());
     const cycleEndDay = new Date(cycleEnd.getFullYear(), cycleEnd.getMonth(), cycleEnd.getDate());
 
-    const cycleDiffDays = Math.round((cycleEndDay.getTime() - startDay.getTime()) / (24 * 60 * 60 * 1000));
+    const cycleDiffDays = Math.round((cycleEndDay.getTime() - startDay.getTime()) / (24 * 60 * 60 * 1000)) + 1;
     const cycleActiveDays = Math.min(totalDays, Math.max(1, startDay.getDate() === 1 ? totalDays : cycleDiffDays));
 
     const now = new Date();
@@ -668,7 +668,7 @@ const getInvoices = async (filters = {}) => {
     let remainingDays = 0;
     if (isCurrentMonth) {
       if (todayDay <= cycleEndDay) {
-        remainingDays = Math.max(0, Math.round((cycleEndDay.getTime() - todayDay.getTime()) / (24 * 60 * 60 * 1000)));
+        remainingDays = Math.max(0, Math.round((cycleEndDay.getTime() - todayDay.getTime()) / (24 * 60 * 60 * 1000)) + 1);
       } else {
         remainingDays = 0;
       }
@@ -1074,16 +1074,21 @@ const getInvoices = async (filters = {}) => {
       let totalTransactionFees = 0;
 
       for (const fc of feeConfigs) {
-        const rate = tenant[fc.key] !== undefined && tenant[fc.key] !== null ? Number(tenant[fc.key]) : 0.0;
+        const defaultRate = tenant[fc.key] !== undefined && tenant[fc.key] !== null ? Number(tenant[fc.key]) : 0.0;
         const matchingOrders = periodOrders.filter(fc.sourceMatch);
         const salesVolume = matchingOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
-        const feeAmount = salesVolume * (rate / 100);
+        const feeAmount = matchingOrders.reduce((sum, o) => {
+          const effectiveRate = (o.feeRate !== undefined && o.feeRate !== null && !isNaN(Number(o.feeRate)))
+            ? Number(o.feeRate)
+            : defaultRate;
+          return sum + (Number(o.total || 0) * (effectiveRate / 100));
+        }, 0);
 
-        if (rate > 0 || matchingOrders.length > 0 || fc.key === "feeAppServi" || fc.key === "feeAppBrand" || fc.key === "feePos") {
+        if (defaultRate > 0 || matchingOrders.length > 0 || fc.key === "feeAppServi" || fc.key === "feeAppBrand" || fc.key === "feePos") {
           totalTransactionFees += feeAmount;
           transactionFeesList.push({
             name: fc.label,
-            feeRate: rate,
+            feeRate: defaultRate,
             ordersCount: matchingOrders.length,
             salesVolume: parseFloat(salesVolume.toFixed(2)),
             feeAmount: parseFloat(feeAmount.toFixed(2))
