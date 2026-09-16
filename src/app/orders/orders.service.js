@@ -449,7 +449,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   // Award points only if order is already COMPLETED upon creation (except if paid by points)
   const effectiveEarnRate = earnRate !== undefined && earnRate !== null ? parseFloat(earnRate) : Number(tenant?.loyaltyEarnRate || 1.0);
   if (order.status === "COMPLETED" && (userId || finalCustomerId) && effectiveEarnRate > 0 && paymentMethod !== "points") {
-    const pointsEarned = Math.floor(subtotal * effectiveEarnRate);
+    const pointsEarned = Math.floor(order.total * effectiveEarnRate);
     if (pointsEarned > 0) {
       try {
         await loyaltyService.earnPoints(

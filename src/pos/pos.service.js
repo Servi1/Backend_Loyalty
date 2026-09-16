@@ -1,4 +1,23 @@
-const ApiError = require("../utils/ApiError");
+const normalisePhone = (raw) => {
+  if (!raw) return "";
+  let digits = raw.toString().trim().replace(/\D/g, "");
+  while (digits.length > 9) {
+    if (digits.startsWith("966")) {
+      digits = digits.substring(3);
+    } else if (digits.startsWith("0")) {
+      digits = digits.substring(1);
+    } else {
+      break;
+    }
+  }
+  if (digits.startsWith("0")) {
+    digits = digits.substring(1);
+  }
+  if (digits.length === 9) {
+    return "+966" + digits;
+  }
+  return raw.startsWith("+") ? raw : `+${digits}`;
+};
 
 /**
  * Fetch all categories and available menu items.
@@ -90,15 +109,15 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
 
   // Lookup or auto-create customer by phone if customerId is missing
   let resolvedCustomerId = orderData.customerId || null;
-  if (!resolvedCustomerId && orderData.customerPhone) {
+  const normalizedPhone = orderData.customerPhone ? normalisePhone(orderData.customerPhone) : null;
+  if (!resolvedCustomerId && normalizedPhone) {
     try {
       const mainPrisma = require("../config/prisma");
-      const cleanedPhone = orderData.customerPhone.trim();
-      let appUser = await mainPrisma.appUser.findUnique({ where: { phone: cleanedPhone } });
+      let appUser = await mainPrisma.appUser.findUnique({ where: { phone: normalizedPhone } });
       if (!appUser) {
         appUser = await mainPrisma.appUser.create({
           data: {
-            phone: cleanedPhone,
+            phone: normalizedPhone,
             name: orderData.customerName || "POS Customer"
           }
         });
@@ -157,7 +176,7 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
       customerId: resolvedCustomerId || undefined,
       paymentMethod: paymentMethod || "cash",
       // optional mobile number from POS client
-      customerPhone: orderData.customerPhone || undefined,
+      customerPhone: normalizedPhone || undefined,
       items: {
         create: items.map(item => ({
           quantity: Number(item.quantity) || 1,
@@ -224,7 +243,11 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
 const syncToAggregatedOrder = async (db, tenantId, order) => {
   if (!tenantId) return;
   try {
-    const mainPrisma = require("../config/prisma");
+    const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+    const resolvedFeeRate = (order.feeRate !== undefined && order.feeRate !== null && !isNaN(Number(order.feeRate)))
+      ? Number(order.feeRate)
+      : Number(tenant?.feePos || 0.0);
+
     let customerName = "Customer Walk-in";
     let customerPhone = order.customerPhone || null;
 
@@ -264,7 +287,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerName,
         customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
-        feeRate: order.feeRate !== undefined && order.feeRate !== null ? Number(order.feeRate) : 0.0,
+        feeRate: resolvedFeeRate,
         loyaltyEarnRate: order.loyaltyEarnRate ?? 0.0,
         source: order.source || "pos",
         staffId: order.staffId || null,
@@ -281,7 +304,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         customerName,
         customerPhone: order.customerPhone || null,
         branchName: branch?.name || "Register Terminal",
-        feeRate: order.feeRate !== undefined && order.feeRate !== null ? Number(order.feeRate) : 0.0,
+        feeRate: resolvedFeeRate,
         loyaltyEarnRate: order.loyaltyEarnRate ?? 0.0,
         source: order.source || "pos",
         staffId: order.staffId || null,
@@ -374,17 +397,27 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
         });
         if (!tx) {
           const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-          const earnRate = tenant ? tenant.loyaltyEarnRate : 1.0;
-          const pointsToEarn = Math.floor(updated.total * earnRate);
-          if (pointsToEarn > 0) {
-            await loyaltyService.earnPoints(
-              db,
-              updated.customerId,
-              pointsToEarn,
-              description,
-              tenantId,
-              { source: "pos" }
-            );
+          if (!tenant || tenant.loyaltyEnabled === false || tenant.loyaltyAddPoints === false) {
+            console.log(`[POS LOYALTY] Loyalty disabled or addPoints false. Skipping points for order #${updated.orderNumber}`);
+          } else {
+            let earnRate = 0.0;
+            if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null) {
+              earnRate = Number(updated.loyaltyEarnRate);
+            } else {
+              earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+            }
+
+            const pointsToEarn = Math.floor(updated.total * earnRate);
+            if (pointsToEarn > 0) {
+              await loyaltyService.earnPoints(
+                db,
+                updated.customerId,
+                pointsToEarn,
+                description,
+                tenantId,
+                { source: "pos", orderId: updated.id, orderNumber: updated.orderNumber }
+              );
+            }
           }
         }
       }
