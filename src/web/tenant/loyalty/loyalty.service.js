@@ -64,16 +64,23 @@ const getCustomerTierDetails = (customer, wallet, configuredTiers) => {
     ? configuredTiers
     : DEFAULT_LOYALTY_TIERS;
 
-  const ordersCount = customer?.completedOrdersCount || customer?.ratingCount || 0;
-  const lifetimeSpend = customer?.lifetimeSpend || (wallet ? wallet.lifetimeEarn : 0) || 0;
+  const ordersCount = Number(customer?.completedOrdersCount || customer?.ratingCount || 0);
+  const lifetimeSpend = Number(customer?.lifetimeSpend || (wallet ? wallet.lifetimeEarn : 0) || (wallet ? wallet.points : 0) || 0);
 
   const sortedTiers = [...tiers].sort((a, b) => Number(b.level || 0) - Number(a.level || 0));
 
   for (const tier of sortedTiers) {
-    if (tier.status === "active") {
+    if (tier.status === "active" || tier.status === undefined) {
       const minOrders = Number(tier.minOrders || 0);
       const minSpend = Number(tier.minPurchaseValue || 0);
-      if (ordersCount >= minOrders && lifetimeSpend >= minSpend) {
+
+      const spendMet = minSpend > 0 ? lifetimeSpend >= minSpend : false;
+      const ordersMet = minOrders > 0 ? ordersCount >= minOrders : false;
+
+      if (spendMet || ordersMet) {
+        return tier;
+      }
+      if (minSpend === 0 && minOrders === 0) {
         return tier;
       }
     }

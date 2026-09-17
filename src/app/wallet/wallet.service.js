@@ -6,6 +6,7 @@
 
 const ApiError = require("../../utils/ApiError");
 const mainPrisma = require("../../config/prisma");
+const { getCustomerTierDetails, DEFAULT_LOYALTY_TIERS } = require("../../web/tenant/loyalty/loyalty.service");
 
 // Helper to normalise phone numbers (defaulting to Saudi international +966)
 const normalisePhone = (raw) => {
@@ -218,12 +219,105 @@ const getWallet = async (db, userId, tenantId = null) => {
     }
   }
 
+  // Calculate completed orders count & spend for tier evaluation
+  const completedOrdersCount = await mainPrisma.order.count({
+    where: {
+      appUserId: userId,
+      status: "COMPLETED",
+      ...(tenantId && targetWallet?.tenantId ? { tenantId: targetWallet.tenantId } : {})
+    }
+  });
+
+  const ordersSum = await mainPrisma.order.aggregate({
+    where: {
+      appUserId: userId,
+      status: "COMPLETED",
+      ...(tenantId && targetWallet?.tenantId ? { tenantId: targetWallet.tenantId } : {})
+    },
+    _sum: { total: true }
+  });
+
+  const activePoints = tenantId ? (targetWallet ? targetWallet.points : 0) : globalPoints;
+  const activeLifetime = tenantId ? (targetWallet ? targetWallet.lifetimeEarn : 0) : globalLifetime;
+
+  const lifetimeSpend = Math.max(
+    Number(ordersSum._sum.total || 0),
+    Number(activeLifetime || 0),
+    Number(activePoints || 0)
+  );
+
+  // Resolve configured tiers for tenant or default
+  let configuredTiers = DEFAULT_LOYALTY_TIERS;
+  if (targetWallet && targetWallet.tenant && Array.isArray(targetWallet.tenant.loyaltyTiers) && targetWallet.tenant.loyaltyTiers.length > 0) {
+    configuredTiers = targetWallet.tenant.loyaltyTiers;
+  } else if (tenantId) {
+    const tenantObj = await mainPrisma.tenant.findFirst({
+      where: { OR: [{ id: tenantId }, { slug: tenantId }] }
+    });
+    if (tenantObj && Array.isArray(tenantObj.loyaltyTiers) && tenantObj.loyaltyTiers.length > 0) {
+      configuredTiers = tenantObj.loyaltyTiers;
+    }
+  }
+
+  const activeTiers = configuredTiers
+    .filter(t => t.status === "active" || t.status === undefined)
+    .sort((a, b) => Number(a.level || 0) - Number(b.level || 0));
+
+  const customerForTier = {
+    id: userId,
+    completedOrdersCount,
+    lifetimeSpend,
+  };
+
+  const currentTier = getCustomerTierDetails(customerForTier, { points: activePoints, lifetimeEarn: activeLifetime }, activeTiers);
+
+  // Determine Next Tier
+  const currentLevel = Number(currentTier.level || 1);
+  const nextTier = activeTiers.find(t => Number(t.level || 0) > currentLevel) || null;
+
+  // Compute remainingDailyCap for today
+  let remainingDailyCap = null;
+  if (currentTier.dailyCapType === "blocked" || Number(currentTier.dailyCap) === 0) {
+    remainingDailyCap = 0;
+  } else if (currentTier.dailyCapType === "capped" && Number(currentTier.dailyCap) > 0) {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    let redeemedToday = 0;
+    if (targetWallet?.id) {
+      const todayRedeem = await mainPrisma.walletTransaction.aggregate({
+        _sum: { points: true },
+        where: {
+          walletId: targetWallet.id,
+          points: { lt: 0 },
+          createdAt: { gte: startOfDay },
+        }
+      });
+      redeemedToday = Math.abs(todayRedeem._sum.points || 0);
+    }
+    const dailyCap = Number(currentTier.dailyCap);
+    remainingDailyCap = Math.max(0, dailyCap - redeemedToday);
+  } else if (currentTier.dailyCapType === "unlimited") {
+    remainingDailyCap = null;
+  }
+
+  const tierWithCap = {
+    ...currentTier,
+    remainingDailyCap,
+  };
+
   return {
     id: targetWallet ? targetWallet.id : (allWallets[0]?.id || null),
-    points: tenantId ? (targetWallet ? targetWallet.points : 0) : globalPoints,
-    lifetimeEarn: tenantId ? (targetWallet ? targetWallet.lifetimeEarn : 0) : globalLifetime,
+    points: activePoints,
+    lifetimeEarn: activeLifetime,
     globalPoints,
     globalLifetime,
+    completedOrdersCount,
+    lifetimeSpend,
+    tierDetails: tierWithCap,
+    tier: tierWithCap,
+    nextTier,
+    tiers: activeTiers,
     brandWallets,
     recentTransactions: transactions.map(_formatTx),
   };
