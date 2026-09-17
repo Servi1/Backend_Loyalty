@@ -235,14 +235,15 @@ model AppUser {
   fcmToken       String?
   isDelete       Boolean  @default(false)
   // Relations
-  orders        Order[]
-  wallets       Wallet[]
-  sentGifts     Gift[]   @relation("SentGifts")
-  receivedGifts Gift[]   @relation("ReceivedGifts")
-  cart          CartItem[]
-  coupons       EarnedCoupon[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  orders         Order[]
+  wallets        Wallet[]
+  sentGifts      Gift[]   @relation("SentGifts")
+  receivedGifts  Gift[]   @relation("ReceivedGifts")
+  cart           CartItem[]
+  coupons        EarnedCoupon[]
+  supportTickets SupportTicket[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
   @@index([phone])
   @@index([email])
 }
@@ -445,5 +446,46 @@ model BroadcastNotification {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  @@index([createdAt])
+}
+
+// ─── Super Admin Support & Ticketing Live Chat ────────
+model SupportTicket {
+  id             String           @id @default(uuid())
+  ticketNumber   String           @unique
+  appUserId      String?
+  customerName   String
+  customerPhone  String?
+  customerEmail  String?
+  status         String           @default("OPEN") // OPEN | RESOLVED | CLOSED
+  assignedTo     String?          // Super Admin Name/ID
+  lastMessage    String?
+  lastMessageAt  DateTime         @default(now())
+  unreadAdmin    Int              @default(0)
+  unreadCustomer Int              @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  appUser        AppUser?         @relation(fields: [appUserId], references: [id], onDelete: SetNull)
+  messages       SupportMessage[]
+
+  @@index([appUserId])
+  @@index([status])
+  @@index([lastMessageAt])
+}
+
+model SupportMessage {
+  id          String        @id @default(uuid())
+  ticketId    String
+  senderType  String        // "CUSTOMER" | "ADMIN"
+  senderId    String?
+  senderName  String
+  text        String
+  attachments Json?         @default("[]")
+  createdAt   DateTime      @default(now())
+
+  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
   @@index([createdAt])
 }

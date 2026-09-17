@@ -142,6 +142,36 @@ const create = async (data) => {
     },
   });
 
+  // Record initial TenantSlotAddon entries for initial slot capacity
+  const initialSlotFields = [
+    { key: "posQuantity", serviceType: "pos", priceKey: "pricePos", defaultPrice: 49.0 },
+    { key: "qrTableQuantity", serviceType: "qr_table", priceKey: "priceQrTable", defaultPrice: 19.0 },
+    { key: "qrCashierQuantity", serviceType: "qr_cashier", priceKey: "priceQrCashier", defaultPrice: 9.0 },
+    { key: "kdsQuantity", serviceType: "kds", priceKey: "priceKds", defaultPrice: 19.0 },
+    { key: "cdsQuantity", serviceType: "cds", priceKey: "priceCds", defaultPrice: 9.0 },
+    { key: "branchLimit", serviceType: "branch", priceKey: "priceBranch", defaultPrice: 19.0 },
+  ];
+
+  for (const sf of initialSlotFields) {
+    const qty = Number(tenantData[sf.key] || 0);
+    if (qty > 0) {
+      const pricePerUnit = tenantData[sf.priceKey] !== undefined ? Number(tenantData[sf.priceKey]) : sf.defaultPrice;
+      try {
+        await mainPrisma.tenantSlotAddon.create({
+          data: {
+            tenantId: tenant.id,
+            serviceType: sf.serviceType,
+            quantity: qty,
+            pricePerUnit,
+            notes: `Initial ${sf.serviceType.toUpperCase()} subscription (${qty} slot(s))`
+          }
+        });
+      } catch (err) {
+        console.error("Failed to record initial slot addon:", err.message);
+      }
+    }
+  }
+
   return tenant;
 };
 
@@ -822,8 +852,27 @@ const getInvoices = async (filters = {}) => {
               const quantity = Math.max(0, rawCurrentQty - monthAddonQty);
               baseSlotCounts[gsvc.typeKey] = quantity;
 
+              const typeAddons = (tenant.slotAddons || [])
+                .filter(a => a.serviceType.toLowerCase() === gsvc.typeKey)
+                .sort((a, b) => new Date(a.addedAt).getTime() - new Date(b.addedAt).getTime());
+
+              const slotPriceRecords = [];
+              for (const addon of typeAddons) {
+                const q = Number(addon.quantity || 1);
+                for (let k = 0; k < q; k++) {
+                  slotPriceRecords.push({
+                    pricePerUnit: Number(addon.pricePerUnit),
+                    addedAt: new Date(addon.addedAt)
+                  });
+                }
+              }
+
               for (let i = 0; i < quantity; i++) {
-                const singleCost = effectiveMonthlyPrice * (cycleActiveDays / totalDays);
+                const slotRecord = slotPriceRecords[i] || null;
+                const slotUnitPrice = slotRecord ? slotRecord.pricePerUnit : unitPrice;
+                const slotMonthlyPrice = isYearly ? (slotUnitPrice / 12) : slotUnitPrice;
+
+                const singleCost = slotMonthlyPrice * (cycleActiveDays / totalDays);
                 const assigned = regDevices[i] || null;
                 const isSlotCanceled = assigned ? assigned.isActive === false : (i >= Number(tenant[gsvc.qtyKey] || 0));
                 const itemCharge = isSlotCanceled ? 0.0 : parseFloat(singleCost.toFixed(2));
@@ -844,10 +893,10 @@ const getInvoices = async (filters = {}) => {
                     branchName: assigned.branch?.name || "Main Branch",
                     isActive: assigned.isActive ?? true,
                   } : null,
-                  price: unitPrice,
+                  price: slotUnitPrice,
                   billingCycle: serviceCycle,
                   isYearly,
-                  monthlyTotal: parseFloat(effectiveMonthlyPrice.toFixed(2)),
+                  monthlyTotal: parseFloat(slotMonthlyPrice.toFixed(2)),
                   amount: itemCharge,
                   quantity: 1,
                   daysActive: remainingDays,
@@ -1912,17 +1961,23 @@ const adjustSuperAdminCustomerPoints = async (tenantId, customerId, { action = "
   let newTotalPoints = wallet.points;
 
   if (action === "add") {
-    deltaPoints = Math.max(0, Number(points) || 0);
+    deltaPoints = Number(points) || 0;
     newTotalPoints = wallet.points + deltaPoints;
   } else if (action === "adjust") {
     if (mode === "set") {
-      const target = Math.max(0, Number(points) || 0);
-      deltaPoints = target - wallet.points;
-      newTotalPoints = target;
+      newTotalPoints = Number(points) || 0;
+      deltaPoints = newTotalPoints - wallet.points;
+    } else if (mode === "deduct") {
+      deltaPoints = -(Math.abs(Number(points) || 0));
+      newTotalPoints = wallet.points + deltaPoints;
     } else {
       deltaPoints = Number(points) || 0;
-      newTotalPoints = Math.max(0, wallet.points + deltaPoints);
+      newTotalPoints = wallet.points + deltaPoints;
     }
+  }
+
+  if (newTotalPoints < 0) {
+    throw new ApiError(400, `Insufficient point balance. Customer currently has ${wallet.points} points for this brand and cannot be adjusted to ${newTotalPoints}.`);
   }
 
   const updatedWalletForTier = {
