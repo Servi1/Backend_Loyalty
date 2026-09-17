@@ -59,13 +59,58 @@ const DEFAULT_LOYALTY_TIERS = [
   }
 ];
 
+const normalizePhone = (rawPhone) => {
+  if (!rawPhone) return "";
+  let digits = rawPhone.toString().trim().replace(/[\s\-\(\)]/g, "");
+  if (digits.startsWith("00966")) {
+    digits = "+966" + digits.substring(5);
+  }
+  if (digits.startsWith("+966")) {
+    let rest = digits.substring(4);
+    if (rest.startsWith("0")) rest = rest.substring(1);
+    return "+966" + rest;
+  }
+  if (digits.startsWith("966")) {
+    let rest = digits.substring(3);
+    if (rest.startsWith("0")) rest = rest.substring(1);
+    return "+966" + rest;
+  }
+  if (digits.startsWith("0")) {
+    digits = digits.substring(1);
+  }
+  if (/^5\d{8}$/.test(digits)) {
+    return "+966" + digits;
+  }
+  if (!digits.startsWith("+") && digits.length >= 9) {
+    return "+966" + digits;
+  }
+  return digits.startsWith("+") ? digits : `+${digits}`;
+};
+
+const getPhoneDigitsKey = (rawPhone) => {
+  if (!rawPhone) return "";
+  const norm = normalizePhone(rawPhone);
+  const digits = norm.replace(/\D/g, "");
+  return digits.length >= 9 ? digits.slice(-9) : digits;
+};
+
 const getCustomerTierDetails = (customer, wallet, configuredTiers) => {
   const tiers = Array.isArray(configuredTiers) && configuredTiers.length > 0
     ? configuredTiers
     : DEFAULT_LOYALTY_TIERS;
 
+  if (wallet && wallet.tier) {
+    const targetTierName = String(wallet.tier).trim().toLowerCase();
+    const matchedTier = tiers.find(
+      (t) => (t.id || "").toLowerCase() === targetTierName || (t.name || "").toLowerCase() === targetTierName
+    );
+    if (matchedTier) {
+      return matchedTier;
+    }
+  }
+
   const ordersCount = Number(customer?.completedOrdersCount || customer?.ratingCount || 0);
-  const lifetimeSpend = Number(customer?.lifetimeSpend || (wallet ? wallet.lifetimeEarn : 0) || (wallet ? wallet.points : 0) || 0);
+  const lifetimeSpend = Number(customer?.lifetimeSpend || (wallet ? Math.max(wallet.lifetimeEarn || 0, wallet.points || 0) : 0) || 0);
 
   const sortedTiers = [...tiers].sort((a, b) => Number(b.level || 0) - Number(a.level || 0));
 
@@ -74,13 +119,10 @@ const getCustomerTierDetails = (customer, wallet, configuredTiers) => {
       const minOrders = Number(tier.minOrders || 0);
       const minSpend = Number(tier.minPurchaseValue || 0);
 
-      const spendMet = minSpend > 0 ? lifetimeSpend >= minSpend : false;
-      const ordersMet = minOrders > 0 ? ordersCount >= minOrders : false;
+      const satisfiesOrders = minOrders === 0 || ordersCount >= minOrders;
+      const satisfiesSpend = minSpend === 0 || lifetimeSpend >= minSpend;
 
-      if (spendMet || ordersMet) {
-        return tier;
-      }
-      if (minSpend === 0 && minOrders === 0) {
+      if (satisfiesOrders && satisfiesSpend) {
         return tier;
       }
     }
@@ -386,14 +428,62 @@ const getAllCustomersForReport = async (db, tenantId = null) => {
     }
   }
 
-  const customers = await mainPrisma.appUser.findMany({
-    include: { wallets: tenantId ? { where: { tenantId } } : true },
-    orderBy: { createdAt: "desc" },
-  });
+  const [customers, allAggregatedOrders, allMainOrders] = await Promise.all([
+    mainPrisma.appUser.findMany({
+      include: { wallets: tenantId ? { where: { tenantId } } : true },
+      orderBy: { createdAt: "desc" },
+    }),
+    mainPrisma.aggregatedOrder.findMany({
+      where: { status: "COMPLETED", ...(tenantId && { tenantId }) },
+      select: { customerPhone: true, total: true }
+    }),
+    mainPrisma.order.findMany({
+      where: { status: "COMPLETED", ...(tenantId && { tenantId }) },
+      select: { appUserId: true, total: true }
+    })
+  ]);
+
+  const statsByUserId = {};
+  for (const ord of allMainOrders) {
+    if (ord.appUserId) {
+      if (!statsByUserId[ord.appUserId]) statsByUserId[ord.appUserId] = { count: 0, spend: 0 };
+      statsByUserId[ord.appUserId].count += 1;
+      statsByUserId[ord.appUserId].spend += Number(ord.total || 0);
+    }
+  }
+
+  const statsByPhoneKey = {};
+  for (const ord of allAggregatedOrders) {
+    if (ord.customerPhone) {
+      const key = getPhoneDigitsKey(ord.customerPhone);
+      if (key) {
+        if (!statsByPhoneKey[key]) statsByPhoneKey[key] = { count: 0, spend: 0 };
+        statsByPhoneKey[key].count += 1;
+        statsByPhoneKey[key].spend += Number(ord.total || 0);
+      }
+    }
+  }
 
   return customers.map(c => {
     const wallet = tenantId ? c.wallets.find(w => w.tenantId === tenantId) : c.wallets[0];
-    const tier = getCustomerTierDetails(c, wallet, configuredTiers);
+
+    const userIdStats = statsByUserId[c.id] || { count: 0, spend: 0 };
+    const phoneKey = getPhoneDigitsKey(c.phone);
+    const phoneStats = phoneKey ? (statsByPhoneKey[phoneKey] || { count: 0, spend: 0 }) : { count: 0, spend: 0 };
+
+    const completedOrdersCount = Math.max(userIdStats.count, phoneStats.count);
+    const lifetimeSpendFromOrders = Math.max(userIdStats.spend, phoneStats.spend);
+    const walletEarned = wallet ? Number(wallet.lifetimeEarn || 0) : 0;
+    const walletPoints = wallet ? Number(wallet.points || 0) : 0;
+    const lifetimeSpend = Math.max(lifetimeSpendFromOrders, walletEarned, walletPoints);
+
+    const userWithStats = {
+      ...c,
+      completedOrdersCount,
+      lifetimeSpend
+    };
+
+    const tier = getCustomerTierDetails(userWithStats, wallet, configuredTiers);
     return {
       id: c.id,
       name: c.name || "Unnamed",
@@ -401,6 +491,8 @@ const getAllCustomersForReport = async (db, tenantId = null) => {
       email: c.email,
       points: wallet?.points || 0,
       lifetimeEarn: wallet?.lifetimeEarn || 0,
+      completedOrdersCount,
+      lifetimeSpend,
       joinedAt: c.createdAt,
       tier: tier.name,
       tierLevel: tier.level,
@@ -503,21 +595,41 @@ const getTiers = async (tenantId) => {
     }
   });
 
-  const allOrders = await mainPrisma.aggregatedOrder.findMany({
-    where: {
-      status: "COMPLETED",
-      ...(tenantId && { tenantId })
-    },
-    select: { customerPhone: true, customerName: true, total: true }
-  });
+  const [allAggregatedOrders, allMainOrders] = await Promise.all([
+    mainPrisma.aggregatedOrder.findMany({
+      where: {
+        status: "COMPLETED",
+        ...(tenantId && { tenantId })
+      },
+      select: { orderId: true, customerPhone: true, customerName: true, total: true }
+    }),
+    mainPrisma.order.findMany({
+      where: {
+        status: "COMPLETED",
+        ...(tenantId && { tenantId })
+      },
+      select: { id: true, appUserId: true, total: true }
+    })
+  ]);
 
-  const userStatsByPhone = {};
-  for (const ord of allOrders) {
+  const statsByUserId = {};
+  for (const ord of allMainOrders) {
+    if (ord.appUserId) {
+      if (!statsByUserId[ord.appUserId]) statsByUserId[ord.appUserId] = { count: 0, spend: 0 };
+      statsByUserId[ord.appUserId].count += 1;
+      statsByUserId[ord.appUserId].spend += Number(ord.total || 0);
+    }
+  }
+
+  const statsByPhoneKey = {};
+  for (const ord of allAggregatedOrders) {
     if (ord.customerPhone) {
-      const p = ord.customerPhone.trim();
-      if (!userStatsByPhone[p]) userStatsByPhone[p] = { count: 0, spend: 0 };
-      userStatsByPhone[p].count += 1;
-      userStatsByPhone[p].spend += Number(ord.total || 0);
+      const key = getPhoneDigitsKey(ord.customerPhone);
+      if (key) {
+        if (!statsByPhoneKey[key]) statsByPhoneKey[key] = { count: 0, spend: 0 };
+        statsByPhoneKey[key].count += 1;
+        statsByPhoneKey[key].spend += Number(ord.total || 0);
+      }
     }
   }
 
@@ -528,13 +640,22 @@ const getTiers = async (tenantId) => {
       ? user.wallets.find((w) => w.tenantId === tenantId) || user.wallets[0] || null
       : (Array.isArray(user.wallets) ? user.wallets[0] : null);
 
-    const phone = user.phone ? user.phone.trim() : "";
-    const stats = userStatsByPhone[phone] || { count: 0, spend: 0 };
+    const userIdStats = statsByUserId[user.id] || { count: 0, spend: 0 };
+    const phoneKey = getPhoneDigitsKey(user.phone);
+    const phoneStats = phoneKey ? (statsByPhoneKey[phoneKey] || { count: 0, spend: 0 }) : { count: 0, spend: 0 };
+
+    const completedOrdersCount = Math.max(userIdStats.count, phoneStats.count);
+    const lifetimeSpendFromOrders = Math.max(userIdStats.spend, phoneStats.spend);
+    const walletEarned = userWallet ? Number(userWallet.lifetimeEarn || 0) : 0;
+    const walletPoints = userWallet ? Number(userWallet.points || 0) : 0;
+    const lifetimeSpend = Math.max(lifetimeSpendFromOrders, walletEarned, walletPoints);
+
     const userWithStats = {
       ...user,
-      completedOrdersCount: stats.count,
-      lifetimeSpend: stats.spend > 0 ? stats.spend : (userWallet ? Number(userWallet.lifetimeEarn || 0) : 0)
+      completedOrdersCount,
+      lifetimeSpend
     };
+
     const t = getCustomerTierDetails(userWithStats, userWallet, tiers);
     memberCounts[t.id] = (memberCounts[t.id] || 0) + 1;
     if (!memberDetails[t.id]) memberDetails[t.id] = [];
@@ -545,8 +666,8 @@ const getTiers = async (tenantId) => {
       email: user.email || "N/A",
       points: userWallet?.points || 0,
       lifetimeEarn: userWallet?.lifetimeEarn || 0,
-      completedOrdersCount: stats.count,
-      lifetimeSpend: userWithStats.lifetimeSpend,
+      completedOrdersCount,
+      lifetimeSpend,
       createdAt: user.createdAt
     });
   }
