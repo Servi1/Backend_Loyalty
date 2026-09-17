@@ -69,6 +69,7 @@ app.get("/api/health", (_req, res) => {
 const { extractTenant } = require("./src/middlewares/tenantMiddleware");
 const { authenticatePos } = require("./src/middlewares/posMiddleware");
 const { authenticateKds } = require("./src/middlewares/kdsMiddleware");
+const supportRoutes = require("./src/web/admin/support/support.routes");
 
 // 1. Super Admin API
 app.use("/api/admin/tenants", tenantsRoutes);
@@ -78,6 +79,7 @@ app.use("/api/admin/settings", settingsRoutes);
 app.use("/api/admin/notifications", adminNotificationsRoutes);
 app.use("/api/admin/categories", tenantCategoriesRoutes);
 app.use("/api/admin/global-order-types", globalOrderTypesRoutes);
+app.use("/api/admin/support", supportRoutes);
 app.use("/api/auth", authRoutes); // auth handles both super admin and tenant logins
 app.use("/api/pos", authenticatePos, posRoutes);
 app.use("/api/kds", authenticateKds, kdsRoutes);
@@ -302,7 +304,8 @@ app.get(["/faq", "/faq.pdf", "/api/faq", "/api/app/content/faq-pdf", "/api/app/c
 app.get("/api/app/content", async (req, res, next) => {
   try {
     const hostUrl = `${req.protocol}://${req.get("host")}`;
-    const data = await settingsService.getAppContent(hostUrl);
+    const lang = req.query.lang || req.headers["accept-language"] || "en";
+    const data = await settingsService.getAppContent(hostUrl, lang);
     res.json({ success: true, data });
   } catch (err) {
     next(err);
@@ -312,7 +315,8 @@ app.get("/api/app/content", async (req, res, next) => {
 app.get("/api/app/content/privacy-policy", async (req, res, next) => {
   try {
     const hostUrl = `${req.protocol}://${req.get("host")}`;
-    const data = await settingsService.getAppContent(hostUrl);
+    const lang = req.query.lang || req.headers["accept-language"] || "en";
+    const data = await settingsService.getAppContent(hostUrl, lang);
     res.json({
       success: true,
       data: {
@@ -333,7 +337,8 @@ app.get("/api/app/content/privacy-policy", async (req, res, next) => {
 app.get("/api/app/content/faq", async (req, res, next) => {
   try {
     const hostUrl = `${req.protocol}://${req.get("host")}`;
-    const data = await settingsService.getAppContent(hostUrl);
+    const lang = req.query.lang || req.headers["accept-language"] || "en";
+    const data = await settingsService.getAppContent(hostUrl, lang);
     res.json({ success: true, data: data.faqList });
   } catch (err) {
     next(err);
@@ -348,8 +353,10 @@ app.post("/api/app/qr/encode", branchCtrl.encodeQrTokenEndpoint);
 // Global app auth router (tenant-independent)
 const globalAuthRouter = require("./src/app/auth/globalAuth.routes");
 const appNotificationsRoutes = require("./src/app/notifications/appNotifications.routes");
+const appSupportRoutes = require("./src/app/support/appSupport.routes");
 app.use("/api/app/auth", globalAuthRouter);
 app.use("/api/app/notifications", appNotificationsRoutes);
+app.use("/api/app/support", appSupportRoutes);
 
 const { optionalAppTenant } = require("./src/app/middlewares/appTenant.middleware");
 

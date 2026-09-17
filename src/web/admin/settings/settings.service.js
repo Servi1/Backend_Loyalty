@@ -41,22 +41,38 @@ const DEFAULT_FAQ_LIST = [
   {
     id: "faq_1",
     question: "How do I earn loyalty points on my orders?",
-    answer: "You automatically earn points on every completed order paid via cash, card, or digital payment methods according to your brand's earn rate and daily tier limit."
+    questionEn: "How do I earn loyalty points on my orders?",
+    questionAr: "كيف يمكنني كسب نقاط الولاء على طلباتي؟",
+    answer: "You automatically earn points on every completed order paid via cash, card, or digital payment methods according to your brand's earn rate and daily tier limit.",
+    answerEn: "You automatically earn points on every completed order paid via cash, card, or digital payment methods according to your brand's earn rate and daily tier limit.",
+    answerAr: "تكسب النقاط تلقائيًا على كل طلب مكتمل يتم دفعه نقداً أو بالبطاقة أو عبر طرق الدفع الرقمية وفقًا لمعدل كسب العلامة التجارية وحد المستوى اليومي."
   },
   {
     id: "faq_2",
     question: "How can I redeem my accumulated loyalty points?",
-    answer: "During checkout on mobile ordering or QR Table/Cashier ordering, choose 'Pay with Loyalty Points' if you have sufficient points balance in your wallet."
+    questionEn: "How can I redeem my accumulated loyalty points?",
+    questionAr: "كيف يمكنني استبدال نقاط الولاء المتراكمة؟",
+    answer: "During checkout on mobile ordering or QR Table/Cashier ordering, choose 'Pay with Loyalty Points' if you have sufficient points balance in your wallet.",
+    answerEn: "During checkout on mobile ordering or QR Table/Cashier ordering, choose 'Pay with Loyalty Points' if you have sufficient points balance in your wallet.",
+    answerAr: "أثناء الدفع في الطلب عبر التطبيق أو عند مسح QR الطاولة/الكاشير، اختر 'الدفع بنقاط الولاء' إذا كان لديك رصيد نقاط كافٍ في محفظتك."
   },
   {
     id: "faq_3",
     question: "How do tier levels work (Starter, Bronze, Silver, Gold, Platinum)?",
-    answer: "Tier levels are automatically assigned based on your total completed orders and cumulative spend value. Higher tiers unlock higher daily point caps and exclusive benefits."
+    questionEn: "How do tier levels work (Starter, Bronze, Silver, Gold, Platinum)?",
+    questionAr: "كيف تعمل مستويات العضوية (مبتدئ، برونزي، فضي، ذهبي، بلاتيني)؟",
+    answer: "Tier levels are automatically assigned based on your total completed orders and cumulative spend value. Higher tiers unlock higher daily point caps and exclusive benefits.",
+    answerEn: "Tier levels are automatically assigned based on your total completed orders and cumulative spend value. Higher tiers unlock higher daily point caps and exclusive benefits.",
+    answerAr: "يتم تعيين المستويات تلقائيًا بناءً على إجمالي طلباتك المكتملة وقيمة الإنفاق التراكمي. تتيح المستويات الأعلى سقف نقاط يومي أكبر ومزايا حصرية."
   },
   {
     id: "faq_4",
     question: "What happens if an order is cancelled or refunded?",
-    answer: "If an order is cancelled or refunded, any loyalty points awarded for that order will be automatically reversed from your wallet."
+    questionEn: "What happens if an order is cancelled or refunded?",
+    questionAr: "ماذا يحدث إذا تم إلغاء الطلب أو استرداد قيمته؟",
+    answer: "If an order is cancelled or refunded, any loyalty points awarded for that order will be automatically reversed from your wallet.",
+    answerEn: "If an order is cancelled or refunded, any loyalty points awarded for that order will be automatically reversed from your wallet.",
+    answerAr: "إذا تم إلغاء طلب أو استرداد قيمته، سيتم خصم أي نقاط ولاء تم منحها لذك الطلب تلقائيًا من محفظتك."
   }
 ];
 
@@ -64,32 +80,56 @@ const DEFAULT_POLICY_POINTS = [
   {
     id: "pol_1",
     title: "1. Information We Collect",
-    content: "We collect information you provide directly to us when using our application, such as your name, phone number, email address, address details, and order transaction history to enable loyalty rewards."
+    titleEn: "1. Information We Collect",
+    titleAr: "1. المعلومات التي نجمعها",
+    content: "We collect information you provide directly to us when using our application, such as your name, phone number, email address, address details, and order transaction history to enable loyalty rewards.",
+    contentEn: "We collect information you provide directly to us when using our application, such as your name, phone number, email address, address details, and order transaction history to enable loyalty rewards.",
+    contentAr: "نجمع المعلومات التي تقدمها لنا مباشرة عند استخدام تطبيقنا، مثل اسمك ورقم هاتفك والبريد الإلكتروني وتفاصيل العنوان وسجل طلباتك لتمكين المكافآت."
   },
   {
     id: "pol_2",
     title: "2. How We Use Your Information",
-    content: "We use the information we collect to provide, maintain, and improve our services, process transactions, deliver food & services to your table/location, and calculate loyalty tier rewards."
+    titleEn: "2. How We Use Your Information",
+    titleAr: "2. كيف نستخدم معلوماتك",
+    content: "We use the information we collect to provide, maintain, and improve our services, process transactions, deliver food & services to your table/location, and calculate loyalty tier rewards.",
+    contentEn: "We use the information we collect to provide, maintain, and improve our services, process transactions, deliver food & services to your table/location, and calculate loyalty tier rewards.",
+    contentAr: "نستخدم المعلومات التي نجمعها لتقديم خدماتنا وتحسينها، ومعالجة المعاملات، وتوصيل الطلبات والخدمات إلى طاولتك أو موقعك، وحساب مكافآت مستويات الولاء."
   },
   {
     id: "pol_3",
     title: "3. Loyalty & Rewards Program",
-    content: "Your orders accumulate points based on established brand tier rules. Points earned or redeemed are logged securely to your account wallet with real-time audit logs."
+    titleEn: "3. Loyalty & Rewards Program",
+    titleAr: "3. برنامج الولاء والمكافآت",
+    content: "Your orders accumulate points based on established brand tier rules. Points earned or redeemed are logged securely to your account wallet with real-time audit logs.",
+    contentEn: "Your orders accumulate points based on established brand tier rules. Points earned or redeemed are logged securely to your account wallet with real-time audit logs.",
+    contentAr: "تجمع طلباتك النقاط بناءً على قواعد مستويات العلامة التجارية. يتم تسجيل النقاط المكتسبة أو المستخدمة بأمان في محفظة حسابك مع سجلات تدقيق فورية."
   },
   {
     id: "pol_4",
     title: "4. Information Sharing & Third Parties",
-    content: "We do not sell or share your personal information with third parties except as necessary to fulfill your orders (such as passing contact details to store staff) or as required by law."
+    titleEn: "4. Information Sharing & Third Parties",
+    titleAr: "4. مشاركة المعلومات مع الأطراف الثالثة",
+    content: "We do not sell or share your personal information with third parties except as necessary to fulfill your orders (such as passing contact details to store staff) or as required by law.",
+    contentEn: "We do not sell or share your personal information with third parties except as necessary to fulfill your orders (such as passing contact details to store staff) or as required by law.",
+    contentAr: "نحن لا نبيع أو نشارك معلوماتك الشخصية مع أطراف ثالثة إلا عند الضرورة لتلبية طلباتك (مثل تزويد موظفي المتجر بتفاصيل الاتصال) أو وفقًا لما ينص عليه القانون."
   },
   {
     id: "pol_5",
     title: "5. Data Security & Storage",
-    content: "We implement appropriate technical and organizational security measures to protect your personal data against unauthorized access, alteration, loss, or disclosure."
+    titleEn: "5. Data Security & Storage",
+    titleAr: "5. أمان البيانات وتخزينها",
+    content: "We implement appropriate technical and organizational security measures to protect your personal data against unauthorized access, alteration, loss, or disclosure.",
+    contentEn: "We implement appropriate technical and organizational security measures to protect your personal data against unauthorized access, alteration, loss, or disclosure.",
+    contentAr: "نطبق إجراءات أمنية فنية وتنظيمية مناسبة لحماية بياناتك الشخصية من الوصول غير المصرح به أو التعديل أو الفقدان أو الإفصاح."
   },
   {
     id: "pol_6",
     title: "6. User Rights & Contact Us",
-    content: "Users can request access to, correction of, or deletion of their personal data at any time by contacting support at support@servi.com."
+    titleEn: "6. User Rights & Contact Us",
+    titleAr: "6. حقوق المستخدم والتواصل معنا",
+    content: "Users can request access to, correction of, or deletion of their personal data at any time by contacting support at support@servi.com.",
+    contentEn: "Users can request access to, correction of, or deletion of their personal data at any time by contacting support at support@servi.com.",
+    contentAr: "يمكن للمستخدمين طلب الوصول إلى بياناتهم الشخصية أو تصحيحها أو حذفها في أي وقت من خلال التواصل مع الدعم على support@servi.com."
   }
 ];
 
@@ -178,7 +218,7 @@ const updateSettings = async (configs) => {
   return updated;
 };
 
-const getAppContent = async (hostUrl = "") => {
+const getAppContent = async (hostUrl = "", lang = "en") => {
   const [privacyRecord, pointsRecord, pdfRecord, faqRecord] = await Promise.all([
     mainPrisma.systemSetting.findUnique({ where: { key: "privacy_policy" } }),
     mainPrisma.systemSetting.findUnique({ where: { key: "policy_points" } }),
@@ -186,29 +226,53 @@ const getAppContent = async (hostUrl = "") => {
     mainPrisma.systemSetting.findUnique({ where: { key: "faq_list" } })
   ]);
 
-  let policyPoints = DEFAULT_POLICY_POINTS;
+  let rawPoints = DEFAULT_POLICY_POINTS;
   if (pointsRecord && pointsRecord.value) {
     try {
       const parsed = JSON.parse(pointsRecord.value);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        policyPoints = parsed;
+        rawPoints = parsed;
       }
     } catch (e) {
-      policyPoints = DEFAULT_POLICY_POINTS;
+      rawPoints = DEFAULT_POLICY_POINTS;
     }
   }
 
-  let privacyPolicyRaw = privacyRecord ? privacyRecord.value : convertPointsToText(policyPoints);
-  let faqList = DEFAULT_FAQ_LIST;
-
+  let rawFaqList = DEFAULT_FAQ_LIST;
   if (faqRecord && faqRecord.value) {
     try {
-      faqList = JSON.parse(faqRecord.value);
+      const parsedFaq = JSON.parse(faqRecord.value);
+      if (Array.isArray(parsedFaq) && parsedFaq.length > 0) {
+        rawFaqList = parsedFaq;
+      }
     } catch (e) {
-      faqList = DEFAULT_FAQ_LIST;
+      rawFaqList = DEFAULT_FAQ_LIST;
     }
   }
 
+  const isAr = String(lang).toLowerCase().startsWith("ar");
+
+  const policyPoints = rawPoints.map((p) => ({
+    id: p.id,
+    title: isAr ? (p.titleAr || p.titleEn || p.title || "") : (p.titleEn || p.title || p.titleAr || ""),
+    content: isAr ? (p.contentAr || p.contentEn || p.content || "") : (p.contentEn || p.content || p.contentAr || ""),
+    titleEn: p.titleEn || p.title || "",
+    titleAr: p.titleAr || "",
+    contentEn: p.contentEn || p.content || "",
+    contentAr: p.contentAr || ""
+  }));
+
+  const faqList = rawFaqList.map((f) => ({
+    id: f.id,
+    question: isAr ? (f.questionAr || f.questionEn || f.question || "") : (f.questionEn || f.question || f.questionAr || ""),
+    answer: isAr ? (f.answerAr || f.answerEn || f.answer || "") : (f.answerEn || f.answer || f.answerAr || ""),
+    questionEn: f.questionEn || f.question || "",
+    questionAr: f.questionAr || "",
+    answerEn: f.answerEn || f.answer || "",
+    answerAr: f.answerAr || ""
+  }));
+
+  let privacyPolicyRaw = privacyRecord ? privacyRecord.value : convertPointsToText(policyPoints);
   const html = convertToHtml(privacyPolicyRaw, policyPoints);
   const text = stripHtml(privacyPolicyRaw);
   const baseUrl = hostUrl.replace(/\/$/, "");
@@ -229,11 +293,13 @@ const getAppContent = async (hostUrl = "") => {
     pdfRelativePath,
     privacyPolicy: privacyPolicyRaw,
     policyPoints,
+    rawPolicyPoints: rawPoints,
     content: privacyPolicyRaw,
     html,
     text,
     privacyPolicyUrl: baseUrl ? `${baseUrl}/privacy-policy` : "/privacy-policy",
-    faqList
+    faqList,
+    rawFaqList
   };
 };
 
