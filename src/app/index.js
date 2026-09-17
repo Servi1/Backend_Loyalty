@@ -39,6 +39,7 @@ const orderRoutes    = require("./orders/orders.routes");
 const walletRoutes   = require("./wallet/wallet.routes");
 const brandsRoutes   = require("./brands/brands.routes");
 const cartRoutes     = require("./cart/cart.routes");
+const supportRoutes  = require("./support/appSupport.routes");
 const { requireAppTenant } = require("./middlewares/appTenant.middleware");
 const router = Router({ mergeParams: true });
 
@@ -55,5 +56,6 @@ router.use("/orders",   orderRoutes);
 router.use("/wallet",   walletRoutes);
 router.use("/brands",   brandsRoutes);
 router.use("/cart",     cartRoutes);
+router.use("/support",  supportRoutes);
 
 module.exports = router;
