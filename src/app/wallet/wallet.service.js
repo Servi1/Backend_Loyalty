@@ -6,7 +6,388 @@
 
 const ApiError = require("../../utils/ApiError");
 const mainPrisma = require("../../config/prisma");
-const { getCustomerTierDetails, DEFAULT_LOYALTY_TIERS } = require("../../web/tenant/loyalty/loyalty.service");
+
+const DEFAULT_LOYALTY_TIERS = [
+  {
+    id: "starter",
+    name: "Starter",
+    level: 1,
+    icon: "⭐",
+    minOrders: 0,
+    minPurchaseValue: 0,
+    dailyCap: 0,
+    dailyCapType: "blocked",
+    status: "active"
+  },
+  {
+    id: "bronze",
+    name: "Bronze",
+    level: 2,
+    icon: "🥉",
+    minOrders: 10,
+    minPurchaseValue: 100,
+    dailyCap: 100,
+    dailyCapType: "capped",
+    status: "active"
+  },
+  {
+    id: "silver",
+    name: "Silver",
+    level: 3,
+    icon: "🥈",
+    minOrders: 30,
+    minPurchaseValue: 450,
+    dailyCap: 300,
+    dailyCapType: "capped",
+    status: "active"
+  },
+  {
+    id: "gold",
+    name: "Gold",
+    level: 4,
+    icon: "🥇",
+    minOrders: 40,
+    minPurchaseValue: 600,
+    dailyCap: 500,
+    dailyCapType: "capped",
+    status: "active"
+  },
+  {
+    id: "platinum",
+    name: "Platinum",
+    level: 5,
+    icon: "💎",
+    minOrders: 50,
+    minPurchaseValue: 1000,
+    dailyCap: null,
+    dailyCapType: "unlimited",
+    status: "active"
+  }
+];
+
+const getCustomerTierDetails = (customer, wallet, configuredTiers) => {
+  const tiers = Array.isArray(configuredTiers) && configuredTiers.length > 0
+    ? configuredTiers
+    : DEFAULT_LOYALTY_TIERS;
+
+  const ordersCount = Number(customer?.completedOrdersCount || customer?.ratingCount || 0);
+  const lifetimeSpend = Number(customer?.lifetimeSpend || (wallet ? Math.max(wallet.lifetimeEarn || 0, wallet.points || 0) : 0) || 0);
+
+  const sortedTiers = [...tiers].sort((a, b) => Number(b.level || 0) - Number(a.level || 0));
+
+  for (const tier of sortedTiers) {
+    if (tier.status === "active" || tier.status === undefined) {
+      const minOrders = Number(tier.minOrders || 0);
+      const minSpend = Number(tier.minPurchaseValue || 0);
+
+      const spendMet = minSpend > 0 ? lifetimeSpend >= minSpend : false;
+      const ordersMet = minOrders > 0 ? ordersCount >= minOrders : false;
+
+      if (spendMet || ordersMet) {
+        return tier;
+      }
+      if (minSpend === 0 && minOrders === 0) {
+        return tier;
+      }
+    }
+  }
+
+  if (wallet && wallet.tier && wallet.tier.toLowerCase() !== "starter") {
+    const targetTierName = String(wallet.tier).trim().toLowerCase();
+    const matchedTier = tiers.find(
+      (t) => (t.id || "").toLowerCase() === targetTierName || (t.name || "").toLowerCase() === targetTierName
+    );
+    if (matchedTier) {
+      return matchedTier;
+    }
+  }
+
+  return sortedTiers[sortedTiers.length - 1] || DEFAULT_LOYALTY_TIERS[0];
+};
+
+const resolveTenant = async (tenantId) => {
+  if (!tenantId) return null;
+  return mainPrisma.tenant.findFirst({
+    where: { OR: [{ id: tenantId }, { slug: tenantId }] }
+  });
+};
+
+/**
+ * Award points to a user (e.g. after order completion).
+ */
+const earnPoints = async (db, customerId, points, description, tenantId, opts = {}) => {
+  let tenantTiers = DEFAULT_LOYALTY_TIERS;
+  let targetTenantId = tenantId;
+
+  if (tenantId) {
+    const tenant = await resolveTenant(tenantId);
+    if (tenant) {
+      targetTenantId = tenant.id;
+      if (Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
+        tenantTiers = tenant.loyaltyTiers;
+      }
+      if (tenant.loyaltyEnabled === false) {
+        console.log(`[LOYALTY] Earning points blocked: Loyalty program is globally disabled for tenant ${tenant.name}`);
+        return null;
+      }
+      const source = (opts.source || "").toLowerCase();
+      if (source === "pos" && tenant.loyaltyAddPoints === false) {
+        console.log(`[LOYALTY] Earning points blocked: Add Points toggle disabled for POS on tenant ${tenant.name}`);
+        return null;
+      }
+    }
+  }
+
+  const customer = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
+  if (!customer) throw new ApiError(404, "Customer not found");
+
+  let wallet = await mainPrisma.wallet.findFirst({
+    where: { appUserId: customerId, tenantId: targetTenantId || null },
+  });
+  if (!wallet) {
+    wallet = await mainPrisma.wallet.create({
+      data: { appUserId: customerId, tenantId: targetTenantId || null, points: 0, lifetimeEarn: 0 },
+    });
+  }
+
+  if (opts.orderId || opts.orderNumber) {
+    const existingTx = await mainPrisma.walletTransaction.findFirst({
+      where: {
+        walletId: wallet.id,
+        points: { gt: 0 },
+        OR: [
+          opts.orderId ? { orderId: opts.orderId } : undefined,
+          opts.orderNumber ? { orderNumber: opts.orderNumber } : undefined,
+          opts.orderNumber ? { description: { contains: opts.orderNumber } } : undefined,
+        ].filter(Boolean),
+      },
+    });
+
+    if (existingTx) {
+      console.log(`[LOYALTY] Earning points skipped: Points already awarded for order ${opts.orderNumber || opts.orderId}`);
+      return wallet;
+    }
+  }
+
+  const finalPointsToEarn = points;
+  if (finalPointsToEarn <= 0) return wallet;
+
+  const [updatedWallet] = await mainPrisma.$transaction([
+    mainPrisma.wallet.update({
+      where: { id: wallet.id },
+      data: { points: { increment: finalPointsToEarn }, lifetimeEarn: { increment: finalPointsToEarn } },
+    }),
+    mainPrisma.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        points: finalPointsToEarn,
+        description: description || "Points earned",
+        tenantId: targetTenantId || null,
+        orderId: opts.orderId || null,
+        orderNumber: opts.orderNumber || null,
+      },
+    }),
+  ]);
+
+  return updatedWallet;
+};
+
+/**
+ * Redeem points from a user's wallet.
+ */
+const redeemPoints = async (db, customerId, points, description, tenantId, opts = {}) => {
+  let tenantTiers = DEFAULT_LOYALTY_TIERS;
+  let targetTenantId = tenantId;
+
+  if (tenantId) {
+    const tenant = await resolveTenant(tenantId);
+    if (tenant) {
+      targetTenantId = tenant.id;
+      if (Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
+        tenantTiers = tenant.loyaltyTiers;
+      }
+      if (tenant.loyaltyEnabled === false) {
+        throw new ApiError(400, "Loyalty points program is currently disabled for this brand.");
+      }
+      const source = (opts.source || "").toLowerCase();
+      if (source === "pos" && tenant.loyaltyRedeemPoints === false) {
+        throw new ApiError(400, "Redeeming loyalty points is currently disabled for POS Cashier.");
+      }
+    }
+  }
+
+  const customer = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
+  if (!customer) throw new ApiError(404, "Customer not found");
+
+  let wallet = await mainPrisma.wallet.findFirst({
+    where: { appUserId: customerId, tenantId: targetTenantId || null },
+  });
+  if (!wallet) throw new ApiError(404, "Wallet not found for this brand");
+  if (wallet.points < points) throw new ApiError(400, `Insufficient points for this brand. Order requires ${points} pts, but available balance is ${wallet.points} pts.`);
+
+  const customerTier = getCustomerTierDetails(customer, wallet, tenantTiers);
+
+  if (customerTier.dailyCapType === "blocked" || customerTier.dailyCap === 0) {
+    throw new ApiError(400, `Point redemption is blocked for ${customerTier.name} tier.`);
+  }
+
+  if (customerTier.dailyCapType === "capped" && Number(customerTier.dailyCap) > 0) {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const todayRedeemTxs = await mainPrisma.walletTransaction.aggregate({
+      _sum: { points: true },
+      where: {
+        walletId: wallet.id,
+        points: { lt: 0 },
+        createdAt: { gte: startOfDay },
+      },
+    });
+
+    const redeemedToday = Math.abs(todayRedeemTxs._sum.points || 0);
+    const dailyCap = Number(customerTier.dailyCap);
+    const remainingRedeemCap = Math.max(0, dailyCap - redeemedToday);
+
+    if (remainingRedeemCap <= 0) {
+      throw new ApiError(400, `Daily redemption cap of ${dailyCap} pts reached for ${customerTier.name} tier.`);
+    }
+
+    if (points > remainingRedeemCap) {
+      throw new ApiError(400, `Cannot redeem ${points} pts. Your remaining daily redemption cap for ${customerTier.name} tier is ${remainingRedeemCap} pts.`);
+    }
+  }
+
+  if (opts.orderId || opts.orderNumber) {
+    const existingRedeemTx = await mainPrisma.walletTransaction.findFirst({
+      where: {
+        walletId: wallet.id,
+        points: { lt: 0 },
+        OR: [
+          opts.orderId ? { orderId: opts.orderId } : undefined,
+          opts.orderNumber ? { orderNumber: opts.orderNumber } : undefined,
+          opts.orderNumber ? { description: { contains: opts.orderNumber } } : undefined,
+        ].filter(Boolean),
+      },
+    });
+
+    if (existingRedeemTx) {
+      console.log(`[LOYALTY] Points redemption skipped: Points already redeemed for order ${opts.orderNumber || opts.orderId}`);
+      return wallet;
+    }
+  }
+
+  const [updatedWallet] = await mainPrisma.$transaction([
+    mainPrisma.wallet.update({
+      where: { id: wallet.id },
+      data: { points: { decrement: points } },
+    }),
+    mainPrisma.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        points: -points,
+        description: description || "Points redeemed",
+        tenantId: targetTenantId || null,
+        orderId: opts.orderId || null,
+        orderNumber: opts.orderNumber || null,
+      },
+    }),
+  ]);
+
+  return updatedWallet;
+};
+
+/**
+ * Reverse points for a refunded order.
+ */
+const reverseOrderPoints = async (db, customerId, orderNumber, pointsRedeemed, tenantId, orderId) => {
+  if (!customerId) return;
+  const customer = await mainPrisma.appUser.findUnique({
+    where: { id: customerId },
+    include: { wallets: true }
+  });
+  if (!customer) return;
+
+  const wallet = await getWallet(db, customerId, tenantId);
+  if (!wallet) return;
+
+  const earnTx = await mainPrisma.walletTransaction.findFirst({
+    where: {
+      walletId: wallet.id,
+      points: { gt: 0 },
+      OR: [
+        { orderNumber: orderNumber },
+        { orderId: orderId || "non-existent-id" },
+        { description: `Earned on Order #${orderNumber}` },
+        { description: `Points earned for Order #${orderNumber}` },
+        { description: { contains: orderNumber } },
+      ],
+    }
+  });
+
+  if (earnTx && earnTx.points > 0) {
+    const reverseEarnDesc = `Reversed Earned Points (Refund Order #${orderNumber})`;
+    const existingRevEarn = await mainPrisma.walletTransaction.findFirst({
+      where: {
+        walletId: wallet.id,
+        OR: [
+          { description: reverseEarnDesc },
+          { AND: [{ orderNumber: orderNumber }, { points: { lt: 0 } }] }
+        ]
+      }
+    });
+    if (!existingRevEarn) {
+      const pointsToDeduct = earnTx.points;
+      await mainPrisma.$transaction([
+        mainPrisma.wallet.update({
+          where: { id: wallet.id },
+          data: { points: { decrement: pointsToDeduct }, lifetimeEarn: { decrement: pointsToDeduct } }
+        }),
+        mainPrisma.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            points: -pointsToDeduct,
+            description: reverseEarnDesc,
+            tenantId,
+            orderId: orderId || null,
+            orderNumber: orderNumber || null
+          }
+        })
+      ]);
+    }
+  }
+
+  const redeemedQty = pointsRedeemed && Number(pointsRedeemed) > 0 ? Number(pointsRedeemed) : 0;
+  if (redeemedQty > 0) {
+    const reverseRedeemDesc = `Refunded Redeemed Points (Refund Order #${orderNumber})`;
+    const existingRevRedeem = await mainPrisma.walletTransaction.findFirst({
+      where: {
+        walletId: wallet.id,
+        OR: [
+          { description: reverseRedeemDesc },
+          { AND: [{ orderNumber: orderNumber }, { points: { gt: 0 } }, { description: { contains: "Refunded" } }] }
+        ]
+      }
+    });
+    if (!existingRevRedeem) {
+      await mainPrisma.$transaction([
+        mainPrisma.wallet.update({
+          where: { id: wallet.id },
+          data: { points: { increment: redeemedQty } }
+        }),
+        mainPrisma.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            points: redeemedQty,
+            description: reverseRedeemDesc,
+            tenantId,
+            orderId: orderId || null,
+            orderNumber: orderNumber || null
+          }
+        })
+      ]);
+    }
+  }
+};
 
 // Helper to normalise phone numbers (defaulting to Saudi international +966)
 const normalisePhone = (raw) => {
@@ -968,8 +1349,6 @@ const addCoupon = async (db, userId, { prizeLabel, prizeImageUrl, code, expiresA
   return coupon;
 };
 
-const loyaltyService = require("../../web/tenant/loyalty/loyalty.service");
-
 const lookupWalletByPhone = async (db, tenantId, phone) => {
   if (!phone) throw new ApiError(400, "Phone number is required");
   const cleanedPhone = normalisePhone(phone);
@@ -1007,7 +1386,7 @@ const lookupWalletByPhone = async (db, tenantId, phone) => {
   }
 
   const configuredTiers = tenant?.loyaltyTiers || [];
-  const customerTier = loyaltyService.getCustomerTierDetails(appUser, wallet, configuredTiers);
+  const customerTier = getCustomerTierDetails(appUser, wallet, configuredTiers);
 
   let redeemedToday = 0;
   if (wallet.id) {
@@ -1054,6 +1433,8 @@ const lookupWalletByPhone = async (db, tenantId, phone) => {
 };
 
 module.exports = {
+  DEFAULT_LOYALTY_TIERS,
+  getCustomerTierDetails,
   getWallet,
   getAllWallets,
   getTransactions,
@@ -1067,4 +1448,7 @@ module.exports = {
   getCoupons,
   addCoupon,
   lookupWalletByPhone,
+  earnPoints,
+  redeemPoints,
+  reverseOrderPoints,
 };

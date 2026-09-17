@@ -9,7 +9,7 @@
 const ApiError = require("../../utils/ApiError");
 const crypto = require("crypto");
 const mainPrisma = require("../../config/prisma");
-const loyaltyService = require("../../web/tenant/loyalty/loyalty.service");
+const loyaltyService = require("../wallet/wallet.service");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
