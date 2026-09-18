@@ -18,6 +18,26 @@ const initSocket = (io) => {
       console.log(`👤 Socket ${socket.id} joined user:${userId}`);
     });
 
+    // Support Chat Rooms
+    socket.on("join:ticket", (ticketId) => {
+      if (ticketId) {
+        socket.join(`ticket:${ticketId}`);
+        console.log(`💬 Socket ${socket.id} joined ticket:${ticketId}`);
+      }
+    });
+
+    socket.on("join:support", (ticketId) => {
+      if (ticketId) {
+        socket.join(`ticket:${ticketId}`);
+        console.log(`💬 Socket ${socket.id} joined ticket:${ticketId}`);
+      }
+    });
+
+    socket.on("join:admin_support", () => {
+      socket.join("admin_support");
+      console.log(`🎧 Socket ${socket.id} joined admin_support room`);
+    });
+
     socket.on("disconnect", () => {
       console.log(`🔌 Socket disconnected: ${socket.id}`);
     });
