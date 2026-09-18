@@ -74,11 +74,21 @@ const getTicketById = async (ticketId) => {
           email: true,
           avatarUrl: true,
           createdAt: true,
+          _count: {
+            select: { supportTickets: true }
+          },
           wallets: {
             select: {
               points: true,
               tier: true,
               tenantId: true,
+              tenant: {
+                select: {
+                  id: true,
+                  name: true,
+                  logoUrl: true,
+                }
+              }
             }
           }
         }

@@ -19,16 +19,45 @@ const sendAdminMessage = catchAsync(async (req, res) => {
     senderName: adminName,
     adminId
   });
+
+  try {
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`ticket:${req.params.ticketId}`).emit("support:new_message", result);
+      io.to(`ticket:${req.params.ticketId}`).emit("message:new", result.message);
+      io.to("admin_support").emit("support:ticket_updated", result.ticket);
+    }
+  } catch (err) {
+    console.error("[SUPPORT SOCKET] Admin message emit failed:", err.message);
+  }
+
   res.json({ success: true, data: result });
 });
 
 const updateTicketStatus = catchAsync(async (req, res) => {
   const ticket = await supportService.updateTicketStatus(req.params.ticketId, req.body);
+  try {
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`ticket:${ticket.id}`).emit("support:status_changed", ticket);
+      io.to("admin_support").emit("support:ticket_updated", ticket);
+    }
+  } catch (err) {
+    console.error("[SUPPORT SOCKET] Status update emit failed:", err.message);
+  }
   res.json({ success: true, data: ticket });
 });
 
 const startChatWithCustomer = catchAsync(async (req, res) => {
   const ticket = await supportService.startChatWithCustomer(req.body.appUserId);
+  try {
+    const io = req.app.get("io");
+    if (io) {
+      io.to("admin_support").emit("support:ticket_created", ticket);
+    }
+  } catch (err) {
+    console.error("[SUPPORT SOCKET] Start chat emit failed:", err.message);
+  }
   res.json({ success: true, data: ticket });
 });
 

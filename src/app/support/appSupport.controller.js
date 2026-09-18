@@ -21,6 +21,19 @@ const getThread = catchAsync(async (req, res) => {
  */
 const sendMessage = catchAsync(async (req, res) => {
   const result = await supportService.sendCustomerMessage(req.user.id, req.body);
+
+  try {
+    const io = req.app.get("io");
+    if (io) {
+      const ticketId = result.ticket.id;
+      io.to(`ticket:${ticketId}`).emit("support:new_message", result);
+      io.to(`ticket:${ticketId}`).emit("message:new", result.message);
+      io.to("admin_support").emit("support:ticket_updated", result.ticket);
+    }
+  } catch (err) {
+    console.error("[APP SUPPORT SOCKET] Customer message emit failed:", err.message);
+  }
+
   res.json({
     success: true,
     data: result
