@@ -77,6 +77,22 @@ const getTicketById = async (ticketId) => {
           _count: {
             select: { supportTickets: true }
           },
+          supportTickets: {
+            select: {
+              id: true,
+              ticketNumber: true,
+              customerName: true,
+              customerPhone: true,
+              customerEmail: true,
+              status: true,
+              createdAt: true,
+              lastMessage: true,
+              lastMessageAt: true,
+              unreadAdmin: true,
+              unreadCustomer: true,
+            },
+            orderBy: { createdAt: "desc" }
+          },
           wallets: {
             select: {
               points: true,
