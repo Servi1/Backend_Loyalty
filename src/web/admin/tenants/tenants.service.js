@@ -1296,7 +1296,7 @@ const syncAllTenantOrders = async () => {
       try {
         const tenantDb = getTenantClient(tenant.dbUrl);
         const orders = await tenantDb.order.findMany({
-          include: { branch: true }
+          include: { branch: true, items: { include: { menuItem: true } } }
         });
 
         for (const order of orders) {
@@ -1306,6 +1306,14 @@ const syncAllTenantOrders = async () => {
 
           const cName = resolveCustomerName(order, appUsersMap);
           const cPhone = order.customerPhone || (order.customerId ? appUsersMap.get(order.customerId)?.phone : null) || null;
+
+          const formattedItems = Array.isArray(order.items) ? order.items.map(i => ({
+            id: i.id,
+            quantity: i.quantity || 1,
+            price: Number(i.price || 0),
+            notes: i.notes || null,
+            name: i.menuItem?.name || i.name || "Item",
+          })) : null;
 
           await mainPrisma.aggregatedOrder.upsert({
             where: { id: `${tenant.id}_${order.id}` },
@@ -1329,6 +1337,7 @@ const syncAllTenantOrders = async () => {
               staffName: order.staffName || null,
               selectedSlot: order.selectedSlot || null,
               selectedSlotDate: order.selectedSlotDate || null,
+              items: formattedItems || undefined,
               createdAt: order.createdAt,
               updatedAt: order.updatedAt,
             },
@@ -1347,6 +1356,7 @@ const syncAllTenantOrders = async () => {
               staffName: order.staffName || null,
               selectedSlot: order.selectedSlot || null,
               selectedSlotDate: order.selectedSlotDate || null,
+              items: formattedItems || undefined,
               updatedAt: order.updatedAt,
             }
           });
@@ -2280,7 +2290,7 @@ const syncTenantOrders = async (tenantId) => {
 
   const tenantDb = getTenantClient(tenant.dbUrl);
   const orders = await tenantDb.order.findMany({
-    include: { user: true, branch: true }
+    include: { user: true, branch: true, items: { include: { menuItem: true } } }
   });
 
   const tenantOrderIds = orders.map((o) => o.id);
@@ -2308,6 +2318,15 @@ const syncTenantOrders = async (tenantId) => {
   for (const order of orders) {
     const cName = resolveCustomerName(order, appUsersMap);
     const cPhone = order.customerPhone || (order.customerId ? appUsersMap.get(order.customerId)?.phone : null) || null;
+
+    const formattedItems = Array.isArray(order.items) ? order.items.map(i => ({
+      id: i.id,
+      quantity: i.quantity || 1,
+      price: Number(i.price || 0),
+      notes: i.notes || null,
+      name: i.menuItem?.name || i.name || "Item",
+    })) : null;
+
     await mainPrisma.aggregatedOrder.upsert({
       where: { id: `${tenant.id}_${order.id}` },
       create: {
@@ -2330,6 +2349,7 @@ const syncTenantOrders = async (tenantId) => {
         staffName: order.staffName || null,
         selectedSlot: order.selectedSlot || null,
         selectedSlotDate: order.selectedSlotDate || null,
+        items: formattedItems || undefined,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       },
@@ -2348,6 +2368,7 @@ const syncTenantOrders = async (tenantId) => {
         staffName: order.staffName || null,
         selectedSlot: order.selectedSlot || null,
         selectedSlotDate: order.selectedSlotDate || null,
+        items: formattedItems || undefined,
         updatedAt: order.updatedAt,
       }
     });
