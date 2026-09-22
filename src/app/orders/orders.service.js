@@ -532,6 +532,19 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
 const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null } = {}) => {
   const skip = (page - 1) * limit;
 
+  // Fetch user details to get phone number for matching guest/POS orders
+  let userPhone = null;
+  if (userId) {
+    try {
+      const u = await mainPrisma.appUser.findUnique({ where: { id: userId } });
+      if (u && u.phone) {
+        userPhone = u.phone;
+      }
+    } catch (e) {
+      console.error("[getMyOrders] Failed to fetch user phone:", e.message);
+    }
+  }
+
   // Resolve target tenantId if tenantId is passed as a slug
   let targetTenantId = tenantId;
   if (tenantId) {
@@ -543,10 +556,14 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null }
     }
   }
 
+  const userMatchCondition = userPhone
+    ? { OR: [{ customerId: userId }, { customerPhone: userPhone }] }
+    : { customerId: userId };
+
   if (db && !tenantId) {
     const [orders, total] = await db.$transaction([
       db.order.findMany({
-        where: { customerId: userId },
+        where: userMatchCondition,
         include: {
           items: { include: { menuItem: { select: { name: true, price: true } } } },
           branch: { select: { id: true, name: true, address: true, lat: true, lng: true } },
@@ -555,7 +572,7 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null }
         skip,
         take: limit,
       }),
-      db.order.count({ where: { customerId: userId } }),
+      db.order.count({ where: userMatchCondition }),
     ]);
 
     return {
@@ -571,14 +588,16 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null }
   }
 
   // Query main database with optional brand filter
-  const whereCondition = {
-    appUserId: userId,
+  const mainWhereCondition = {
+    ...(userPhone
+      ? { OR: [{ appUserId: userId }, { customerPhone: userPhone }] }
+      : { appUserId: userId }),
     ...(targetTenantId ? { tenantId: targetTenantId } : {}),
   };
 
-  const total = await mainPrisma.order.count({ where: whereCondition });
+  const total = await mainPrisma.order.count({ where: mainWhereCondition });
   const mainOrders = await mainPrisma.order.findMany({
-    where: whereCondition,
+    where: mainWhereCondition,
     orderBy: { createdAt: "desc" },
     skip,
     take: limit,
