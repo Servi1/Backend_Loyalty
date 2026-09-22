@@ -1,3 +1,4 @@
+const ApiError = require("../../utils/ApiError");
 const catchAsync = require("../../utils/catchAsync");
 const supportService = require("../../web/admin/support/support.service");
 
@@ -40,7 +41,33 @@ const sendMessage = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * POST /api/app/:tenantId/support/upload
+ * POST /api/app/support/upload
+ * Customer uploads image attachment for support chat
+ */
+const uploadAttachment = catchAsync(async (req, res) => {
+  const file = req.file || (req.files && req.files[0]);
+  if (!file) {
+    throw new ApiError(400, "No support attachment image provided");
+  }
+
+  const imageUrl = `/uploads/support/${file.filename}`;
+
+  res.status(201).json({
+    success: true,
+    imageUrl,
+    data: {
+      imageUrl,
+      filename: file.filename,
+      originalName: file.originalname,
+      size: file.size,
+    },
+  });
+});
+
 module.exports = {
   getThread,
   sendMessage,
+  uploadAttachment,
 };

@@ -11,7 +11,7 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 // Sub-directories for different upload types
-const subDirs = ["menus", "logos", "avatars", "branches", "doorsteps"];
+const subDirs = ["menus", "logos", "avatars", "branches", "doorsteps", "support"];
 subDirs.forEach((dir) => {
   const fullPath = path.join(uploadDir, dir);
   if (!fs.existsSync(fullPath)) {
@@ -54,6 +54,13 @@ const doorstepUpload = multer({
   limits: { fileSize: 3 * 1024 * 1024 }, // 3 MB max
 });
 
+// Multer instance for support chat attachments, restricted to 3 MB
+const supportUpload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 3 * 1024 * 1024 }, // 3 MB max
+});
+
 // Multer instance for PDF document uploads, restricted to 15 MB
 const pdfStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -85,6 +92,7 @@ const pdfUpload = multer({
 });
 
 upload.doorstepUpload = doorstepUpload;
+upload.supportUpload = supportUpload;
 upload.pdfUpload = pdfUpload;
 
 module.exports = upload;
