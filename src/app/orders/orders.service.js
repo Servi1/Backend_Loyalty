@@ -587,10 +587,24 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null }
     };
   }
 
+  // Look up order IDs matching user phone from AggregatedOrder table if userPhone exists
+  let phoneOrderIds = [];
+  if (userPhone) {
+    try {
+      const matchedAgg = await mainPrisma.aggregatedOrder.findMany({
+        where: { customerPhone: userPhone },
+        select: { orderId: true },
+      });
+      phoneOrderIds = matchedAgg.map((a) => a.orderId).filter(Boolean);
+    } catch (e) {
+      console.error("[getMyOrders] Failed to query aggregated orders by phone:", e.message);
+    }
+  }
+
   // Query main database with optional brand filter
   const mainWhereCondition = {
-    ...(userPhone
-      ? { OR: [{ appUserId: userId }, { customerPhone: userPhone }] }
+    ...(userPhone && phoneOrderIds.length > 0
+      ? { OR: [{ appUserId: userId }, { id: { in: phoneOrderIds } }] }
       : { appUserId: userId }),
     ...(targetTenantId ? { tenantId: targetTenantId } : {}),
   };
