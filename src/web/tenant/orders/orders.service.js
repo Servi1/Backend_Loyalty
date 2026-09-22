@@ -48,6 +48,31 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
       branch = await db.branch.findUnique({ where: { id: order.branchId } });
     }
 
+    let formattedItems = null;
+    if (Array.isArray(order.items) && order.items.length > 0) {
+      formattedItems = order.items.map((i) => ({
+        id: i.id,
+        quantity: i.quantity || 1,
+        price: Number(i.price || 0),
+        notes: i.notes || null,
+        name: i.menuItem?.name || i.name || "Item",
+      }));
+    } else if (order.id) {
+      const dbItems = await db.orderItem.findMany({
+        where: { orderId: order.id },
+        include: { menuItem: true }
+      }).catch(() => []);
+      if (dbItems.length > 0) {
+        formattedItems = dbItems.map((i) => ({
+          id: i.id,
+          quantity: i.quantity || 1,
+          price: Number(i.price || 0),
+          notes: i.notes || null,
+          name: i.menuItem?.name || i.name || "Item",
+        }));
+      }
+    }
+
     await mainPrisma.aggregatedOrder.upsert({
       where: { id: `${tenantId}_${order.id}` },
       create: {
@@ -70,6 +95,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         selectedSlot: order.selectedSlot || null,
         selectedSlotDate: order.selectedSlotDate || null,
         slotDetails: order.slotDetails || null,
+        items: formattedItems || undefined,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       },
@@ -88,6 +114,7 @@ const syncToAggregatedOrder = async (db, tenantId, order) => {
         selectedSlot: order.selectedSlot || null,
         selectedSlotDate: order.selectedSlotDate || null,
         slotDetails: order.slotDetails || null,
+        items: formattedItems || undefined,
         updatedAt: order.updatedAt,
       }
     });

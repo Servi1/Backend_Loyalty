@@ -6,7 +6,7 @@ const getAll = async (db) =>
       locationGroup: true,
       customPaymentTypes: true,
       customOrderTypes: true,
-      _count: { select: { tables: true, orders: true, staff: true } }
+      _count: { select: { tables: true, orders: true, staff: true, posDevices: true, kdsDevices: true } }
     }
   });
 
