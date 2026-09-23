@@ -2,12 +2,16 @@ const catchAsync = require("../../../utils/catchAsync");
 const service = require("./adminNotifications.service");
 
 const sendBroadcast = catchAsync(async (req, res) => {
-  const { title, body, imageUrl, targetAudience, action } = req.body;
+  const { title, titleEn, titleAr, body, bodyEn, bodyAr, imageUrl, targetAudience, action } = req.body;
   const sentBy = req.user ? req.user.name || req.user.email : "Super Admin";
 
   const result = await service.sendBroadcastNotification({
-    title,
-    body,
+    title: titleEn || title || titleAr,
+    titleEn,
+    titleAr,
+    body: bodyEn || body || bodyAr,
+    bodyEn,
+    bodyAr,
     imageUrl,
     targetAudience,
     action,
@@ -17,6 +21,24 @@ const sendBroadcast = catchAsync(async (req, res) => {
   res.json({
     success: true,
     message: "Broadcast notification sent successfully",
+    data: result
+  });
+});
+
+const sendTest = catchAsync(async (req, res) => {
+  const { titleEn, titleAr, bodyEn, bodyAr, phone } = req.body;
+  const result = await service.sendTestNotification({
+    titleEn,
+    titleAr,
+    bodyEn,
+    bodyAr,
+    phone,
+    sentBy: req.user ? req.user.name || req.user.email : "Super Admin"
+  });
+
+  res.json({
+    success: true,
+    message: "Test notification sent successfully",
     data: result
   });
 });
@@ -39,6 +61,7 @@ const getStatus = catchAsync(async (req, res) => {
 
 module.exports = {
   sendBroadcast,
+  sendTest,
   getHistory,
   deleteHistory,
   getStatus

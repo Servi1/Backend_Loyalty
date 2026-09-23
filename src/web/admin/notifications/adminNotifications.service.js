@@ -129,6 +129,57 @@ const deleteBroadcastHistory = async (id) => {
 };
 
 /**
+ * Send Single Device Test Notification
+ */
+const sendTestNotification = async ({
+  titleEn,
+  titleAr,
+  bodyEn,
+  bodyAr,
+  phone,
+  sentBy = "Super Admin"
+}) => {
+  const cleanPhone = phone ? phone.toString().replace(/\D/g, "") : "";
+  if (!cleanPhone) {
+    throw new Error("Phone number is required for test notification");
+  }
+
+  const title = titleEn || titleAr || "Test Notification 🔔";
+  const body = bodyEn || bodyAr || "This is a test message for the notification system.";
+
+  const user = await mainPrisma.appUser.findFirst({
+    where: {
+      phone: { contains: cleanPhone.slice(-9) }
+    }
+  });
+
+  const payloadData = {
+    titleEn: titleEn || "",
+    titleAr: titleAr || "",
+    bodyEn: bodyEn || "",
+    bodyAr: bodyAr || "",
+    isTest: "true"
+  };
+
+  if (user && user.fcmToken) {
+    try {
+      await firebaseConfig.sendMulticastNotification({
+        tokens: [user.fcmToken],
+        title,
+        body,
+        data: payloadData
+      });
+    } catch (err) {
+      console.error("[FCM TEST NOTIFICATION ERROR]:", err.message);
+    }
+  } else {
+    console.log(`[TEST NOTIFICATION] Target phone ${cleanPhone} received test payload simulation.`);
+  }
+
+  return { phone: cleanPhone, delivered: !!(user && user.fcmToken) };
+};
+
+/**
  * Test Firebase Connection Status
  */
 const getFirebaseStatus = async () => {
@@ -145,6 +196,7 @@ const getFirebaseStatus = async () => {
 
 module.exports = {
   sendBroadcastNotification,
+  sendTestNotification,
   getBroadcastHistory,
   deleteBroadcastHistory,
   getFirebaseStatus

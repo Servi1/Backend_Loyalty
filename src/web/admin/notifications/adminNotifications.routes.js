@@ -10,6 +10,7 @@ router.use(authenticate, authorize("SUPER_ADMIN"));
 router.get("/status", ctrl.getStatus);
 router.get("/history", ctrl.getHistory);
 router.post("/broadcast", ctrl.sendBroadcast);
+router.post("/test-send", ctrl.sendTest);
 router.delete("/history/:id", ctrl.deleteHistory);
 
 module.exports = router;
