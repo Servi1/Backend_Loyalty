@@ -23,8 +23,13 @@ const sendAdminMessage = catchAsync(async (req, res) => {
   try {
     const io = req.app.get("io");
     if (io) {
+      const appUserId = result.ticket?.appUserId;
       io.to(`ticket:${req.params.ticketId}`).emit("support:new_message", result);
       io.to(`ticket:${req.params.ticketId}`).emit("message:new", result.message);
+      if (appUserId) {
+        io.to(`user:${appUserId}`).emit("support:new_message", result);
+        io.to(`user:${appUserId}`).emit("message:new", result.message);
+      }
       io.to("admin_support").emit("support:ticket_updated", result.ticket);
     }
   } catch (err) {

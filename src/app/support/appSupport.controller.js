@@ -27,12 +27,18 @@ const sendMessage = catchAsync(async (req, res) => {
     const io = req.app.get("io");
     if (io) {
       const ticketId = result.ticket.id;
+      const userId = req.user.id;
+
       io.to(`ticket:${ticketId}`).emit("support:new_message", { message: result.message, ticket: result.ticket });
       io.to(`ticket:${ticketId}`).emit("message:new", result.message);
+      io.to(`user:${userId}`).emit("support:new_message", { message: result.message, ticket: result.ticket });
+      io.to(`user:${userId}`).emit("message:new", result.message);
 
       if (result.agentMessage) {
         io.to(`ticket:${ticketId}`).emit("support:new_message", { message: result.agentMessage, ticket: result.ticket });
         io.to(`ticket:${ticketId}`).emit("message:new", result.agentMessage);
+        io.to(`user:${userId}`).emit("support:new_message", { message: result.agentMessage, ticket: result.ticket });
+        io.to(`user:${userId}`).emit("message:new", result.agentMessage);
       }
 
       io.to("admin_support").emit("support:ticket_updated", result.ticket);
