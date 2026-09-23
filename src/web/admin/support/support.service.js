@@ -306,16 +306,6 @@ const sendCustomerMessage = async (appUserId, { text, attachments = [] }) => {
   }
 
   const messageText = (text || "").trim();
-  const message = await mainPrisma.supportMessage.create({
-    data: {
-      ticketId: ticket.id,
-      senderType: "CUSTOMER",
-      senderId: appUserId,
-      senderName: user?.name || user?.phone || "Customer",
-      text: messageText,
-      attachments: attachments || [],
-    }
-  });
 
   // Extract order prefix if present (e.g., "[Order #12345]")
   let orderPrefix = "";
@@ -324,22 +314,56 @@ const sendCustomerMessage = async (appUserId, { text, attachments = [] }) => {
     orderPrefix = orderMatch[1] + " ";
   }
 
-  const autoReplyText = `${orderPrefix}Welcome to servi support. All our executives are busy, Please wait until we connect you to an agent.`;
+  // Count existing customer messages for this specific ticket & order thread
+  const filterWhere = {
+    ticketId: ticket.id,
+    senderType: "CUSTOMER",
+  };
+  if (orderPrefix.trim()) {
+    filterWhere.text = { contains: orderPrefix.trim() };
+  }
 
-  const agentMessage = await mainPrisma.supportMessage.create({
+  const existingMsgsCount = await mainPrisma.supportMessage.count({ where: filterWhere });
+
+  const customerTime = new Date();
+  const message = await mainPrisma.supportMessage.create({
     data: {
       ticketId: ticket.id,
-      senderType: "ADMIN",
-      senderName: "Servi Support",
-      text: autoReplyText,
-      attachments: [],
+      senderType: "CUSTOMER",
+      senderId: appUserId,
+      senderName: user?.name || user?.phone || "Customer",
+      text: messageText,
+      attachments: attachments || [],
+      createdAt: customerTime,
     }
   });
+
+  let agentMessage = null;
+  let lastMsgText = messageText || "Attachment";
+
+  // Send auto-reply ONLY on the first message sent by customer for this order thread
+  if (existingMsgsCount === 0) {
+    const autoReplyText = `${orderPrefix}Welcome to servi support. All our executives are busy, Please wait until we connect you to an agent.`;
+    const agentTime = new Date(customerTime.getTime() + 1000);
+
+    agentMessage = await mainPrisma.supportMessage.create({
+      data: {
+        ticketId: ticket.id,
+        senderType: "ADMIN",
+        senderName: "Servi Support",
+        text: autoReplyText,
+        attachments: [],
+        createdAt: agentTime,
+      }
+    });
+
+    lastMsgText = autoReplyText;
+  }
 
   const updatedTicket = await mainPrisma.supportTicket.update({
     where: { id: ticket.id },
     data: {
-      lastMessage: autoReplyText,
+      lastMessage: lastMsgText,
       lastMessageAt: new Date(),
       unreadAdmin: { increment: 1 },
       status: "OPEN"
