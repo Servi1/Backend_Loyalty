@@ -1428,6 +1428,20 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
     mainPrisma.appUser.count({ where }),
   ]);
 
+  const customerPhones = customers.map(c => c.phone).filter(Boolean);
+  const recentOrders = customerPhones.length > 0 ? await mainPrisma.aggregatedOrder.findMany({
+    where: { customerPhone: { in: customerPhones } },
+    select: { customerPhone: true, branchName: true },
+    orderBy: { createdAt: "desc" }
+  }) : [];
+
+  const branchByPhone = {};
+  for (const ord of recentOrders) {
+    if (ord.customerPhone && ord.branchName && !branchByPhone[ord.customerPhone]) {
+      branchByPhone[ord.customerPhone] = ord.branchName;
+    }
+  }
+
   return {
     customers: customers.map((c) => {
       const activeWallets = c.wallets || [];
@@ -1435,6 +1449,7 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
       let tenantName = primaryWallet?.tenant?.name || "Servi Platform";
       let tenantId = primaryWallet?.tenantId || null;
       const totalPoints = activeWallets.reduce((acc, w) => acc + (w.points || 0), 0);
+      const bName = (c.phone && branchByPhone[c.phone]) ? branchByPhone[c.phone] : "Main Branch";
 
       return {
         id: c.id,
@@ -1444,6 +1459,8 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
         phone: c.phone,
         email: c.email,
         tenantName,
+        branch: bName,
+        branchName: bName,
         points: totalPoints,
         wallets: activeWallets.map(w => ({
           tenantId: w.tenantId,

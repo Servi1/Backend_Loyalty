@@ -428,22 +428,41 @@ const getAllCustomersForReport = async (db, tenantId = null) => {
     }
   }
 
-  const [customers, allAggregatedOrders, allMainOrders] = await Promise.all([
+  const [customers, allAggregatedOrders, allMainOrders, allTenantOrders] = await Promise.all([
     mainPrisma.appUser.findMany({
       include: { wallets: tenantId ? { where: { tenantId } } : true },
       orderBy: { createdAt: "desc" },
     }),
     mainPrisma.aggregatedOrder.findMany({
       where: { status: "COMPLETED", ...(tenantId && { tenantId }) },
-      select: { customerPhone: true, total: true }
+      select: { customerPhone: true, total: true, branchName: true },
+      orderBy: { createdAt: "desc" }
     }),
     mainPrisma.order.findMany({
       where: { status: "COMPLETED", ...(tenantId && { tenantId }) },
-      select: { appUserId: true, total: true }
-    })
+      select: { appUserId: true, total: true },
+      orderBy: { createdAt: "desc" }
+    }),
+    (db && db.order) ? db.order.findMany({
+      where: { status: "COMPLETED" },
+      select: { userId: true, total: true, branch: { select: { name: true } } },
+      orderBy: { createdAt: "desc" }
+    }).catch(() => []) : Promise.resolve([])
   ]);
 
   const statsByUserId = {};
+  const branchByUserId = {};
+  for (const ord of allTenantOrders) {
+    if (ord.userId) {
+      if (!statsByUserId[ord.userId]) statsByUserId[ord.userId] = { count: 0, spend: 0 };
+      statsByUserId[ord.userId].count += 1;
+      statsByUserId[ord.userId].spend += Number(ord.total || 0);
+      if (ord.branch?.name && !branchByUserId[ord.userId]) {
+        branchByUserId[ord.userId] = ord.branch.name;
+      }
+    }
+  }
+
   for (const ord of allMainOrders) {
     if (ord.appUserId) {
       if (!statsByUserId[ord.appUserId]) statsByUserId[ord.appUserId] = { count: 0, spend: 0 };
@@ -453,6 +472,7 @@ const getAllCustomersForReport = async (db, tenantId = null) => {
   }
 
   const statsByPhoneKey = {};
+  const branchByPhoneKey = {};
   for (const ord of allAggregatedOrders) {
     if (ord.customerPhone) {
       const key = getPhoneDigitsKey(ord.customerPhone);
@@ -460,6 +480,9 @@ const getAllCustomersForReport = async (db, tenantId = null) => {
         if (!statsByPhoneKey[key]) statsByPhoneKey[key] = { count: 0, spend: 0 };
         statsByPhoneKey[key].count += 1;
         statsByPhoneKey[key].spend += Number(ord.total || 0);
+        if (ord.branchName && !branchByPhoneKey[key]) {
+          branchByPhoneKey[key] = ord.branchName;
+        }
       }
     }
   }
@@ -484,11 +507,15 @@ const getAllCustomersForReport = async (db, tenantId = null) => {
     };
 
     const tier = getCustomerTierDetails(userWithStats, wallet, configuredTiers);
+    const branchName = branchByUserId[c.id] || (phoneKey ? branchByPhoneKey[phoneKey] : null) || "Main Branch";
+
     return {
       id: c.id,
       name: c.name || "Unnamed",
       phone: c.phone,
       email: c.email,
+      branch: branchName,
+      branchName: branchName,
       points: wallet?.points || 0,
       lifetimeEarn: wallet?.lifetimeEarn || 0,
       completedOrdersCount,
