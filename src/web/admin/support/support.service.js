@@ -317,17 +317,36 @@ const sendCustomerMessage = async (appUserId, { text, attachments = [] }) => {
     }
   });
 
+  // Extract order prefix if present (e.g., "[Order #12345]")
+  let orderPrefix = "";
+  const orderMatch = messageText.match(/^(\[Order\s*#?[^\]]+\])/i);
+  if (orderMatch) {
+    orderPrefix = orderMatch[1] + " ";
+  }
+
+  const autoReplyText = `${orderPrefix}Welcome to servi support. All our executives are busy, Please wait until we connect you to an agent.`;
+
+  const agentMessage = await mainPrisma.supportMessage.create({
+    data: {
+      ticketId: ticket.id,
+      senderType: "ADMIN",
+      senderName: "Servi Support",
+      text: autoReplyText,
+      attachments: [],
+    }
+  });
+
   const updatedTicket = await mainPrisma.supportTicket.update({
     where: { id: ticket.id },
     data: {
-      lastMessage: messageText || "Attachment",
+      lastMessage: autoReplyText,
       lastMessageAt: new Date(),
       unreadAdmin: { increment: 1 },
       status: "OPEN"
     }
   });
 
-  return { message, ticket: updatedTicket };
+  return { message, agentMessage, ticket: updatedTicket };
 };
 
 /**
