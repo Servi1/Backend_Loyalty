@@ -7,6 +7,8 @@ const { authenticate, authorize } = require("../../../middlewares/authMiddleware
 router.use(authenticate);
 router.use(authorize("SUPER_ADMIN"));
 
+router.delete("/tickets/clear-all", ctrl.clearAllTickets);
+router.post("/tickets/clear-all", ctrl.clearAllTickets);
 router.get("/tickets", ctrl.getTickets);
 router.get("/tickets/:ticketId", ctrl.getTicketById);
 router.post("/tickets/:ticketId/messages", ctrl.sendAdminMessage);

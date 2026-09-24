@@ -71,6 +71,19 @@ const getRegisteredCustomers = catchAsync(async (req, res) => {
   res.json({ success: true, data: customers });
 });
 
+const clearAllTickets = catchAsync(async (req, res) => {
+  const result = await supportService.clearAllTickets();
+  try {
+    const io = req.app.get("io");
+    if (io) {
+      io.to("admin_support").emit("support:tickets_cleared");
+    }
+  } catch (err) {
+    console.error("[SUPPORT SOCKET] Clear tickets emit failed:", err.message);
+  }
+  res.json({ success: true, message: "All support tickets and messages cleared successfully", data: result });
+});
+
 module.exports = {
   getTickets,
   getTicketById,
@@ -78,4 +91,5 @@ module.exports = {
   updateTicketStatus,
   startChatWithCustomer,
   getRegisteredCustomers,
+  clearAllTickets,
 };

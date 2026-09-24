@@ -404,6 +404,21 @@ const getRegisteredCustomers = async (search = "") => {
   return users;
 };
 
+/**
+ * Delete / Clear all old logic support tickets & messages
+ */
+const clearAllTickets = async () => {
+  const [deletedMessages, deletedTickets] = await mainPrisma.$transaction([
+    mainPrisma.supportMessage.deleteMany({}),
+    mainPrisma.supportTicket.deleteMany({}),
+  ]);
+
+  return {
+    deletedMessagesCount: deletedMessages.count,
+    deletedTicketsCount: deletedTickets.count,
+  };
+};
+
 module.exports = {
   getTickets,
   getTicketById,
@@ -413,4 +428,5 @@ module.exports = {
   getCustomerThread,
   sendCustomerMessage,
   getRegisteredCustomers,
+  clearAllTickets,
 };
