@@ -159,6 +159,11 @@ const adjustSuperAdminCustomerPoints = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+const getTenantProducts = catchAsync(async (req, res) => {
+  const products = await tenantsService.getTenantProducts(req.params.id);
+  res.json({ success: true, data: products });
+});
+
 module.exports = {
   getAll,
   getById,
@@ -184,4 +189,5 @@ module.exports = {
   getSyncStatus,
   syncTenantOrders,
   toggleSlot,
+  getTenantProducts,
 };

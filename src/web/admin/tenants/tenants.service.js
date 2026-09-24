@@ -642,6 +642,7 @@ const getLoyaltyOverview = async (filters = {}) => {
       loyaltyRedeemPoints: tenant.loyaltyRedeemPoints,
       earnRate: tenant.loyaltyEarnRate,
       redeemRate: tenant.loyaltyRedeemRate,
+      stampPrograms: tenant.stampPrograms || [],
       membersCount,
       redemptions: redemptionsCount,
       type: "points"
@@ -2500,6 +2501,33 @@ const toggleSlot = async (tenantId, serviceType, slotIndex, active, deviceId) =>
   };
 };
 
+const getTenantProducts = async (tenantId) => {
+  const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant || !tenant.dbUrl) return [];
+
+  try {
+    const tenantPrisma = getTenantClient(tenant.dbUrl);
+    const products = await tenantPrisma.product.findMany({
+      select: {
+        id: true,
+        name: true,
+        nameAr: true,
+        price: true,
+        imageUrl: true,
+        categoryId: true,
+        category: {
+          select: { name: true }
+        }
+      },
+      orderBy: { name: "asc" }
+    });
+    return products;
+  } catch (err) {
+    console.error(`Failed to fetch products for tenant ${tenantId}:`, err.message);
+    return [];
+  }
+};
+
 module.exports = {
   getAll,
   getById,
@@ -2524,5 +2552,6 @@ module.exports = {
   getSyncStatus,
   syncTenantOrders,
   toggleSlot,
+  getTenantProducts,
 };
 

@@ -29,6 +29,7 @@ router.get("/invoices", authorize("SUPER_ADMIN"), ctrl.getInvoices);
 router.get("/users/all", authorize("SUPER_ADMIN"), ctrl.getAllSystemUsers);
 router.get("/:id/users", authorize("SUPER_ADMIN"), ctrl.getTenantUsers);
 router.get("/", authorize("SUPER_ADMIN"), ctrl.getAll);
+router.get("/:id/products", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.getTenantProducts);
 router.get("/:id", authorize("SUPER_ADMIN"), ctrl.getById);
 router.post("/", authorize("SUPER_ADMIN"), ctrl.create);
 router.put("/:id", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.update);
