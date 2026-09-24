@@ -2507,11 +2507,10 @@ const getTenantProducts = async (tenantId) => {
 
   try {
     const tenantPrisma = getTenantClient(tenant.dbUrl);
-    const products = await tenantPrisma.product.findMany({
+    const items = await tenantPrisma.menuItem.findMany({
       select: {
         id: true,
         name: true,
-        nameAr: true,
         price: true,
         imageUrl: true,
         categoryId: true,
@@ -2521,9 +2520,9 @@ const getTenantProducts = async (tenantId) => {
       },
       orderBy: { name: "asc" }
     });
-    return products;
+    return items;
   } catch (err) {
-    console.error(`Failed to fetch products for tenant ${tenantId}:`, err.message);
+    console.error(`Failed to fetch menu items for tenant ${tenantId}:`, err.message);
     return [];
   }
 };
