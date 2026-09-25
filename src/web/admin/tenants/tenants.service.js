@@ -235,6 +235,14 @@ const update = async (id, data) => {
     }
   }
 
+  // Sanitize loyalty payload keys if passed from admin frontend
+  if (data.enabled !== undefined) {
+    if (data.loyaltyEnabled === undefined) {
+      data.loyaltyEnabled = Boolean(data.enabled);
+    }
+    delete data.enabled;
+  }
+
   return mainPrisma.tenant.update({ where: { id }, data });
 };
 

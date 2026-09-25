@@ -9,6 +9,11 @@ const router = Router({ mergeParams: true });
 router.use(authenticateAppUser);
 
 router.get("/thread", ctrl.getThread);
+router.post("/thread", ctrl.getThread);
+router.post("/thread/new", (req, res, next) => {
+  req.query.createNew = "true";
+  next();
+}, ctrl.getThread);
 router.post("/messages", ctrl.sendMessage);
 
 // Dedicated route to upload support/chat attachments to /uploads/support

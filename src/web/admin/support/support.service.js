@@ -237,16 +237,21 @@ const startChatWithCustomer = async (appUserId) => {
 };
 
 /**
- * App Customer API: Get or create customer's support thread
+ * App Customer API: Get or create customer's active support thread
  */
-const getCustomerThread = async (appUserId) => {
-  let ticket = await mainPrisma.supportTicket.findFirst({
-    where: { appUserId },
-    orderBy: { lastMessageAt: "desc" },
-    include: {
-      messages: { orderBy: { createdAt: "asc" } }
-    }
-  });
+const getCustomerThread = async (appUserId, options = {}) => {
+  const forceNew = options.createNew === true || options.createNew === "true";
+  let ticket = null;
+
+  if (!forceNew) {
+    ticket = await mainPrisma.supportTicket.findFirst({
+      where: { appUserId, status: "OPEN" },
+      orderBy: { lastMessageAt: "desc" },
+      include: {
+        messages: { orderBy: { createdAt: "asc" } }
+      }
+    });
+  }
 
   if (!ticket) {
     const user = await mainPrisma.appUser.findUnique({ where: { id: appUserId } });
@@ -282,11 +287,21 @@ const getCustomerThread = async (appUserId) => {
 /**
  * App Customer API: Customer sends a message
  */
-const sendCustomerMessage = async (appUserId, { text, attachments = [] }) => {
-  let ticket = await mainPrisma.supportTicket.findFirst({
-    where: { appUserId, status: "OPEN" },
-    orderBy: { lastMessageAt: "desc" }
-  });
+const sendCustomerMessage = async (appUserId, { text, attachments = [], ticketId = null }) => {
+  let ticket = null;
+
+  if (ticketId) {
+    ticket = await mainPrisma.supportTicket.findUnique({
+      where: { id: ticketId }
+    });
+  }
+
+  if (!ticket || ticket.appUserId !== appUserId || ticket.status === "CLOSED" || ticket.status === "RESOLVED") {
+    ticket = await mainPrisma.supportTicket.findFirst({
+      where: { appUserId, status: "OPEN" },
+      orderBy: { lastMessageAt: "desc" }
+    });
+  }
 
   const user = await mainPrisma.appUser.findUnique({ where: { id: appUserId } });
 

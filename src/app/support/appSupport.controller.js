@@ -8,7 +8,8 @@ const supportService = require("../../web/admin/support/support.service");
  * Retrieve active customer chat thread & message history
  */
 const getThread = catchAsync(async (req, res) => {
-  const ticket = await supportService.getCustomerThread(req.user.id);
+  const createNew = req.query.createNew || req.query.new || req.query.forceNew || req.body?.createNew;
+  const ticket = await supportService.getCustomerThread(req.user.id, { createNew });
   res.json({
     success: true,
     data: ticket
