@@ -367,11 +367,11 @@ const sendCustomerMessage = async (appUserId, { text, attachments = [], ticketId
       let raw = typeof att === "string" ? att : att?.imageUrl || att?.url || att?.filename || "";
       raw = String(raw).trim();
       if (!raw) return null;
-      if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
       if (raw.includes("/uploads/")) {
         const idx = raw.indexOf("/uploads/");
         return raw.substring(idx);
       }
+      if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
       if (raw.startsWith("/")) return `/uploads/support${raw}`;
       return `/uploads/support/${raw}`;
     })
