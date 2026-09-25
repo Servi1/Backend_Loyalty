@@ -1,5 +1,5 @@
-const mainPrisma = require("../../../config/prisma");
-const ApiError = require("../../../utils/ApiError");
+const mainPrisma = require("../../config/prisma");
+const ApiError = require("../../utils/ApiError");
 const crypto = require("crypto");
 
 const generateTicketNumber = () => {
