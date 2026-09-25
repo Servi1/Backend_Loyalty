@@ -243,7 +243,19 @@ const getCustomerThread = async (appUserId, options = {}) => {
   const forceNew = options.createNew === true || options.createNew === "true";
   let ticket = null;
 
-  if (!forceNew) {
+  if (options.ticketId) {
+    ticket = await mainPrisma.supportTicket.findUnique({
+      where: { id: options.ticketId },
+      include: {
+        messages: { orderBy: { createdAt: "asc" } }
+      }
+    });
+    if (ticket && ticket.appUserId !== appUserId) {
+      ticket = null;
+    }
+  }
+
+  if (!ticket && !forceNew) {
     ticket = await mainPrisma.supportTicket.findFirst({
       where: { appUserId, status: "OPEN" },
       orderBy: { lastMessageAt: "desc" },

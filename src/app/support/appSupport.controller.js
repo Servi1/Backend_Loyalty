@@ -9,7 +9,8 @@ const supportService = require("../../web/admin/support/support.service");
  */
 const getThread = catchAsync(async (req, res) => {
   const createNew = req.query.createNew || req.query.new || req.query.forceNew || req.body?.createNew;
-  const ticket = await supportService.getCustomerThread(req.user.id, { createNew });
+  const ticketId = req.query.ticketId || req.body?.ticketId;
+  const ticket = await supportService.getCustomerThread(req.user.id, { createNew, ticketId });
   res.json({
     success: true,
     data: ticket
