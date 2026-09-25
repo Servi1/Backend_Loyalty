@@ -362,6 +362,21 @@ const sendCustomerMessage = async (appUserId, { text, attachments = [], ticketId
 
   const existingMsgsCount = await mainPrisma.supportMessage.count({ where: filterWhere });
 
+  const formattedAttachments = (attachments || [])
+    .map((att) => {
+      let raw = typeof att === "string" ? att : att?.imageUrl || att?.url || att?.filename || "";
+      raw = String(raw).trim();
+      if (!raw) return null;
+      if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+      if (raw.includes("/uploads/")) {
+        const idx = raw.indexOf("/uploads/");
+        return raw.substring(idx);
+      }
+      if (raw.startsWith("/")) return `/uploads/support${raw}`;
+      return `/uploads/support/${raw}`;
+    })
+    .filter(Boolean);
+
   const customerTime = new Date();
   const message = await mainPrisma.supportMessage.create({
     data: {
@@ -370,7 +385,7 @@ const sendCustomerMessage = async (appUserId, { text, attachments = [], ticketId
       senderId: appUserId,
       senderName: user?.name || user?.phone || "Customer",
       text: messageText,
-      attachments: attachments || [],
+      attachments: formattedAttachments,
       createdAt: customerTime,
     }
   });
