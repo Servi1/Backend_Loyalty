@@ -1,6 +1,6 @@
 const ApiError = require("../../utils/ApiError");
 const catchAsync = require("../../utils/catchAsync");
-const supportService = require("../../web/admin/support/support.service");
+const supportService = require("./appSupport.service");
 
 /**
  * GET /api/app/:tenantId/support/thread

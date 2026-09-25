@@ -263,9 +263,19 @@ const getCustomerThread = async (appUserId, options = {}) => {
         messages: { orderBy: { createdAt: "asc" } }
       }
     });
+
+    if (!ticket) {
+      ticket = await mainPrisma.supportTicket.findFirst({
+        where: { appUserId },
+        orderBy: { lastMessageAt: "desc" },
+        include: {
+          messages: { orderBy: { createdAt: "asc" } }
+        }
+      });
+    }
   }
 
-  if (!ticket) {
+  if (!ticket && forceNew) {
     const user = await mainPrisma.appUser.findUnique({ where: { id: appUserId } });
     if (!user) throw new ApiError(404, "User not found");
 
