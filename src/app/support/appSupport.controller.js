@@ -10,7 +10,16 @@ const supportService = require("./appSupport.service");
 const getThread = catchAsync(async (req, res) => {
   const createNew = req.query.createNew || req.query.new || req.query.forceNew || req.body?.createNew;
   const ticketId = req.query.ticketId || req.body?.ticketId;
-  const ticket = await supportService.getCustomerThread(req.user.id, { createNew, ticketId });
+  const orderId = req.query.orderId || req.body?.orderId;
+  const orderNumber = req.query.orderNumber || req.body?.orderNumber;
+
+  const ticket = await supportService.getCustomerThread(req.user.id, {
+    createNew,
+    ticketId,
+    orderId,
+    orderNumber,
+  });
+
   res.json({
     success: true,
     data: ticket

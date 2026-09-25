@@ -459,6 +459,8 @@ model SupportTicket {
   customerName   String
   customerPhone  String?
   customerEmail  String?
+  orderId        String?
+  orderNumber    String?
   status         String           @default("OPEN") // OPEN | RESOLVED | CLOSED
   assignedTo     String?          // Super Admin Name/ID
   lastMessage    String?
@@ -472,6 +474,8 @@ model SupportTicket {
   messages       SupportMessage[]
 
   @@index([appUserId])
+  @@index([orderId])
+  @@index([orderNumber])
   @@index([status])
   @@index([lastMessageAt])
 }
