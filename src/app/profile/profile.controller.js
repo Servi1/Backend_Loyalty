@@ -43,19 +43,30 @@ const uploadDoorstepImages = catchAsync(async (req, res) => {
   res.status(201).json({ success: true, data: images });
 });
 
-// ─── POST /profile/avatar ─────────────────────────────────────────────────────
-const uploadAvatar = catchAsync(async (req, res) => {
-  if (!req.file) {
-    throw new ApiError(400, "No avatar image file provided");
-  }
+// ─── POST /profile/address/delete-doorstep ────────────────────────────────────
+const deleteDoorstepImages = catchAsync(async (req, res) => {
+  const { imageUrls } = req.body;
+  if (Array.isArray(imageUrls) && imageUrls.length > 0) {
+    const fs = require("fs");
+    const path = require("path");
+    const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, "../../../uploads");
 
-  res.status(201).json({
-    success: true,
-    data: {
-      imageUrl: `/uploads/avatars/${req.file.filename}`,
-      filename: req.file.filename,
-    },
-  });
+    imageUrls.forEach((imgUrl) => {
+      if (typeof imgUrl === "string" && imgUrl.includes("/uploads/doorsteps/")) {
+        const filename = path.basename(imgUrl);
+        const filePath = path.join(uploadDir, "doorsteps", filename);
+        if (fs.existsSync(filePath)) {
+          try {
+            fs.unlinkSync(filePath);
+          } catch (e) {
+            console.error("Failed to delete doorstep image file:", filePath, e);
+          }
+        }
+      }
+    });
+  }
+  res.json({ success: true });
 });
 
-module.exports = { update, remove, uploadDoorstepImages, uploadAvatar };
+module.exports = { update, remove, uploadDoorstepImages, deleteDoorstepImages, uploadAvatar };
+

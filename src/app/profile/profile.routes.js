@@ -27,6 +27,9 @@ router.post(
   ctrl.uploadDoorstepImages
 );
 
+// Route to delete doorstep images
+router.post("/address/delete-doorstep", ctrl.deleteDoorstepImages);
+
 // Route to upload avatar/profile picture
 router.post(
   "/avatar",
