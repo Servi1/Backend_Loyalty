@@ -197,16 +197,20 @@ const updateTicketStatus = async (ticketId, { status, assignedTo }) => {
 /**
  * Start or find a chat conversation with a specific Servi customer (AppUser)
  */
-const startChatWithCustomer = async (appUserId) => {
+const startChatWithCustomer = async (appUserId, forceNew = true) => {
   const user = await mainPrisma.appUser.findUnique({ where: { id: appUserId } });
   if (!user) {
     throw new ApiError(404, "Customer not found");
   }
 
-  let ticket = await mainPrisma.supportTicket.findFirst({
-    where: { appUserId, status: "OPEN" },
-    orderBy: { lastMessageAt: "desc" }
-  });
+  let ticket = null;
+
+  if (!forceNew) {
+    ticket = await mainPrisma.supportTicket.findFirst({
+      where: { appUserId, status: "OPEN" },
+      orderBy: { lastMessageAt: "desc" }
+    });
+  }
 
   if (!ticket) {
     ticket = await mainPrisma.supportTicket.create({

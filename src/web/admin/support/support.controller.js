@@ -54,11 +54,15 @@ const updateTicketStatus = catchAsync(async (req, res) => {
 });
 
 const startChatWithCustomer = catchAsync(async (req, res) => {
-  const ticket = await supportService.startChatWithCustomer(req.body.appUserId);
+  const forceNew = req.body.forceNew !== false;
+  const ticket = await supportService.startChatWithCustomer(req.body.appUserId, forceNew);
   try {
     const io = req.app.get("io");
     if (io) {
       io.to("admin_support").emit("support:ticket_created", ticket);
+      if (ticket.appUserId) {
+        io.to(`user:${ticket.appUserId}`).emit("support:ticket_created", ticket);
+      }
     }
   } catch (err) {
     console.error("[SUPPORT SOCKET] Start chat emit failed:", err.message);
