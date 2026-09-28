@@ -1312,15 +1312,21 @@ const getLeaderboard = async (db, sortBy = 'points') => {
 };
 
 // ─── getCoupons ───────────────────────────────────────────────────────────────
-const getCoupons = async (db, userId) => {
+const getCoupons = async (db, userId, tenantId) => {
+  const where = { appUserId: userId };
+  if (tenantId) {
+    where.tenantId = tenantId;
+  }
+
   const coupons = await mainPrisma.earnedCoupon.findMany({
-    where: { appUserId: userId },
+    where,
     orderBy: { winDate: "desc" },
   });
 
   return coupons.map(c => ({
     id: c.id,
     couponCode: c.code,
+    tenantId: c.tenantId || null,
     item: {
       label: c.prizeLabel,
       imageUrl: c.prizeImageUrl || null,
@@ -1332,7 +1338,7 @@ const getCoupons = async (db, userId) => {
 };
 
 // ─── addCoupon ────────────────────────────────────────────────────────────────
-const addCoupon = async (db, userId, { prizeLabel, prizeImageUrl, code, expiresAt } = {}) => {
+const addCoupon = async (db, userId, { prizeLabel, prizeImageUrl, code, expiresAt, tenantId } = {}) => {
   const generatedCode = code || Array.from({ length: 8 }, () => Math.floor(Math.random() * 10)).join('');
   const expiry = expiresAt ? new Date(expiresAt) : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -1341,6 +1347,7 @@ const addCoupon = async (db, userId, { prizeLabel, prizeImageUrl, code, expiresA
       code: generatedCode,
       prizeLabel,
       prizeImageUrl: prizeImageUrl || null,
+      tenantId: tenantId || null,
       expiresAt: expiry,
       appUserId: userId,
     },
