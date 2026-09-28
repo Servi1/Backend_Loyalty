@@ -224,23 +224,68 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
     }
   }
 
-  // Determine Tier
-  const customerTier = getCustomerTierDetails(customer, wallet, tenantTiers);
+  // ─── STAMP CARD CALCULATION (Independent of Points) ─────────────
+  let earnedStampsCount = Number(opts.earnedStamps || 0);
+  const tenantObj = targetTenantId ? await mainPrisma.tenant.findUnique({ where: { id: targetTenantId } }) : null;
+  const stampProg = Array.isArray(tenantObj?.stampPrograms) && tenantObj.stampPrograms.length > 0 ? tenantObj.stampPrograms[0] : null;
+
+  if (earnedStampsCount === 0 && stampProg && stampProg.enabled !== false && Array.isArray(opts.items || opts.orderItems)) {
+    const eligibleIds = Array.isArray(stampProg.eligibleItemIds) ? stampProg.eligibleItemIds.map(String) : [];
+    if (eligibleIds.length > 0) {
+      const orderItems = opts.items || opts.orderItems;
+      for (const item of orderItems) {
+        const itemId = String(item.menuItemId || item.itemId || item.id || "");
+        if (itemId && eligibleIds.includes(itemId)) {
+          earnedStampsCount += Number(item.qty || item.quantity || 1);
+        }
+      }
+    }
+  }
+
+  let finalStamps = wallet.stamps || 0;
+  if (earnedStampsCount > 0 && stampProg && stampProg.enabled !== false) {
+    const reqStamps = Number(stampProg.requiredStamps || 6);
+    const newTotalStamps = (wallet.stamps || 0) + earnedStampsCount;
+
+    if (reqStamps > 0 && newTotalStamps >= reqStamps) {
+      const completedCycles = Math.floor(newTotalStamps / reqStamps);
+      finalStamps = newTotalStamps % reqStamps;
+
+      for (let i = 0; i < completedCycles; i++) {
+        const couponCode = `STAMP-${(tenantObj.slug || 'SERV').toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+        await mainPrisma.earnedCoupon.create({
+          data: {
+            code: couponCode,
+            prizeLabel: stampProg.rewardTextEn || "Free Stamp Reward",
+            tenantId: targetTenantId,
+            appUserId: customerId,
+            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          }
+        });
+      }
+    } else {
+      finalStamps = newTotalStamps;
+    }
+  }
 
   // Earning points is UNLIMITED
   const finalPointsToEarn = points;
-  if (finalPointsToEarn <= 0) return wallet;
+  if (finalPointsToEarn <= 0 && earnedStampsCount <= 0) return wallet;
 
   const [updatedWallet] = await mainPrisma.$transaction([
     mainPrisma.wallet.update({
       where: { id: wallet.id },
-      data: { points: { increment: finalPointsToEarn }, lifetimeEarn: { increment: finalPointsToEarn } },
+      data: {
+        points: { increment: Math.max(0, finalPointsToEarn) },
+        lifetimeEarn: { increment: Math.max(0, finalPointsToEarn) },
+        stamps: finalStamps,
+      },
     }),
     mainPrisma.walletTransaction.create({
       data: {
         walletId: wallet.id,
         points: finalPointsToEarn,
-        description: description || "Points earned",
+        description: description || (earnedStampsCount > 0 ? `Points & +${earnedStampsCount} Stamp(s) earned` : "Points earned"),
         tenantId: targetTenantId || null,
         orderId: opts.orderId || null,
         orderNumber: opts.orderNumber || null,

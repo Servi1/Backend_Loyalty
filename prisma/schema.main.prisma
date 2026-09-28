@@ -311,6 +311,7 @@ model Wallet {
   points       Int                 @default(0)
   lifetimeEarn Int                 @default(0)
   tier         String?             @default("bronze")
+  stamps       Int                 @default(0)
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
   appUserId    String
