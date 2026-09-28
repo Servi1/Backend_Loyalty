@@ -541,6 +541,7 @@ const getWallet = async (db, userId, tenantId = null) => {
           logoUrl: true,
           loyaltyEnabled: true,
           loyaltyTiers: true,
+          stampPrograms: true,
         },
       },
     },
@@ -551,16 +552,31 @@ const getWallet = async (db, userId, tenantId = null) => {
 
   const brandWallets = allWallets
     .filter(w => Boolean(w.tenantId))
-    .map(w => ({
-      walletId: w.id,
-      tenantId: w.tenantId,
-      brandName: w.tenant?.name || "Brand Wallet",
-      brandSlug: w.tenant?.slug || null,
-      logoUrl: w.tenant?.logoUrl || null,
-      points: w.points || 0,
-      lifetimeEarn: w.lifetimeEarn || 0,
-      tier: w.tier || "bronze",
-    }));
+    .map(w => {
+      const stampProg = Array.isArray(w.tenant?.stampPrograms) && w.tenant.stampPrograms.length > 0 ? w.tenant.stampPrograms[0] : null;
+      return {
+        walletId: w.id,
+        tenantId: w.tenantId,
+        brandName: w.tenant?.name || "Brand Wallet",
+        brandSlug: w.tenant?.slug || null,
+        logoUrl: w.tenant?.logoUrl || null,
+        points: w.points || 0,
+        lifetimeEarn: w.lifetimeEarn || 0,
+        stamps: w.stamps || 0,
+        tier: w.tier || "bronze",
+        stampProgram: stampProg,
+        stampProgress: stampProg ? {
+          currentStamps: w.stamps || 0,
+          requiredStamps: Number(stampProg.requiredStamps || 6),
+          remainingForReward: Math.max(0, Number(stampProg.requiredStamps || 6) - (w.stamps || 0)),
+          rewardTextEn: stampProg.rewardTextEn || "Free Stamp Reward",
+          rewardTextAr: stampProg.rewardTextAr || null,
+          cardBgColor: stampProg.cardBgColor || "#7F1D1D",
+          cardTextColor: stampProg.cardTextColor || "#FFFFFF",
+          enabled: stampProg.enabled !== false,
+        } : null,
+      };
+    });
 
   let targetWallet = null;
   if (tenantId) {
@@ -687,10 +703,25 @@ const getWallet = async (db, userId, tenantId = null) => {
     remainingDailyCap,
   };
 
+  const targetStampProg = targetWallet?.tenant?.stampPrograms?.[0] || null;
+  const targetStampProgress = targetStampProg ? {
+    currentStamps: targetWallet?.stamps || 0,
+    requiredStamps: Number(targetStampProg.requiredStamps || 6),
+    remainingForReward: Math.max(0, Number(targetStampProg.requiredStamps || 6) - (targetWallet?.stamps || 0)),
+    rewardTextEn: targetStampProg.rewardTextEn || "Free Stamp Reward",
+    rewardTextAr: targetStampProg.rewardTextAr || null,
+    cardBgColor: targetStampProg.cardBgColor || "#7F1D1D",
+    cardTextColor: targetStampProg.cardTextColor || "#FFFFFF",
+    enabled: targetStampProg.enabled !== false,
+  } : null;
+
   return {
     id: targetWallet ? targetWallet.id : (allWallets[0]?.id || null),
     points: activePoints,
     lifetimeEarn: activeLifetime,
+    stamps: targetWallet ? (targetWallet.stamps || 0) : 0,
+    stampProgram: targetStampProg,
+    stampProgress: targetStampProgress,
     globalPoints,
     globalLifetime,
     completedOrdersCount,
@@ -717,6 +748,7 @@ const getAllWallets = async (db, userId) => {
           name: true,
           slug: true,
           logoUrl: true,
+          stampPrograms: true,
         },
       },
     },
@@ -725,16 +757,31 @@ const getAllWallets = async (db, userId) => {
 
   const globalPoints = allWallets.reduce((sum, w) => sum + (w.points || 0), 0);
 
-  const walletsData = allWallets.map(w => ({
-    walletId: w.id,
-    tenantId: w.tenantId,
-    brandName: w.tenant?.name || "Brand Wallet",
-    brandSlug: w.tenant?.slug || null,
-    logoUrl: w.tenant?.logoUrl || null,
-    points: w.points || 0,
-    lifetimeEarn: w.lifetimeEarn || 0,
-    tier: w.tier || "bronze",
-  }));
+  const walletsData = allWallets.map(w => {
+    const stampProg = Array.isArray(w.tenant?.stampPrograms) && w.tenant.stampPrograms.length > 0 ? w.tenant.stampPrograms[0] : null;
+    return {
+      walletId: w.id,
+      tenantId: w.tenantId,
+      brandName: w.tenant?.name || "Brand Wallet",
+      brandSlug: w.tenant?.slug || null,
+      logoUrl: w.tenant?.logoUrl || null,
+      points: w.points || 0,
+      lifetimeEarn: w.lifetimeEarn || 0,
+      stamps: w.stamps || 0,
+      tier: w.tier || "bronze",
+      stampProgram: stampProg,
+      stampProgress: stampProg ? {
+        currentStamps: w.stamps || 0,
+        requiredStamps: Number(stampProg.requiredStamps || 6),
+        remainingForReward: Math.max(0, Number(stampProg.requiredStamps || 6) - (w.stamps || 0)),
+        rewardTextEn: stampProg.rewardTextEn || "Free Stamp Reward",
+        rewardTextAr: stampProg.rewardTextAr || null,
+        cardBgColor: stampProg.cardBgColor || "#7F1D1D",
+        cardTextColor: stampProg.cardTextColor || "#FFFFFF",
+        enabled: stampProg.enabled !== false,
+      } : null,
+    };
+  });
 
   return {
     globalPoints,
@@ -1312,15 +1359,21 @@ const getLeaderboard = async (db, sortBy = 'points') => {
 };
 
 // ─── getCoupons ───────────────────────────────────────────────────────────────
-const getCoupons = async (db, userId) => {
+const getCoupons = async (db, userId, tenantId) => {
+  const where = { appUserId: userId };
+  if (tenantId) {
+    where.tenantId = tenantId;
+  }
+
   const coupons = await mainPrisma.earnedCoupon.findMany({
-    where: { appUserId: userId },
+    where,
     orderBy: { winDate: "desc" },
   });
 
   return coupons.map(c => ({
     id: c.id,
     couponCode: c.code,
+    tenantId: c.tenantId || null,
     item: {
       label: c.prizeLabel,
       imageUrl: c.prizeImageUrl || null,
@@ -1332,7 +1385,7 @@ const getCoupons = async (db, userId) => {
 };
 
 // ─── addCoupon ────────────────────────────────────────────────────────────────
-const addCoupon = async (db, userId, { prizeLabel, prizeImageUrl, code, expiresAt } = {}) => {
+const addCoupon = async (db, userId, { prizeLabel, prizeImageUrl, code, expiresAt, tenantId } = {}) => {
   const generatedCode = code || Array.from({ length: 8 }, () => Math.floor(Math.random() * 10)).join('');
   const expiry = expiresAt ? new Date(expiresAt) : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -1341,6 +1394,7 @@ const addCoupon = async (db, userId, { prizeLabel, prizeImageUrl, code, expiresA
       code: generatedCode,
       prizeLabel,
       prizeImageUrl: prizeImageUrl || null,
+      tenantId: tenantId || null,
       expiresAt: expiry,
       appUserId: userId,
     },
