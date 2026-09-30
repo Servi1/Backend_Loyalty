@@ -77,6 +77,11 @@ const getBrands = async (userId) => {
     where: {
       isActive: true,
       ordersEnabled: true
+    },
+    include: {
+      stampPrograms: {
+        where: { enabled: true }
+      }
     }
   });
 
@@ -86,6 +91,8 @@ const getBrands = async (userId) => {
       hero: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&h=400&fit=crop",
       cuisine: "Restaurant"
     };
+
+    const isStampEnabled = Array.isArray(t.stampPrograms) && t.stampPrograms.length > 0;
 
     return {
       id: t.id,
@@ -103,7 +110,10 @@ const getBrands = async (userId) => {
       loyaltyEarnRate: Number(t.loyaltyEarnRate || 1.0),
       loyaltyRedeemRate: Number(t.loyaltyRedeemRate || 100.0),
       subBrandStory: Boolean(t.subBrandStory),
-      loyaltyRedeemPoints: Boolean(t.loyaltyEnabled && t.loyaltyRedeemPoints)
+      loyaltyRedeemPoints: Boolean(t.loyaltyEnabled && t.loyaltyRedeemPoints),
+      stampEnabled: isStampEnabled,
+      stampsEnabled: isStampEnabled,
+      loyaltyStamps: isStampEnabled,
     };
   });
 };
