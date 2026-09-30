@@ -108,11 +108,11 @@ const resolveQrToken = catchAsync(async (req, res) => {
 });
 
 const encodeQrTokenEndpoint = catchAsync(async (req, res) => {
-  const { tenantId, branchId, tableId, qrCashierId, orderTypeId } = req.body;
-  if (!tenantId || !branchId) {
-    return res.status(400).json({ success: false, message: "tenantId and branchId are required" });
+  const { tenantId, branchId, tableId, qrCashierId, orderTypeId, stampId, type, customerId } = req.body;
+  if (!tenantId) {
+    return res.status(400).json({ success: false, message: "tenantId is required" });
   }
-  const token = encodeQrToken({ tenantId, branchId, tableId, qrCashierId, orderTypeId });
+  const token = encodeQrToken({ tenantId, branchId, tableId, qrCashierId, orderTypeId, stampId, type, customerId });
   res.json({ success: true, token });
 });
 

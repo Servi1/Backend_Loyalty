@@ -40,6 +40,7 @@ const walletRoutes   = require("./wallet/wallet.routes");
 const brandsRoutes   = require("./brands/brands.routes");
 const cartRoutes     = require("./cart/cart.routes");
 const supportRoutes  = require("./support/appSupport.routes");
+const stampRoutes    = require("./stamp/stamp.routes");
 const { requireAppTenant } = require("./middlewares/appTenant.middleware");
 const router = Router({ mergeParams: true });
 
@@ -48,6 +49,7 @@ const branchCtrl = require("./branches/branches.controller");
 router.get("/qr/resolve", branchCtrl.resolveQrToken);
 router.post("/qr/encode", branchCtrl.encodeQrTokenEndpoint);
 
+router.use("/stamp",    stampRoutes);
 router.use("/auth",     authRoutes);
 router.use("/profile",  profileRoutes);
 router.use("/menu",     requireAppTenant, menuRoutes);

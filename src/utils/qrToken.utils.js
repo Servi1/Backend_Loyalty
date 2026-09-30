@@ -20,6 +20,9 @@ function encodeQrToken(payload) {
       tbl: payload.tableId || null,
       qrc: payload.qrCashierId || null,
       ot: payload.orderTypeId || null,
+      st: payload.stampId || null,
+      typ: payload.type || null,
+      c: payload.customerId || null,
       ts: Date.now()
     });
 
@@ -37,7 +40,7 @@ function encodeQrToken(payload) {
 /**
  * Decodes an encrypted URL-safe token back into the QR payload object.
  * @param {string} token - The iv.encrypted string
- * @returns {Object} { tenantId, branchId, tableId, qrCashierId, orderTypeId }
+ * @returns {Object} { tenantId, branchId, tableId, qrCashierId, orderTypeId, stampId, type, customerId }
  */
 function decodeQrToken(token) {
   if (!token || typeof token !== "string") {
@@ -64,6 +67,9 @@ function decodeQrToken(token) {
       tableId: parsed.tbl || null,
       qrCashierId: parsed.qrc || null,
       orderTypeId: parsed.ot || null,
+      stampId: parsed.st || null,
+      type: parsed.typ || null,
+      customerId: parsed.c || null,
       timestamp: parsed.ts || null
     };
   } catch (err) {
