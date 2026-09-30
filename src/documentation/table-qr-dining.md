@@ -1,17 +1,19 @@
 # 🍽️ Table QR Dining & In-Seat Ordering: Native App Integration Guide
 
-This guide is for **Mobile / React Native Developers** integrating the **Table QR Dining and In-Seat Ordering** features in the Servi App.
+This guide is for **Mobile / React Native Developers** integrating **Table QR Dining, Table Number Resolution, In-Seat Ordering, and Live Kitchen Sync** in the Servi App.
 
 ---
 
 ## 📑 Table of Contents
 1. [Overview & Sequence Diagram](#1-overview--sequence-diagram)
-2. [QR Code Format & Decryption (`GET /api/app/qr/resolve`)](#2-qr-code-format--decryption)
-3. [Fetching Branch & Table Status](#3-fetching-branch--table-status)
-4. [Fetching Menu & Modifiers](#4-fetching-menu--modifiers)
-5. [Placing Table Orders (`POST /api/app/:tenantId/orders`)](#5-placing-table-orders)
-6. [Database Schemas](#6-database-schemas)
-7. [Source Code & Controllers Reference](#7-source-code--controllers-reference)
+2. [How the Native App Resolves & Displays the Table Number](#2-how-the-native-app-resolves--displays-the-table-number)
+3. [QR Code Format & Decryption (`GET /api/app/qr/resolve`)](#3-qr-code-format--decryption)
+4. [Fetching Branch & Table Details (`GET /api/app/:tenantId/branches/:branchId`)](#4-fetching-branch--table-details)
+5. [Fetching Menu & Modifiers (`GET /api/app/:tenantId/menu`)](#5-fetching-menu--modifiers)
+6. [Placing Table Orders (`POST /api/app/:tenantId/orders`)](#6-placing-table-orders)
+7. [React Native UI Layout & Screen Flow for Table Dining](#7-react-native-ui-layout--screen-flow-for-table-dining)
+8. [Database Schemas](#8-database-schemas)
+9. [Source Code & Controllers Reference](#9-source-code--controllers-reference)
 
 ---
 
@@ -20,35 +22,57 @@ This guide is for **Mobile / React Native Developers** integrating the **Table Q
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Customer as 📱 Customer (App / Web)
-    participant QR as 🔲 Table QR Code
-    participant API as 🚀 Backend API
-    participant POS as 🖥️ Cashier POS / KDS
+    actor Customer as 📱 Customer (React Native App)
+    participant QR as 🔲 Physical Table QR Code
+    participant API as 🚀 Servi Backend API
+    participant POS as 🖥️ Cashier POS & KDS (Kitchen)
 
-    Customer->>QR: Scans Table QR
-    QR-->>Customer: Encrypted URL token (?token=...)
+    Customer->>QR: Scans QR code glued to Table 4
+    QR-->>Customer: URL with encrypted AES-256 token (?token=...)
     Customer->>API: GET /api/app/qr/resolve?token={token}
     API-->>Customer: Returns { tenantId, branchId, tableId }
-    Customer->>API: GET /api/app/{tenantId}/branches/{branchId} (Validate Table & Branch)
-    Customer->>API: GET /api/app/{tenantId}/menu (Load Menu & Modifiers)
-    Customer->>API: POST /api/app/{tenantId}/orders (source: "qr_table", type: "DINE_IN", tableId)
-    API->>POS: Real-time Socket Event (order:new)
-    API-->>Customer: Order Created (Status: PENDING / PREPARING)
+    Customer->>API: GET /api/app/{tenantId}/branches/{branchId}
+    API-->>Customer: Branch details + Table list [{ id: "...", label: "Table 4", zone: "Main" }]
+    Customer->>Customer: Matches tableId -> Displays "🍽️ Table 4 · Main Zone" on Top Header
+    Customer->>API: GET /api/app/{tenantId}/menu
+    API-->>Customer: Menu items & modifiers
+    Customer->>API: POST /api/app/{tenantId}/orders (type: "DINE_IN", tableId: "...", source: "qr_table")
+    API->>POS: Real-time Socket Event (order:new with Table 4)
+    API-->>Customer: Order Created (#ORD-90214 · Delivering to Table 4)
 ```
 
 ---
 
-## 2. QR Code Format & Decryption
+## 2. How the Native App Resolves & Displays the Table Number
 
-### QR Code URL
-When a customer scans a table QR, the URL structure is:
-```
+### The Step-by-Step Logic:
+1. **Scan Table QR**: The customer scans the QR on their physical table (or opens a deep link `servi://menu?token=...`).
+2. **Decrypt Token**: The App calls `/api/app/qr/resolve?token=<TOKEN>` to receive `{ tenantId, branchId, tableId }`.
+3. **Fetch Branch Tables**: The App calls `/api/app/:tenantId/branches/:branchId` which returns an array of active `tables`:
+   ```json
+   "tables": [
+     { "id": "table-uuid-101", "label": "Table 4", "seats": 4, "zone": "Main Dining", "isActive": true },
+     { "id": "table-uuid-102", "label": "Table 5", "seats": 2, "zone": "Outdoor Terrace", "isActive": true }
+   ]
+   ```
+4. **Find Matched Table**: The app finds the matching object:
+   ```ts
+   const currentTable = branch.tables.find(t => t.id === resolvedTableId);
+   // currentTable.label -> "Table 4"
+   // currentTable.zone  -> "Main Dining"
+   ```
+5. **Lock Context**: The app sets the active session mode to **`Dine-In (In-Seat Ordering)`** with `tableId` locked, preventing the user from accidentally placing a takeaway order to the wrong location.
+
+---
+
+## 3. QR Code Format & Decryption
+
+### QR Code URL Structure
+```text
 https://servi.sa/customer/menu?token=<ENCRYPTED_AES256_TOKEN>
 ```
 
 ### Resolving the Token
-Before fetching menu or branch data, decrypt the token to obtain the branch and table IDs:
-
 - **Method**: `GET`
 - **URL**: `/api/app/qr/resolve?token=<TOKEN_STRING>`
 - **Auth**: Public (No JWT required)
@@ -69,18 +93,51 @@ Before fetching menu or branch data, decrypt the token to obtain the branch and 
 
 ---
 
-## 3. Fetching Branch & Table Status
+## 4. Fetching Branch & Table Details
 
 - **Method**: `GET`
 - **URL**: `/api/app/:tenantId/branches/:branchId`
-- **Validation Checklist for App**:
-  1. `tenant.subQrTable !== false`: Ensure QR Table Dining is enabled for the brand.
-  2. `branch.qrEnabled !== false`: Ensure QR ordering is enabled for this branch location.
-  3. `table.isActive === true`: Verify the table is active and available.
+- **Auth**: Public
+- **Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "name": "Downtown Branch",
+    "address": "King Fahd Road, Riyadh",
+    "isOpen": true,
+    "tablesEnabled": true,
+    "qrEnabled": true,
+    "tables": [
+      {
+        "id": "table-uuid-101",
+        "label": "Table 4",
+        "seats": 4,
+        "zone": "Main Dining",
+        "isActive": true
+      },
+      {
+        "id": "table-uuid-102",
+        "label": "Table 5",
+        "seats": 2,
+        "zone": "Terrace",
+        "isActive": true
+      }
+    ],
+    "tenantFeatures": {
+      "subQrTable": true,
+      "subQrCashier": true,
+      "subPos": true,
+      "subKds": true
+    }
+  }
+}
+```
 
 ---
 
-## 4. Fetching Menu & Modifiers
+## 5. Fetching Menu & Modifiers
 
 - **Method**: `GET`
 - **URL**: `/api/app/:tenantId/menu`
@@ -98,7 +155,7 @@ Before fetching menu or branch data, decrypt the token to obtain the branch and 
         "id": "group-uuid-1",
         "name": "Milk Choice",
         "nameAr": "نوع الحليب",
-        "type": "single_select", // dropdown | single_select | multi_select | radio | checkbox
+        "type": "single_select",
         "required": true,
         "options": [
           {
@@ -122,42 +179,36 @@ Before fetching menu or branch data, decrypt the token to obtain the branch and 
 
 ---
 
-## 5. Placing Table Orders
+## 6. Placing Table Orders
 
 - **Authenticated Endpoint**: `POST /api/app/:tenantId/orders`
 - **Public / Guest Endpoint**: `POST /api/app/:tenantId/orders/public`
 - **Headers**:
-  - `Authorization: Bearer <JWT_TOKEN>` (optional for public checkout)
+  - `Authorization: Bearer <JWT_TOKEN>` (optional for guest checkout)
   - `x-tenant-id: <tenantId>`
-- **Payload Example**:
+- **Request Body**:
 ```json
 {
   "branchId": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
   "tableId": "table-uuid-101",
   "source": "qr_table",
   "type": "DINE_IN",
-  "paymentMethod": "CASH", // "CASH" | "MADA" | "APPLE_PAY" | "CREDIT_CARD"
-  "notes": "Extra hot please",
-  "customerName": "Ahmed",
-  "customerPhone": "+966501234567",
+  "paymentMethod": "CASH",
+  "notes": "Extra napkins please",
+  "customerName": "Faris",
+  "customerPhone": "+966587696323",
   "items": [
     {
       "menuItemId": "item-uuid-1",
-      "quantity": 1,
+      "quantity": 2,
       "price": 22.00,
       "selectedModifiers": [
         {
           "groupId": "group-uuid-1",
-          "name": "Milk Choice",
-          "nameAr": "نوع الحليب",
-          "selectedOptions": [
-            {
-              "id": "opt-2",
-              "name": "Oat Milk",
-              "nameAr": "حليب شوفان",
-              "priceModifier": 4.00
-            }
-          ]
+          "groupName": "Milk Choice",
+          "optionId": "opt-2",
+          "optionName": "Oat Milk",
+          "priceModifier": 4.00
         }
       ]
     }
@@ -167,46 +218,97 @@ Before fetching menu or branch data, decrypt the token to obtain the branch and 
 
 ---
 
-## 6. Database Schemas
+## 7. React Native UI Layout & Screen Flow for Table Dining
 
-### `Table` (Tenant Database)
+### 1. Menu Screen (Sticky Header)
+When `tableId` is present in state:
+```
+┌────────────────────────────────────────────────────────┐
+│  🍽️  Downtown Branch · Table 4 (Main Dining)           │
+│  🟢 In-Seat Ordering Active                            │
+└────────────────────────────────────────────────────────┘
+```
+- **Badge**: Clean black-and-white or subtle green badge showing `In-Seat Ordering`.
+- **Table Label**: Prominently shows `Table 4` or `Table.label`.
+
+### 2. Cart & Checkout Screen
+```
+┌────────────────────────────────────────────────────────┐
+│ Order Summary                                          │
+│ Order Type:   [ Dine-In (Table Service) ] 🔒 Locked    │
+│ Table Number:  Table 4 (4 Seats · Main Dining)         │
+│ Branch:        Downtown Branch                         │
+│                                                        │
+│ 2x Spanish Latte (Oat Milk)                   52.0 SAR │
+│ Total (incl. VAT):                            52.0 SAR │
+│                                                        │
+│ [ Place Order for Table 4 ]                            │
+└────────────────────────────────────────────────────────┘
+```
+
+### 3. Order Status / Tracking Screen
+```
+┌────────────────────────────────────────────────────────┐
+│  🎉 Order Received! (#ORD-90214)                       │
+│  Status: 👨‍🍳 Preparing in Kitchen                      │
+│                                                        │
+│  📍 Delivering to: Table 4                             │
+│  Stay seated, our staff will serve your order to you!  │
+└────────────────────────────────────────────────────────┘
+```
+
+### 4. Fallback: Manual Table Selection (If No QR Scanned)
+If the customer browses the menu inside the app without scanning a QR code:
+- Show a **"Select Table"** modal listing `branch.tables` grouped by `zone` (e.g. *Main Dining*, *Outdoor Terrace*).
+- Customer taps their table number (e.g. `Table 4`) before checkout.
+
+---
+
+## 8. Database Schemas
+
+### `Table` Model (`schema.tenant.prisma`)
 ```prisma
 model Table {
-  id        String    @id @default(uuid())
-  label     String    // e.g. "Table 12"
-  seats     Int       @default(4)
-  zone      String?   // e.g. "Outdoor", "Main Hall"
-  isActive  Boolean   @default(true)
-  branchId  String
-  branch    Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  orders    Order[]
+  id       String  @id @default(uuid())
+  label    String  // e.g. "Table 4", "VIP-1", "T-12"
+  seats    Int     @default(4)
+  qrCode   String? @unique
+  isActive Boolean @default(true)
+  zone     String? @default("Main")
+
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  orders   Order[]
+
+  createdAt DateTime @default(now())
 }
 ```
 
-### `Order` (Tenant & Main Database)
+### `Order` Model (`schema.tenant.prisma`)
 ```prisma
 model Order {
-  id              String       @id @default(uuid())
-  orderNumber     String       // e.g. "#1042"
-  source          String       @default("qr_table") // qr_table | qr_cashier | app | pos
-  type            String       @default("DINE_IN")  // DINE_IN | TAKEAWAY | CAR_DELIVERY
-  status          String       @default("PENDING")  // PENDING | CONFIRMED | PREPARING | READY | COMPLETED
-  total           Float
-  tableId         String?
-  table           Table?       @relation(fields: [tableId], references: [id])
-  branchId        String
-  appUserId       String?
-  createdAt       DateTime     @default(now())
+  id          String      @id @default(uuid())
+  orderNumber String      @unique
+  status      OrderStatus @default(PENDING) // PENDING | PREPARING | READY | COMPLETED
+  type        OrderType   @default(DINE_IN) // DINE_IN | TAKEAWAY | DELIVERY
+  source      String      @default("qr_table") // qr_table | pos | app
+
+  tableId     String?
+  table       Table?      @relation(fields: [tableId], references: [id])
+
+  branchId    String
+  branch      Branch      @relation(fields: [branchId], references: [id])
 }
 ```
 
 ---
 
-## 7. Source Code & Controllers Reference
+## 9. Source Code & Controllers Reference
 
-| Functional Area | Backend File Path | Purpose |
+| Functional Area | Backend File | Purpose |
 | :--- | :--- | :--- |
-| **Token Resolution** | `src/app/branches/branches.controller.js` | Endpoint `GET /api/app/qr/resolve`. |
-| **Order Placement** | `src/app/orders/orders.controller.js` | Handles table order submission & real-time dispatch. |
-| **Order Service** | `src/app/orders/orders.service.js` | Validates `subQrTable`, calculates fees, and persists orders. |
-| **QR Encryption** | `src/utils/qrToken.utils.js` | AES-256-CBC token encryption/decryption. |
+| **QR Decryption** | `Backend_Loyalty/src/app/branches/branches.controller.js` | `GET /api/app/qr/resolve` decodes AES-256 token. |
+| **Branch & Tables API** | `Backend_Loyalty/src/app/branches/branches.service.js` | Returns branch detail with active tables array. |
+| **Order Placement** | `Backend_Loyalty/src/app/orders/orders.service.js` | Creates order with `tableId` & notifies POS/KDS. |
+| **Web Customer Menu** | `servi_website/src/pages/customer/CustomerMenu.tsx` | Web implementation of table QR menu ordering. |

@@ -46,10 +46,17 @@ const claimReward = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data });
 });
 
+const updateCustomerName = catchAsync(async (req, res) => {
+  const { customerId, name } = req.body;
+  const data = await stampService.updateCustomerName({ customerId, name });
+  res.status(200).json({ success: true, data });
+});
+
 module.exports = {
   getStampProgramInfo,
   checkCustomerPhone,
   verifyOtpAndGetCard,
   getEligibleItems,
   claimReward,
+  updateCustomerName,
 };

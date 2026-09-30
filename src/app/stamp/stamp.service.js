@@ -261,6 +261,37 @@ const verifyOtpAndGetStampCard = async ({ phone: rawPhone, code, name, token, te
     type: "CUSTOMER_STAMP",
   });
 
+  // Check for any active, unredeemed coupon for this customer & brand
+  const activeCoupon = await mainPrisma.earnedCoupon.findFirst({
+    where: {
+      appUserId: user.id,
+      tenantId: tenant.id,
+      isUsed: false,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  let activeCouponData = null;
+  if (activeCoupon) {
+    const couponQrPayload = JSON.stringify({
+      code: activeCoupon.code,
+      tenantId: tenant.id,
+      customerId: user.id,
+      menuItemId: activeCoupon.menuItemId || null,
+      type: "COUPON",
+    });
+    activeCouponData = {
+      id: activeCoupon.id,
+      code: activeCoupon.code,
+      prizeLabel: activeCoupon.prizeLabel,
+      itemName: activeCoupon.prizeLabel?.replace("Free ", "")?.replace(" (Stamp Reward)", "") || "Reward Item",
+      menuItemId: activeCoupon.menuItemId || null,
+      expiresAt: activeCoupon.expiresAt,
+      qrPayload: couponQrPayload,
+    };
+  }
+
   const authToken = signToken(user.id);
 
   return {
@@ -288,6 +319,7 @@ const verifyOtpAndGetStampCard = async ({ phone: rawPhone, code, name, token, te
     },
     qrPayload,
     customerStampToken,
+    activeCoupon: activeCouponData,
   };
 };
 
@@ -362,7 +394,8 @@ const getEligibleItemsHistory = async ({ customerId, tenantId }) => {
 };
 
 /**
- * Generates a Free Reward Coupon for an eligible item chosen by the customer
+ * Generates a Free Reward Coupon for an eligible item chosen by the customer.
+ * Note: Stamps remain intact until the coupon is claimed / redeemed at the POS.
  */
 const claimRewardCoupon = async ({ customerId, tenantId, menuItemId }) => {
   if (!customerId || !tenantId) {
@@ -389,7 +422,38 @@ const claimRewardCoupon = async ({ customerId, tenantId, menuItemId }) => {
   });
 
   if (!wallet || (wallet.stamps || 0) < requiredStamps) {
-    throw new ApiError(400, `Insufficient stamps to claim coupon. You have ${wallet?.stamps || 0}/${requiredStamps} stamps.`);
+    throw new ApiError(400, `Insufficient stamps to generate coupon. You have ${wallet?.stamps || 0}/${requiredStamps} stamps.`);
+  }
+
+  // Check if an unredeemed active coupon already exists
+  const existingActive = await mainPrisma.earnedCoupon.findFirst({
+    where: {
+      appUserId: customerId,
+      tenantId: tenant.id,
+      isUsed: false,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (existingActive) {
+    const couponQrPayload = JSON.stringify({
+      code: existingActive.code,
+      tenantId: tenant.id,
+      customerId,
+      type: "COUPON",
+    });
+    return {
+      coupon: {
+        id: existingActive.id,
+        code: existingActive.code,
+        prizeLabel: existingActive.prizeLabel,
+        itemName: existingActive.prizeLabel?.replace("Free ", "")?.replace(" (Stamp Reward)", "") || "Reward Item",
+        expiresAt: existingActive.expiresAt,
+        qrPayload: couponQrPayload,
+      },
+      currentStamps: wallet.stamps || 0,
+    };
   }
 
   const { getTenantClient } = require("../../config/tenantManager");
@@ -411,27 +475,31 @@ const claimRewardCoupon = async ({ customerId, tenantId, menuItemId }) => {
     data: {
       code: couponCode,
       prizeLabel: `Free ${itemName} (Stamp Reward)`,
+      prizeImageUrl: selectedItem?.imageUrl || null,
+      menuItemId: selectedItem?.id || menuItemId || null,
       tenantId: tenant.id,
       appUserId: customerId,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days valid
     },
   });
 
-  // Decrement stamps (reset for the next cycle)
-  const newStamps = Math.max(0, (wallet.stamps || 0) - requiredStamps);
-  await mainPrisma.wallet.update({
-    where: { id: wallet.id },
-    data: { stamps: newStamps },
-  });
-
-  // Log to wallet transaction history
+  // Log to wallet transaction history (Note: stamps are NOT reset here, only on POS redemption)
   await mainPrisma.walletTransaction.create({
     data: {
       walletId: wallet.id,
       points: 0,
-      description: `Claimed Stamp Reward: Free ${itemName} (Coupon: ${couponCode})`,
+      description: `Generated Stamp Reward Coupon: ${couponCode} for Free ${itemName}`,
       tenantId: tenant.id,
     },
+  });
+
+  const couponQrPayload = JSON.stringify({
+    code: coupon.code,
+    tenantId: tenant.id,
+    customerId,
+    menuItemId: selectedItem?.id || menuItemId || null,
+    itemName,
+    type: "COUPON",
   });
 
   return {
@@ -440,10 +508,30 @@ const claimRewardCoupon = async ({ customerId, tenantId, menuItemId }) => {
       code: coupon.code,
       prizeLabel: coupon.prizeLabel,
       itemName,
+      menuItemId: selectedItem?.id || menuItemId || null,
       expiresAt: coupon.expiresAt,
+      qrPayload: couponQrPayload,
     },
-    newStamps,
+    currentStamps: wallet.stamps || 0,
   };
+};
+
+const updateCustomerName = async ({ customerId, name }) => {
+  if (!customerId || !name || !name.trim()) {
+    throw new ApiError(400, "customerId and name are required");
+  }
+
+  const user = await mainPrisma.appUser.update({
+    where: { id: customerId },
+    data: { name: name.trim() },
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+    },
+  });
+
+  return { customer: user };
 };
 
 module.exports = {
@@ -452,4 +540,6 @@ module.exports = {
   verifyOtpAndGetStampCard,
   getEligibleItemsHistory,
   claimRewardCoupon,
+  generateRewardCoupon: claimRewardCoupon,
+  updateCustomerName,
 };

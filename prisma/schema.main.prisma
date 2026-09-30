@@ -408,6 +408,7 @@ model EarnedCoupon {
   code          String   @unique
   prizeLabel    String
   prizeImageUrl String?
+  menuItemId    String?
   tenantId      String?
   tenant        Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   isUsed        Boolean  @default(false)
