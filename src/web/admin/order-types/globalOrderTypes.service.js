@@ -3,12 +3,12 @@ const ApiError = require("../../../utils/ApiError");
 const { getTenantClient } = require("../../../config/tenantManager");
 
 const defaultOrderTypes = [
-  { name: "Dine In", description: "Enjoy your meal served directly at your table inside our restaurant." },
-  { name: "Takeaway", description: "Pick up your order directly from the counter when ready." },
-  { name: "Delivery", description: "Your order is cooked fresh and delivered to your doorstep." },
-  { name: "Deliver to Car", description: "Curbside service — we bring your food right to your parked vehicle." },
-  { name: "Scheduled", description: "Book an appointment for a specific date and time slot with our specialists." },
-  { name: "Home Service", description: "Our specialist visits your home or office at your scheduled appointment time." }
+  { name: "Dine In", nameAr: "محلي / صالة", description: "Enjoy your meal served directly at your table inside our restaurant.", descriptionAr: "تناول وجبتك مباشرة على طاولتك داخل المطعم." },
+  { name: "Takeaway", nameAr: "سفري / استلام", description: "Pick up your order directly from the counter when ready.", descriptionAr: "استلم طلبك مباشرة من الكاونتر عند جاهزيته." },
+  { name: "Delivery", nameAr: "توصيل", description: "Your order is cooked fresh and delivered to your doorstep.", descriptionAr: "يتم تحضير طلبك وتوصيله مباشرة إلى باب منزلك." },
+  { name: "Deliver to Car", nameAr: "توصيل للسيارة", description: "Curbside service — we bring your food right to your parked vehicle.", descriptionAr: "خدمة التوصيل للسيارة — نصلك بطلبك إلى سيارتك." },
+  { name: "Scheduled", nameAr: "موعد مسبق", description: "Book an appointment for a specific date and time slot with our specialists.", descriptionAr: "حجز موعد محدد مسبقاً مع المختصين." },
+  { name: "Home Service", nameAr: "خدمة منزلية", description: "Our specialist visits your home or office at your scheduled appointment time.", descriptionAr: "زيارة منزلية أو مكتبية في الوقت المحدد." }
 ];
 
 const seedDefaultOrderTypesIfEmpty = async () => {
@@ -16,18 +16,30 @@ const seedDefaultOrderTypesIfEmpty = async () => {
   if (count === 0) {
     console.log("Seeding default global order types...");
     for (const item of defaultOrderTypes) {
-      await mainPrisma.globalOrderType.create({ data: { name: item.name, description: item.description, isActive: true } });
+      await mainPrisma.globalOrderType.create({
+        data: {
+          name: item.name,
+          nameAr: item.nameAr,
+          description: item.description,
+          descriptionAr: item.descriptionAr,
+          isActive: true
+        }
+      });
     }
   } else {
-    // Backfill descriptions for existing default order types if null
+    // Backfill descriptions and Arabic names for existing default order types
     for (const item of defaultOrderTypes) {
       const existing = await mainPrisma.globalOrderType.findFirst({
         where: { name: { equals: item.name, mode: "insensitive" } }
       });
-      if (existing && !existing.description) {
+      if (existing && (!existing.nameAr || !existing.description || !existing.descriptionAr)) {
         await mainPrisma.globalOrderType.update({
           where: { id: existing.id },
-          data: { description: item.description }
+          data: {
+            nameAr: existing.nameAr || item.nameAr,
+            description: existing.description || item.description,
+            descriptionAr: existing.descriptionAr || item.descriptionAr
+          }
         });
       }
     }
@@ -54,7 +66,9 @@ const create = async (data) => {
   const created = await mainPrisma.globalOrderType.create({
     data: {
       name: data.name,
+      nameAr: data.nameAr || null,
       description: data.description || null,
+      descriptionAr: data.descriptionAr || null,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : true
     }
   });
@@ -71,14 +85,20 @@ const create = async (data) => {
         await tenantDb.customOrderType.create({
           data: {
             name: created.name,
+            nameAr: created.nameAr,
             description: created.description,
+            descriptionAr: created.descriptionAr,
             isActive: created.isActive
           }
         });
       } else {
         await tenantDb.customOrderType.update({
           where: { id: localExists.id },
-          data: { description: created.description }
+          data: {
+            nameAr: created.nameAr || localExists.nameAr,
+            description: created.description,
+            descriptionAr: created.descriptionAr || localExists.descriptionAr
+          }
         });
       }
     } catch (err) {
@@ -108,7 +128,9 @@ const update = async (id, data) => {
     where: { id },
     data: {
       name: data.name !== undefined ? data.name : existing.name,
+      nameAr: data.nameAr !== undefined ? data.nameAr : existing.nameAr,
       description: data.description !== undefined ? data.description : existing.description,
+      descriptionAr: data.descriptionAr !== undefined ? data.descriptionAr : existing.descriptionAr,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : existing.isActive
     }
   });
@@ -122,7 +144,9 @@ const update = async (id, data) => {
         where: { name: existing.name },
         data: {
           name: updated.name,
+          nameAr: updated.nameAr,
           description: updated.description,
+          descriptionAr: updated.descriptionAr,
           ...(data.isActive === false && { isActive: false })
         }
       });

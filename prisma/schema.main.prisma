@@ -67,6 +67,7 @@ model SuperAdminRole {
 model Tenant {
   id               String           @id @default(uuid())
   name             String
+  nameAr           String?
   slug             String           @unique
   dbUrl            String           // The database connection string for this tenant
   // ─── Visual Settings
@@ -117,6 +118,7 @@ model Tenant {
   cdsQuantity      Int              @default(1)
   subBranch        Boolean          @default(false)
   subBrandStory    Boolean          @default(false)
+  subStamps        Boolean          @default(false)
 
   priceAppServi    Float            @default(29.0)
   cycleAppServi    String           @default("monthly")
@@ -127,6 +129,9 @@ model Tenant {
   priceBrandStory  Float            @default(0.0)
   cycleBrandStory  String           @default("monthly")
   feeBrandStory    Float            @default(0.0)
+  priceStamps      Float            @default(0.0)
+  cycleStamps      String           @default("monthly")
+  feeStamps        Float            @default(0.0)
   pricePos         Float            @default(49.0)
   cyclePos         String           @default("monthly")
   feePos           Float            @default(0.0)
@@ -430,12 +435,14 @@ model EarnedCoupon {
 // ─── Global Order Types ──────────────────────────────
 
 model GlobalOrderType {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  description String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(uuid())
+  name          String   @unique
+  nameAr        String?
+  description   String?
+  descriptionAr String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 // ─── Super Admin Broadcast Push Notifications ────────
