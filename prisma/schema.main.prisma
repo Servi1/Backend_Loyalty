@@ -93,6 +93,10 @@ model Tenant {
   address          String?
   city             String?
   country          String?
+  crNameAr         String?
+  vatNameAr        String?
+  addressStreetAr  String?
+  addressCityAr    String?
  
   // ─── Billing & Operations
   timezone         String?

@@ -50,6 +50,8 @@ model User {
   email     String?  @unique
   password  String?  // hashed — null for OTP-only customers
   name      String?
+  nameAr    String?
+  designationAr String?
   role      Role     @default(CASHIER)
   customRole String?
   avatarUrl String?
@@ -80,8 +82,10 @@ model User {
 model CustomRole {
   id          String   @id @default(uuid())
   name        String   @unique
+  nameAr      String?
   level       Int      @default(50)
   description String?
+  descriptionAr String?
   color       String   @default("Orange")
   permissions Json
   createdAt   DateTime @default(now())
@@ -117,6 +121,8 @@ model Branch {
   receiptLogoUrl        String?
   receiptWebsite        String?
   receiptAdditionalText String?
+  receiptAdditionalTextAr String?
+  bioAr                 String?
   lat       Float?
   lng       Float?
   isOpen    Boolean @default(true)
@@ -186,10 +192,12 @@ model QrCashier {
 model Table {
   id       String  @id @default(uuid())
   label    String  // e.g. "Table 4"
+  labelAr  String?
   seats    Int     @default(4)
   qrCode   String? @unique
   isActive Boolean @default(true)
   zone     String? @default("Main")
+  zoneAr   String?
  
   branchId String
   branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -329,8 +337,10 @@ model OrderItem {
 model InventoryItem {
   id       String @id @default(uuid())
   name     String
+  nameAr   String?
   quantity Int    @default(0)
   unit     String @default("pcs")
+  unitAr   String?
  
   branchId String
   branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -343,6 +353,7 @@ model InventoryItem {
 model PosDevice {
   id        String   @id @default(uuid())
   name      String   // e.g., "POS 1", "POS 2", etc.
+  nameAr    String?
   deviceKey String   @unique // 8-digit random number
   isActive  Boolean  @default(true)
 
@@ -367,6 +378,7 @@ model PosDevice {
 model KdsDevice {
   id        String   @id @default(uuid())
   name      String   // e.g., "KDS 1", "KDS 2", etc.
+  nameAr    String?
   deviceKey String   @unique // 8-digit random number
   isActive  Boolean  @default(true)
 
@@ -402,6 +414,8 @@ model Discount {
 model Coupon {
   id                 String    @id @default(uuid())
   title              String
+  titleAr            String?
+  termsAr            String?
   code               String    @unique
   quantity           Int       @default(0) // 0 means unlimited
   usedCount          Int       @default(0)
@@ -430,6 +444,7 @@ model Coupon {
 model CustomPaymentType {
   id        String   @id @default(uuid())
   name      String
+  nameAr    String?
   imageUrl  String?
   isActive  Boolean  @default(true)
   branches  Branch[]
@@ -442,6 +457,7 @@ model CustomPaymentType {
 model LocationGroup {
   id        String   @id @default(uuid())
   name      String
+  nameAr    String?
   locations Json     // Array of branch IDs: ["uuid-1", "uuid-2"]
   branches  Branch[]
   createdAt DateTime @default(now())
@@ -508,7 +524,9 @@ model ProductRequest {
   id          String   @id @default(uuid())
   type        String   // "RESTOCK" or "NEW_PRODUCT"
   details     String   // items & quantities or specifications
+  detailsAr   String?
   reason      String?  // notes / reason
+  reasonAr    String?
   status      String   @default("PENDING") // PENDING, APPROVED, FULFILLED, REJECTED
   
   warehouseId String

@@ -69,9 +69,11 @@ const create = async (db, data, cycle) => {
   return db.table.create({
     data: {
       label: data.label,
+      labelAr: data.labelAr || null,
       seats: Number(data.seats) || 4,
       isActive: data.isActive !== undefined ? data.isActive : true,
       zone: data.zone || "Main Hall",
+      zoneAr: data.zoneAr || null,
       qrCode,
       branchId: data.branchId,
       expiresAt

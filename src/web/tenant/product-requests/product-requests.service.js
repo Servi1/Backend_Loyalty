@@ -60,7 +60,9 @@ const create = async (db, data) => {
     data: {
       type: data.type,
       details: data.details,
+      detailsAr: data.detailsAr || null,
       reason: data.reason || null,
+      reasonAr: data.reasonAr || null,
       warehouseId: data.warehouseId,
       branchId: data.branchId,
       status: "Pending"

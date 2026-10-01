@@ -79,6 +79,8 @@ const createStaff = async (db, data) => {
     data: {
       email: data.email,
       name: data.name,
+      nameAr: data.nameAr || null,
+      designationAr: data.designationAr || null,
       role: data.role,
       customRole: data.customRole || null,
       avatarUrl: data.avatarUrl !== undefined ? data.avatarUrl : null,
@@ -180,11 +182,13 @@ const updateStaff = async (db, id, data) => {
   }
 
   const updateData = {
-    name: data.name,
-    role: data.role,
-    customRole: data.customRole || null,
+    name: data.name !== undefined ? data.name : user.name,
+    nameAr: data.nameAr !== undefined ? data.nameAr : user.nameAr,
+    designationAr: data.designationAr !== undefined ? data.designationAr : user.designationAr,
+    role: data.role !== undefined ? data.role : user.role,
+    customRole: data.customRole !== undefined ? data.customRole : user.customRole,
     avatarUrl: data.avatarUrl !== undefined ? data.avatarUrl : user.avatarUrl,
-    branchId: data.branchId || null,
+    branchId: data.branchId !== undefined ? data.branchId : user.branchId,
     warehouseId: data.warehouseId !== undefined ? data.warehouseId : user.warehouseId,
     pinCode: data.pinCode || user.pinCode,
     isActive: data.isActive !== undefined ? data.isActive : user.isActive,

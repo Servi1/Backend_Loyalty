@@ -74,6 +74,7 @@ const create = async (db, data, cycle) => {
   return db.kdsDevice.create({
     data: {
       name: data.name,
+      nameAr: data.nameAr || null,
       deviceKey,
       isActive: data.isActive !== undefined ? data.isActive : true,
       branchId: data.branchId,

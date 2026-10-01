@@ -118,8 +118,10 @@ const create = async (db, data) => {
   return db.customRole.create({
     data: {
       name: data.name,
+      nameAr: data.nameAr || null,
       level: data.level || 50,
       description: data.description,
+      descriptionAr: data.descriptionAr || null,
       color: data.color || "Orange",
       permissions: data.permissions || {}
     }
@@ -133,11 +135,13 @@ const update = async (db, id, data) => {
   return db.customRole.update({
     where: { id },
     data: {
-      name: data.name,
-      level: data.level,
-      description: data.description,
-      color: data.color,
-      permissions: data.permissions
+      name: data.name !== undefined ? data.name : existing.name,
+      nameAr: data.nameAr !== undefined ? data.nameAr : existing.nameAr,
+      level: data.level !== undefined ? data.level : existing.level,
+      description: data.description !== undefined ? data.description : existing.description,
+      descriptionAr: data.descriptionAr !== undefined ? data.descriptionAr : existing.descriptionAr,
+      color: data.color !== undefined ? data.color : existing.color,
+      permissions: data.permissions !== undefined ? data.permissions : existing.permissions
     }
   });
 };

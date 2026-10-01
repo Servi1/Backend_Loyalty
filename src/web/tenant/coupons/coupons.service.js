@@ -16,6 +16,7 @@ const create = async (db, data) => {
   return db.coupon.create({
     data: {
       title: data.title,
+      titleAr: data.titleAr || null,
       code: data.code,
       quantity: data.quantity !== undefined ? Number(data.quantity) : 0,
       usedCount: 0,
@@ -29,6 +30,7 @@ const create = async (db, data) => {
       minOrderAmount: data.type === "orders" ? (data.minOrderAmount !== undefined && data.minOrderAmount !== "" && data.minOrderAmount !== null ? Number(data.minOrderAmount) : 0) : 0,
       startDate: new Date(data.startDate),
       endDate: new Date(data.endDate),
+      termsAr: data.termsAr || null,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
     }
   });
@@ -47,6 +49,7 @@ const update = async (db, id, data) => {
     where: { id },
     data: {
       title: data.title !== undefined ? data.title : coupon.title,
+      titleAr: data.titleAr !== undefined ? data.titleAr : coupon.titleAr,
       code: data.code !== undefined ? data.code : coupon.code,
       quantity: data.quantity !== undefined ? Number(data.quantity) : coupon.quantity,
       locations: data.locations !== undefined ? data.locations : coupon.locations,
@@ -59,6 +62,7 @@ const update = async (db, id, data) => {
       minOrderAmount: data.minOrderAmount !== undefined ? (data.minOrderAmount === "" || data.minOrderAmount === null ? 0 : Number(data.minOrderAmount)) : coupon.minOrderAmount,
       startDate: data.startDate !== undefined ? new Date(data.startDate) : coupon.startDate,
       endDate: data.endDate !== undefined ? new Date(data.endDate) : coupon.endDate,
+      termsAr: data.termsAr !== undefined ? data.termsAr : coupon.termsAr,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : coupon.isActive,
     }
   });

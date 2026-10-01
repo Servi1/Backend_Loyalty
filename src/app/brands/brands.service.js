@@ -77,11 +77,6 @@ const getBrands = async (userId) => {
     where: {
       isActive: true,
       ordersEnabled: true
-    },
-    include: {
-      stampPrograms: {
-        where: { enabled: true }
-      }
     }
   });
 
@@ -92,7 +87,8 @@ const getBrands = async (userId) => {
       cuisine: "Restaurant"
     };
 
-    const isStampEnabled = Array.isArray(t.stampPrograms) && t.stampPrograms.length > 0;
+    const stampProgramsList = Array.isArray(t.stampPrograms) ? t.stampPrograms : [];
+    const isStampEnabled = Boolean(t.subStamps) && stampProgramsList.some(s => s && s.enabled !== false);
 
     return {
       id: t.id,

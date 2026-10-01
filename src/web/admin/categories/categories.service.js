@@ -31,7 +31,10 @@ const create = async (data) => {
     throw new ApiError(400, "Category already exists");
   }
   return mainPrisma.tenantCategory.create({
-    data: { name: data.name }
+    data: { 
+      name: data.name,
+      nameAr: data.nameAr || null
+    }
   });
 };
 
@@ -47,7 +50,10 @@ const update = async (id, data) => {
   }
   return mainPrisma.tenantCategory.update({
     where: { id },
-    data: { name: data.name }
+    data: { 
+      name: data.name,
+      nameAr: data.nameAr !== undefined ? data.nameAr : undefined
+    }
   });
 };
 

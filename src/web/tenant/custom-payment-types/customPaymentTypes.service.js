@@ -12,6 +12,7 @@ const create = async (db, data) => {
   return db.customPaymentType.create({
     data: {
       name: data.name,
+      nameAr: data.nameAr || null,
       imageUrl: data.imageUrl || null,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
     }
@@ -26,6 +27,7 @@ const update = async (db, id, data) => {
     where: { id },
     data: {
       name: data.name !== undefined ? data.name : item.name,
+      nameAr: data.nameAr !== undefined ? data.nameAr : item.nameAr,
       imageUrl: data.imageUrl !== undefined ? data.imageUrl : item.imageUrl,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : item.isActive,
     }

@@ -12,6 +12,7 @@ const create = async (db, data) => {
   return db.locationGroup.create({
     data: {
       name: data.name,
+      nameAr: data.nameAr || null,
       locations: data.locations || [],
     }
   });
@@ -25,6 +26,7 @@ const update = async (db, id, data) => {
     where: { id },
     data: {
       name: data.name !== undefined ? data.name : group.name,
+      nameAr: data.nameAr !== undefined ? data.nameAr : group.nameAr,
       locations: data.locations !== undefined ? data.locations : group.locations,
     }
   });
