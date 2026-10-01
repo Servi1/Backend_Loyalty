@@ -93,6 +93,7 @@ model CustomRole {
 model Branch {
   id        String  @id @default(uuid())
   name      String
+  nameAr    String?
   address   String?
   city      String?
   phone     String?
@@ -202,9 +203,12 @@ model Table {
 // ─── Menu ────────────────────────────────────────────
  
 model MenuCategory {
-  id    String @id @default(uuid())
-  name  String
-  order Int    @default(0)
+  id       String   @id @default(uuid())
+  name     String
+  nameAr   String?
+  imageUrl String?
+  iconUrl  String?
+  order    Int      @default(0)
  
   items MenuItem[]
 }
@@ -447,14 +451,16 @@ model LocationGroup {
 // ─── Custom Order Types ──────────────────────────────
 
 model CustomOrderType {
-  id          String   @id @default(uuid())
-  name        String
-  description String?
-  isActive    Boolean  @default(true)
-  branches    Branch[]
-  orders      Order[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(uuid())
+  name          String
+  nameAr        String?
+  description   String?
+  descriptionAr String?
+  isActive      Boolean  @default(true)
+  branches      Branch[]
+  orders        Order[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 // ─── Cash Drawer Sessions ─────────────────────────────

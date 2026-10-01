@@ -40,7 +40,9 @@ const getAll = async (db) => {
       const created = await db.customOrderType.create({
         data: {
           name: gt.name,
+          nameAr: gt.nameAr || null,
           description: gt.description || null,
+          descriptionAr: gt.descriptionAr || null,
           isActive: gt.isActive
         }
       });
@@ -50,8 +52,18 @@ const getAll = async (db) => {
       let needsUpdate = false;
       const updateData = {};
 
+      if (tt.nameAr !== gt.nameAr) {
+        updateData.nameAr = gt.nameAr;
+        needsUpdate = true;
+      }
+
       if (tt.description !== gt.description) {
         updateData.description = gt.description;
+        needsUpdate = true;
+      }
+
+      if (tt.descriptionAr !== gt.descriptionAr) {
+        updateData.descriptionAr = gt.descriptionAr;
         needsUpdate = true;
       }
 
