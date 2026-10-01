@@ -178,16 +178,14 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
       if (Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
         tenantTiers = tenant.loyaltyTiers;
       }
-      // Main active toggle affects ALL channels
+      // Main active toggle affects ALL channels for points
       if (tenant.loyaltyEnabled === false) {
-        console.log(`[LOYALTY] Earning points blocked: Loyalty program is globally disabled for tenant ${tenant.name}`);
-        return null;
+        console.log(`[LOYALTY] Earning points disabled globally for tenant ${tenant.name}`);
       }
       // Add Points toggle affects POS Cashier channel only
       const source = (opts.source || "").toLowerCase();
       if (source === "pos" && tenant.loyaltyAddPoints === false) {
-        console.log(`[LOYALTY] Earning points blocked: Add Points toggle disabled for POS on tenant ${tenant.name}`);
-        return null;
+        console.log(`[LOYALTY] Earning points disabled for POS on tenant ${tenant.name}`);
       }
     }
   }
@@ -231,8 +229,8 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
 
   if (earnedStampsCount === 0 && stampProg && stampProg.enabled !== false && Array.isArray(opts.items || opts.orderItems)) {
     const eligibleIds = Array.isArray(stampProg.eligibleItemIds) ? stampProg.eligibleItemIds.map(String) : [];
+    const orderItems = opts.items || opts.orderItems;
     if (eligibleIds.length > 0) {
-      const orderItems = opts.items || opts.orderItems;
       for (const item of orderItems) {
         const itemId = String(item.menuItemId || item.itemId || item.id || "");
         if (itemId && eligibleIds.includes(itemId)) {
@@ -252,7 +250,7 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
       finalStamps = newTotalStamps % reqStamps;
 
       for (let i = 0; i < completedCycles; i++) {
-        const couponCode = `STAMP-${(tenantObj.slug || 'SERV').toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+        const couponCode = `STAMP-${(tenantObj?.slug || 'SERV').toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
         await mainPrisma.earnedCoupon.create({
           data: {
             code: couponCode,
@@ -269,7 +267,15 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
   }
 
   // Earning points is UNLIMITED
-  const finalPointsToEarn = points;
+  let finalPointsToEarn = points;
+  if (tenantObj && tenantObj.loyaltyEnabled === false) {
+    finalPointsToEarn = 0;
+  }
+  const source = (opts.source || "").toLowerCase();
+  if (source === "pos" && tenantObj && tenantObj.loyaltyAddPoints === false) {
+    finalPointsToEarn = 0;
+  }
+
   if (finalPointsToEarn <= 0 && earnedStampsCount <= 0) return wallet;
 
   const [updatedWallet] = await mainPrisma.$transaction([

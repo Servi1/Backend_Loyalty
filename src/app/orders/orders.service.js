@@ -446,23 +446,21 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
 
   const initialStatus = order.status;
 
-  // Award points only if order is already COMPLETED upon creation (except if paid by points)
+  // Award points & stamps if order is COMPLETED upon creation (except if paid by points)
   const effectiveEarnRate = earnRate !== undefined && earnRate !== null ? parseFloat(earnRate) : Number(tenant?.loyaltyEarnRate || 1.0);
-  if (order.status === "COMPLETED" && (userId || finalCustomerId) && effectiveEarnRate > 0 && paymentMethod !== "points") {
-    const pointsEarned = Math.floor(order.total * effectiveEarnRate);
-    if (pointsEarned > 0) {
-      try {
-        await loyaltyService.earnPoints(
-          db,
-          finalCustomerId || userId,
-          pointsEarned,
-          `Earned on Order #${orderNumber}`,
-          tenantId,
-          { source: "app", orderId: order.id, orderNumber: orderNumber }
-        );
-      } catch (err) {
-        console.error("[APP ORDER] Failed to award loyalty points:", err.message);
-      }
+  if (order.status === "COMPLETED" && (userId || finalCustomerId) && paymentMethod !== "points") {
+    const pointsEarned = effectiveEarnRate > 0 ? Math.floor(order.total * effectiveEarnRate) : 0;
+    try {
+      await loyaltyService.earnPoints(
+        db,
+        finalCustomerId || userId,
+        pointsEarned,
+        `Earned on Order #${orderNumber}`,
+        tenantId,
+        { source: "app", orderId: order.id, orderNumber: orderNumber, items: order.items || orderItems }
+      );
+    } catch (err) {
+      console.error("[APP ORDER] Failed to award loyalty points/stamps:", err.message);
     }
   }
 
