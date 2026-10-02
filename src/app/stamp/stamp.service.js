@@ -339,7 +339,9 @@ const verifyOtpAndGetStampCard = async ({ phone: rawPhone, code, name, token, te
       logoUrl: tenant.logoUrl,
     },
     stampCard: {
-      stamps: wallet.stamps || 0,
+      stamps: activeCouponData
+        ? Math.max(wallet.stamps || 0, Number(stampProg?.requiredStamps || 6))
+        : (wallet.stamps || 0),
       requiredStamps: Number(stampProg?.requiredStamps || 6),
       nameEn: stampProg?.nameEn || "Drinks",
       nameAr: stampProg?.nameAr || "المشروبات",
