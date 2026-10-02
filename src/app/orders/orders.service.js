@@ -563,8 +563,8 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null }
       db.order.findMany({
         where: userMatchCondition,
         include: {
-          items: { include: { menuItem: { select: { name: true, price: true } } } },
-          branch: { select: { id: true, name: true, address: true, lat: true, lng: true } },
+          items: { include: { menuItem: { select: { name: true, nameAr: true, price: true } } } },
+          branch: { select: { id: true, name: true, nameAr: true, address: true, addressAr: true, lat: true, lng: true } },
         },
         orderBy: { createdAt: "desc" },
         skip,
