@@ -12,26 +12,48 @@ const { decodeQrToken, encodeQrToken } = require("../../utils/qrToken.utils");
 
 const DEV_OTP = "1111";
 
+const getPhoneCandidates = (raw) => {
+  if (!raw) return [];
+  const str = raw.toString().trim();
+  const digits = str.replace(/\D/g, "");
+  
+  // Extract base digits without leading 966 or 0
+  let base = digits;
+  if (base.startsWith("966")) {
+    base = base.substring(3);
+  }
+  if (base.startsWith("0")) {
+    base = base.substring(1);
+  }
+
+  const set = new Set();
+  // Standard +966 format
+  if (base) {
+    set.add(`+966${base}`);
+    set.add(`966${base}`);
+    set.add(`0${base}`);
+    set.add(base);
+  }
+  if (str) {
+    set.add(str);
+    if (!str.startsWith("+")) set.add(`+${str}`);
+  }
+  return Array.from(set);
+};
+
 const normalisePhone = (raw) => {
   if (!raw) return "";
   let digits = raw.toString().trim().replace(/\D/g, "");
-  while (digits.length > 9) {
-    if (digits.startsWith("966")) {
-      digits = digits.substring(3);
-    } else if (digits.startsWith("0")) {
-      digits = digits.substring(1);
-    } else {
-      break;
-    }
+  if (digits.startsWith("966")) {
+    digits = digits.substring(3);
   }
   if (digits.startsWith("0")) {
     digits = digits.substring(1);
   }
-  if (digits.length === 9) {
-    return "+966" + digits;
-  }
-  return raw.startsWith("+") ? raw : `+${digits}`;
+  // Return standard Saudi format +966...
+  return digits ? `+966${digits}` : "";
 };
+
 
 const signToken = (userId) =>
   jwt.sign({ sub: userId, type: "customer" }, config.jwt.secret, {
@@ -111,14 +133,20 @@ const checkPhoneAndSendOtp = async (rawPhone) => {
     throw new ApiError(400, "Please enter a valid phone number");
   }
 
-  // Find customer in database
-  const user = await mainPrisma.appUser.findUnique({
-    where: { phone },
+  // Find customer in database using candidate formats (e.g. +966..., 05..., 5...)
+  const candidates = getPhoneCandidates(rawPhone);
+  const user = await mainPrisma.appUser.findFirst({
+    where: {
+      phone: { in: candidates },
+    },
   });
 
   // Invalidate previous OTPs
   await mainPrisma.otp.updateMany({
-    where: { phone, verified: false },
+    where: {
+      phone: { in: candidates },
+      verified: false,
+    },
     data: { verified: true },
   });
 
@@ -203,8 +231,11 @@ const verifyOtpAndGetStampCard = async ({ phone: rawPhone, code, name, token, te
   }
 
   // Find or create AppUser
-  let user = await mainPrisma.appUser.findUnique({
-    where: { phone },
+  const candidates = getPhoneCandidates(rawPhone);
+  let user = await mainPrisma.appUser.findFirst({
+    where: {
+      phone: { in: candidates },
+    },
   });
 
   const cleanName = name ? name.trim() : "";
