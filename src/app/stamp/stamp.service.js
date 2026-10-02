@@ -514,19 +514,13 @@ const claimRewardCoupon = async ({ customerId, tenantId, menuItemId }) => {
     },
   });
 
-  // Deduct requiredStamps for this coupon from wallet stamps (keep any rollover stamps)
-  const remainingStamps = Math.max(0, (wallet.stamps || 0) - requiredStamps);
-  await mainPrisma.wallet.update({
-    where: { id: wallet.id },
-    data: { stamps: remainingStamps },
-  });
-
-  // Log to wallet transaction history
+  // Note: Stamps remain intact (e.g. 4/4) until the coupon is claimed / redeemed at the cashier / POS.
+  // Log coupon generation to wallet transaction history without deducting stamps
   await mainPrisma.walletTransaction.create({
     data: {
       walletId: wallet.id,
       points: 0,
-      description: `Generated Stamp Reward Coupon: ${couponCode} for Free ${itemName} (-${requiredStamps} Stamps)`,
+      description: `Generated Stamp Reward Coupon: ${couponCode} for Free ${itemName}`,
       tenantId: tenant.id,
     },
   });
@@ -551,6 +545,96 @@ const claimRewardCoupon = async ({ customerId, tenantId, menuItemId }) => {
       qrPayload: couponQrPayload,
     },
     currentStamps: wallet.stamps || 0,
+  };
+};
+
+/**
+ * Redeems an EarnedCoupon at POS / cashier or counter:
+ * 1. Marks coupon as used (isUsed = true)
+ * 2. Decrements wallet.stamps: Math.max(0, wallet.stamps - requiredStamps)
+ */
+const redeemRewardCoupon = async ({ code, customerId, tenantId }) => {
+  if (!code) {
+    throw new ApiError(400, "Coupon code is required");
+  }
+
+  const cleanCode = code.trim().toUpperCase();
+
+  const coupon = await mainPrisma.earnedCoupon.findFirst({
+    where: {
+      code: cleanCode,
+      ...(tenantId ? { tenantId } : {}),
+      ...(customerId ? { appUserId: customerId } : {}),
+    },
+    include: {
+      appUser: true,
+      tenant: true,
+    },
+  });
+
+  if (!coupon) {
+    throw new ApiError(404, "Invalid or unrecognized reward coupon code");
+  }
+
+  if (coupon.isUsed) {
+    throw new ApiError(400, `Reward coupon ${cleanCode} has already been redeemed`);
+  }
+
+  if (coupon.expiresAt && new Date(coupon.expiresAt) < new Date()) {
+    throw new ApiError(400, `Reward coupon ${cleanCode} has expired`);
+  }
+
+  // 1. Mark coupon as used
+  const updatedCoupon = await mainPrisma.earnedCoupon.update({
+    where: { id: coupon.id },
+    data: {
+      isUsed: true,
+      usedAt: new Date(),
+    },
+  });
+
+  // 2. Resolve required stamps to deduct
+  const tenant = coupon.tenant || (await mainPrisma.tenant.findUnique({ where: { id: coupon.tenantId } }));
+  const stampList = Array.isArray(tenant?.stampPrograms) ? tenant.stampPrograms : [];
+  const stampProg = stampList[0] || null;
+  const requiredStamps = Number(stampProg?.requiredStamps || 4);
+
+  // 3. Deduct stamps from customer wallet (keep any extra rollover stamps)
+  const wallet = await mainPrisma.wallet.findFirst({
+    where: {
+      appUserId: coupon.appUserId,
+      tenantId: coupon.tenantId,
+    },
+  });
+
+  let remainingStamps = 0;
+  if (wallet) {
+    remainingStamps = Math.max(0, (wallet.stamps || 0) - requiredStamps);
+    await mainPrisma.wallet.update({
+      where: { id: wallet.id },
+      data: { stamps: remainingStamps },
+    });
+
+    await mainPrisma.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        points: 0,
+        description: `Redeemed Stamp Reward Coupon: ${cleanCode} (${coupon.prizeLabel}) (-${requiredStamps} Stamps)`,
+        tenantId: coupon.tenantId,
+      },
+    });
+  }
+
+  return {
+    coupon: {
+      id: updatedCoupon.id,
+      code: updatedCoupon.code,
+      prizeLabel: updatedCoupon.prizeLabel,
+      isUsed: true,
+      usedAt: updatedCoupon.usedAt,
+    },
+    remainingStamps,
+    message: `Reward coupon ${cleanCode} redeemed successfully!`,
   };
 };
 
@@ -579,5 +663,6 @@ module.exports = {
   getEligibleItemsHistory,
   claimRewardCoupon,
   generateRewardCoupon: claimRewardCoupon,
+  redeemRewardCoupon,
   updateCustomerName,
 };

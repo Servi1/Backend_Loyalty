@@ -17,6 +17,7 @@ router.post("/verify-otp", ctrl.verifyOtpAndGetCard);
 router.get("/eligible-items", ctrl.getEligibleItems);
 router.post("/generate-coupon", ctrl.claimReward);
 router.post("/claim-coupon", ctrl.claimReward);
+router.post("/redeem-coupon", ctrl.redeemCoupon);
 router.post("/update-name", ctrl.updateCustomerName);
 
 module.exports = router;

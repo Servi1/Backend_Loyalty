@@ -17,4 +17,6 @@ router.get("/cashdrawer/sessions", posController.getCashDrawerSessions);
 router.post("/cashdrawer/open", posController.openCashDrawer);
 router.post("/cashdrawer/close", posController.closeCashDrawer);
 
+router.post("/coupons/redeem", posController.redeemCoupon);
+
 module.exports = router;

@@ -46,6 +46,13 @@ const claimReward = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data });
 });
 
+const redeemCoupon = catchAsync(async (req, res) => {
+  const { code, customerId } = req.body;
+  const tenantId = req.body.tenantId || req.params?.tenantId;
+  const data = await stampService.redeemRewardCoupon({ code, customerId, tenantId });
+  res.status(200).json({ success: true, data });
+});
+
 const updateCustomerName = catchAsync(async (req, res) => {
   const { customerId, name } = req.body;
   const data = await stampService.updateCustomerName({ customerId, name });
@@ -58,5 +65,6 @@ module.exports = {
   verifyOtpAndGetCard,
   getEligibleItems,
   claimReward,
+  redeemCoupon,
   updateCustomerName,
 };
