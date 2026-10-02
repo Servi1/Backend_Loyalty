@@ -18,6 +18,7 @@ router.get("/orders", authorize("SUPER_ADMIN"), ctrl.getSuperAdminOrders);
 router.get("/orders/:tenantId/:orderId", authorize("SUPER_ADMIN"), ctrl.getSuperAdminOrderDetail);
 router.get("/subscriptions", authorize("SUPER_ADMIN"), ctrl.getSubscriptions);
 router.get("/loyalty", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.getLoyaltyOverview);
+router.get("/loyalty/stamps/activity", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.getSuperAdminStampActivity);
 router.get("/loyalty/customers", authorize("SUPER_ADMIN"), ctrl.getSuperAdminCustomers);
 router.post("/loyalty/customers", authorize("SUPER_ADMIN"), ctrl.addSuperAdminCustomer);
 router.post("/loyalty/customers/bulk-upload", authorize("SUPER_ADMIN"), ctrl.bulkUploadSuperAdminCustomers);

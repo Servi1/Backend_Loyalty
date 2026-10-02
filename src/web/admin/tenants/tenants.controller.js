@@ -100,6 +100,12 @@ const getSuperAdminCustomerDetails = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+const getSuperAdminStampActivity = catchAsync(async (req, res) => {
+  const { tenantId } = req.query;
+  const result = await tenantsService.getSuperAdminStampActivity(tenantId);
+  res.json({ success: true, data: result });
+});
+
 const addSuperAdminCustomer = catchAsync(async (req, res) => {
   const customer = await tenantsService.addSuperAdminCustomer(req.body);
   res.status(201).json({ success: true, data: customer });
@@ -180,6 +186,7 @@ module.exports = {
   getSuperAdminOrderDetail,
   getSuperAdminCustomers,
   getSuperAdminCustomerDetails,
+  getSuperAdminStampActivity,
   addSuperAdminCustomer,
   deleteSuperAdminCustomer,
   bulkUploadSuperAdminCustomers,
