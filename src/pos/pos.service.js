@@ -215,18 +215,16 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
           earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
         }
 
-        const pointsToEarn = Math.floor(order.total * earnRate);
-        if (pointsToEarn > 0) {
-          const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
-          await loyaltyService.earnPoints(
-            db,
-            order.customerId,
-            pointsToEarn,
-            `Earned on Order #${order.orderNumber}`,
-            tenantId,
-            { source: "pos", orderId: order.id, orderNumber: order.orderNumber }
-          );
-        }
+        const pointsToEarn = earnRate > 0 ? Math.floor(order.total * earnRate) : 0;
+        const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
+        await loyaltyService.earnPoints(
+          db,
+          order.customerId,
+          pointsToEarn,
+          `Earned on Order #${order.orderNumber}`,
+          tenantId,
+          { source: "pos", orderId: order.id, orderNumber: order.orderNumber, items: order.items || orderData.items }
+        );
       }
     } catch (err) {
       console.error("Failed to auto-award points on immediate POS order completion:", err.message);
@@ -407,17 +405,15 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
               earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
             }
 
-            const pointsToEarn = Math.floor(updated.total * earnRate);
-            if (pointsToEarn > 0) {
-              await loyaltyService.earnPoints(
-                db,
-                updated.customerId,
-                pointsToEarn,
-                description,
-                tenantId,
-                { source: "pos", orderId: updated.id, orderNumber: updated.orderNumber }
-              );
-            }
+            const pointsToEarn = earnRate > 0 ? Math.floor(updated.total * earnRate) : 0;
+            await loyaltyService.earnPoints(
+              db,
+              updated.customerId,
+              pointsToEarn,
+              description,
+              tenantId,
+              { source: "pos", orderId: updated.id, orderNumber: updated.orderNumber, items: updated.items }
+            );
           }
         }
       }
@@ -474,10 +470,15 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
                 earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
               }
 
-              const pointsToEarn = Math.floor(updated.total * earnRate);
-              if (pointsToEarn > 0) {
-                await loyaltyService.earnPoints(db, updated.customerId, pointsToEarn, description, tenantId, { source: "pos", orderId: updated.id, orderNumber: updated.orderNumber });
-              }
+              const pointsToEarn = earnRate > 0 ? Math.floor(updated.total * earnRate) : 0;
+              await loyaltyService.earnPoints(
+                db,
+                updated.customerId,
+                pointsToEarn,
+                description,
+                tenantId,
+                { source: "pos", orderId: updated.id, orderNumber: updated.orderNumber, items: updated.items }
+              );
             }
           }
         }
