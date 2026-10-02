@@ -257,6 +257,11 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
 
   if (finalPointsToEarn <= 0 && earnedStampsCount <= 0) return wallet;
 
+  let txDesc = description || (earnedStampsCount > 0 ? `Points & +${earnedStampsCount} Stamp(s) earned` : "Points earned");
+  if (earnedStampsCount > 0 && description && !description.toLowerCase().includes("stamp")) {
+    txDesc = `${description} (+${earnedStampsCount} Stamp${earnedStampsCount > 1 ? "s" : ""})`;
+  }
+
   const [updatedWallet] = await mainPrisma.$transaction([
     mainPrisma.wallet.update({
       where: { id: wallet.id },
@@ -270,7 +275,7 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
       data: {
         walletId: wallet.id,
         points: finalPointsToEarn,
-        description: description || (earnedStampsCount > 0 ? `Points & +${earnedStampsCount} Stamp(s) earned` : "Points earned"),
+        description: txDesc,
         tenantId: targetTenantId || null,
         orderId: opts.orderId || null,
         orderNumber: opts.orderNumber || null,
