@@ -175,14 +175,12 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
   const stampProg = Array.isArray(tenantObj?.stampPrograms) && tenantObj.stampPrograms.length > 0 ? tenantObj.stampPrograms[0] : null;
 
   if (earnedStampsCount === 0 && stampProg && stampProg.enabled !== false && Array.isArray(opts.items || opts.orderItems)) {
-    const eligibleIds = Array.isArray(stampProg.eligibleItemIds) ? stampProg.eligibleItemIds.map(String) : [];
+    const eligibleIds = Array.isArray(stampProg.eligibleItemIds) ? stampProg.eligibleItemIds.map(String).filter(Boolean) : [];
     const orderItems = opts.items || opts.orderItems;
-    if (eligibleIds.length > 0) {
-      for (const item of orderItems) {
-        const itemId = String(item.menuItemId || item.itemId || item.id || "");
-        if (itemId && eligibleIds.includes(itemId)) {
-          earnedStampsCount += Number(item.qty || item.quantity || 1);
-        }
+    for (const item of orderItems) {
+      const itemId = String(item.menuItemId || item.itemId || item.id || "");
+      if (eligibleIds.length === 0 || (itemId && eligibleIds.includes(itemId))) {
+        earnedStampsCount += Number(item.qty || item.quantity || 1);
       }
     }
   }
