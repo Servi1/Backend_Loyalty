@@ -514,12 +514,19 @@ const claimRewardCoupon = async ({ customerId, tenantId, menuItemId }) => {
     },
   });
 
-  // Log to wallet transaction history (Note: stamps are NOT reset here, only on POS redemption)
+  // Deduct requiredStamps for this coupon from wallet stamps (keep any rollover stamps)
+  const remainingStamps = Math.max(0, (wallet.stamps || 0) - requiredStamps);
+  await mainPrisma.wallet.update({
+    where: { id: wallet.id },
+    data: { stamps: remainingStamps },
+  });
+
+  // Log to wallet transaction history
   await mainPrisma.walletTransaction.create({
     data: {
       walletId: wallet.id,
       points: 0,
-      description: `Generated Stamp Reward Coupon: ${couponCode} for Free ${itemName}`,
+      description: `Generated Stamp Reward Coupon: ${couponCode} for Free ${itemName} (-${requiredStamps} Stamps)`,
       tenantId: tenant.id,
     },
   });
