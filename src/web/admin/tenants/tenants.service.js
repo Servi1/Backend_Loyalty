@@ -214,6 +214,8 @@ const update = async (id, data) => {
     { key: "subBrandStory", serviceType: "brand_story", priceKey: "priceBrandStory", defaultPrice: 0.0 },
     { key: "subAppBrand", serviceType: "app_brand", priceKey: "priceAppBrand", defaultPrice: 99.0 },
     { key: "subAppServi", serviceType: "app_servi", priceKey: "priceAppServi", defaultPrice: 29.0 },
+    { key: "subLoyalty", serviceType: "loyalty", priceKey: "priceLoyalty", defaultPrice: 0.0 },
+    { key: "subStamps", serviceType: "stamps", priceKey: "priceStamps", defaultPrice: 0.0 },
   ];
 
   for (const tf of toggleFields) {
@@ -388,6 +390,9 @@ const getSubscriptions = async () => {
     if (tenant.subKds) { amount += getMonthlyEquivalent(tenant.priceKds, "cycleKds"); activeFeatures.push("KDS"); }
     if (tenant.subCds) { amount += getMonthlyEquivalent(tenant.priceCds, "cycleCds"); activeFeatures.push("CDS"); }
     if (tenant.subBranch) { amount += getMonthlyEquivalent(tenant.priceBranch, "cycleBranch"); activeFeatures.push("Physical Branches"); }
+    if (tenant.subBrandStory) { amount += getMonthlyEquivalent(tenant.priceBrandStory, "cycleBrandStory"); activeFeatures.push("Brand Story"); }
+    if (tenant.subLoyalty) { amount += getMonthlyEquivalent(tenant.priceLoyalty, "cycleLoyalty"); activeFeatures.push("Loyalty Points"); }
+    if (tenant.subStamps) { amount += getMonthlyEquivalent(tenant.priceStamps, "cycleStamps"); activeFeatures.push("Digital Stamps"); }
 
     const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
 
@@ -584,8 +589,22 @@ const getSubscriptions = async () => {
       subQrCashier: tenant.subQrCashier,
       subKds: tenant.subKds,
       subCds: tenant.subCds,
+      subBranch: tenant.subBranch,
+      subBrandStory: tenant.subBrandStory,
+      subLoyalty: tenant.subLoyalty,
+      subStamps: tenant.subStamps,
       kdsQuantity: tenant.kdsQuantity,
       cdsQuantity: tenant.cdsQuantity,
+      priceLoyalty: tenant.priceLoyalty,
+      cycleLoyalty: tenant.cycleLoyalty,
+      priceStamps: tenant.priceStamps,
+      cycleStamps: tenant.cycleStamps,
+      priceBrandStory: tenant.priceBrandStory,
+      cycleBrandStory: tenant.cycleBrandStory,
+      priceAppBrand: tenant.priceAppBrand,
+      cycleAppBrand: tenant.cycleAppBrand,
+      priceAppServi: tenant.priceAppServi,
+      cycleAppServi: tenant.cycleAppServi,
     });
   }
 
@@ -821,6 +840,8 @@ const getInvoices = async (filters = {}) => {
         { flag: "subCds", qtyKey: "cdsQuantity", priceKey: "priceCds", cycleKey: "cycleCds", defaultPrice: 0.0, label: "CDS Customer Display", isSlot: true, typeKey: "cds" },
         { flag: "subBranch", qtyKey: "branchLimit", priceKey: "priceBranch", cycleKey: "cycleBranch", defaultPrice: 0.0, label: "Branch Location", isSlot: true, typeKey: "branch" },
         { flag: "subBrandStory", priceKey: "priceBrandStory", cycleKey: "cycleBrandStory", defaultPrice: 0.0, label: "Brand Story Feature", isSlot: false, typeKey: "brand_story" },
+        { flag: "subLoyalty", priceKey: "priceLoyalty", cycleKey: "cycleLoyalty", defaultPrice: 0.0, label: "Loyalty Points Program", isSlot: false, typeKey: "loyalty" },
+        { flag: "subStamps", priceKey: "priceStamps", cycleKey: "cycleStamps", defaultPrice: 0.0, label: "Digital Stamps Program", isSlot: false, typeKey: "stamps" },
       ];
 
       // Track base slot counts to align add-on slots with remaining registered devices
@@ -915,6 +936,7 @@ const getInvoices = async (filters = {}) => {
                 globalServices.push({
                   id: `${gsvc.typeKey}_slot_${i + 1}`,
                   typeKey: gsvc.typeKey,
+                  isSlot: true,
                   slotIndex: i + 1,
                   name: `${gsvc.label} Slot #${i + 1}`,
                   isCanceled: isSlotCanceled,
@@ -950,6 +972,7 @@ const getInvoices = async (filters = {}) => {
               globalServices.push({
                 id: `${gsvc.typeKey}_license`,
                 typeKey: gsvc.typeKey,
+                isSlot: false,
                 slotIndex: 1,
                 name: gsvc.label,
                 isCanceled: false,
@@ -1186,6 +1209,10 @@ const getInvoices = async (filters = {}) => {
       if (tenant.subQrCashier) activeFeatures.push("QR Cashier");
       if (tenant.subKds) activeFeatures.push("KDS");
       if (tenant.subCds) activeFeatures.push("CDS");
+      if (tenant.subBranch) activeFeatures.push("Physical Branches");
+      if (tenant.subBrandStory) activeFeatures.push("Brand Story");
+      if (tenant.subLoyalty) activeFeatures.push("Loyalty Points");
+      if (tenant.subStamps) activeFeatures.push("Digital Stamps");
       const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
 
       const startPeriodStr = new Date(Math.max(monthStart.getTime(), startedAt.getTime())).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
