@@ -17,6 +17,8 @@ const getMenu = async (db) => {
       id: true,
       name: true,
       nameAr: true,
+      imageUrl: true,
+      iconUrl: true,
       order: true,
       items: {
         where: { isAvailable: true },
