@@ -998,17 +998,18 @@ const getInvoices = async (filters = {}) => {
       }
 
       // Mid-month Slot Add-on Prorated Charges (split into separate single-slot lines)
+      // Only process physical/slot-based add-ons (global licenses are handled in globalServiceConfigs)
       const serviceLabels = {
         pos: "POS Terminal",
         qr_table: "QR Table Dining",
         qr_cashier: "QR Cashier Counter",
         kds: "KDS Kitchen Screen",
         cds: "CDS Customer Display",
-        branch: "Branch Location",
-        app_brand: "App Brand License"
+        branch: "Branch Location"
       };
 
-      const tenantAddons = tenant.slotAddons || [];
+      const slotBasedServiceTypes = ["pos", "qr_table", "qr_cashier", "kds", "cds", "branch"];
+      const tenantAddons = (tenant.slotAddons || []).filter(a => slotBasedServiceTypes.includes((a.serviceType || "").toLowerCase()));
       const addonCounts = {};
       for (const addon of tenantAddons) {
         const addedDate = new Date(addon.addedAt);
