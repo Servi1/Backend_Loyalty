@@ -123,6 +123,7 @@ model Tenant {
   subBranch        Boolean          @default(false)
   subBrandStory    Boolean          @default(false)
   subStamps        Boolean          @default(false)
+  subLoyalty       Boolean          @default(false)
 
   priceAppServi    Float            @default(29.0)
   cycleAppServi    String           @default("monthly")
@@ -136,6 +137,9 @@ model Tenant {
   priceStamps      Float            @default(0.0)
   cycleStamps      String           @default("monthly")
   feeStamps        Float            @default(0.0)
+  priceLoyalty     Float            @default(0.0)
+  cycleLoyalty     String           @default("monthly")
+  feeLoyalty       Float            @default(0.0)
   pricePos         Float            @default(49.0)
   cyclePos         String           @default("monthly")
   feePos           Float            @default(0.0)

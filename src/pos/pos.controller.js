@@ -112,6 +112,14 @@ const getCashDrawerSessions = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: sessions });
 });
 
+const redeemCoupon = catchAsync(async (req, res) => {
+  const { code } = req.body;
+  const tenantId = req.tenantId || req.tenant?.id;
+  const stampService = require("../app/stamp/stamp.service");
+  const data = await stampService.redeemRewardCoupon({ code, tenantId });
+  res.status(200).json({ success: true, data });
+});
+
 module.exports = {
   getCatalog,
   getTables,
@@ -123,5 +131,6 @@ module.exports = {
   getCashDrawerStatus,
   openCashDrawer,
   closeCashDrawer,
-  getCashDrawerSessions
+  getCashDrawerSessions,
+  redeemCoupon,
 };

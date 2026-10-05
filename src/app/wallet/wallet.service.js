@@ -187,32 +187,18 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
 
   let finalStamps = wallet.stamps || 0;
   if (earnedStampsCount > 0 && stampProg && stampProg.enabled !== false) {
-    const reqStamps = Number(stampProg.requiredStamps || 6);
-    const newTotalStamps = (wallet.stamps || 0) + earnedStampsCount;
-
-    if (reqStamps > 0 && newTotalStamps >= reqStamps) {
-      const completedCycles = Math.floor(newTotalStamps / reqStamps);
-      finalStamps = newTotalStamps % reqStamps;
-
-      for (let i = 0; i < completedCycles; i++) {
-        const couponCode = `STAMP-${(tenantObj?.slug || 'SERV').toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
-        await mainPrisma.earnedCoupon.create({
-          data: {
-            code: couponCode,
-            prizeLabel: stampProg.rewardTextEn || "Free Stamp Reward",
-            tenantId: targetTenantId,
-            appUserId: customerId,
-            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          }
-        });
-      }
-    } else {
-      finalStamps = newTotalStamps;
-    }
+    // Option B: Accumulate and keep stamps filled so the customer can view their completed card
+    // and choose when to generate/claim their reward coupon.
+    finalStamps = (wallet.stamps || 0) + earnedStampsCount;
   }
 
   const finalPointsToEarn = points;
   if (finalPointsToEarn <= 0 && earnedStampsCount <= 0) return wallet;
+
+  let txDesc = description || (earnedStampsCount > 0 ? `Points & +${earnedStampsCount} Stamp(s) earned` : "Points earned");
+  if (earnedStampsCount > 0 && description && !description.toLowerCase().includes("stamp")) {
+    txDesc = `${description} (+${earnedStampsCount} Stamp${earnedStampsCount > 1 ? "s" : ""})`;
+  }
 
   const [updatedWallet] = await mainPrisma.$transaction([
     mainPrisma.wallet.update({
@@ -227,7 +213,7 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
       data: {
         walletId: wallet.id,
         points: finalPointsToEarn,
-        description: description || (earnedStampsCount > 0 ? `Points & +${earnedStampsCount} Stamp(s) earned` : "Points earned"),
+        description: txDesc,
         tenantId: targetTenantId || null,
         orderId: opts.orderId || null,
         orderNumber: opts.orderNumber || null,

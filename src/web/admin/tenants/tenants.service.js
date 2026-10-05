@@ -214,6 +214,8 @@ const update = async (id, data) => {
     { key: "subBrandStory", serviceType: "brand_story", priceKey: "priceBrandStory", defaultPrice: 0.0 },
     { key: "subAppBrand", serviceType: "app_brand", priceKey: "priceAppBrand", defaultPrice: 99.0 },
     { key: "subAppServi", serviceType: "app_servi", priceKey: "priceAppServi", defaultPrice: 29.0 },
+    { key: "subLoyalty", serviceType: "loyalty", priceKey: "priceLoyalty", defaultPrice: 0.0 },
+    { key: "subStamps", serviceType: "stamps", priceKey: "priceStamps", defaultPrice: 0.0 },
   ];
 
   for (const tf of toggleFields) {
@@ -248,6 +250,17 @@ const update = async (id, data) => {
     data.stampPrograms = existingTenant.stampPrograms.map(sp => ({ ...sp, enabled: false }));
   } else if (!existingTenant.subStamps && data.subStamps === undefined && data.stampPrograms && Array.isArray(data.stampPrograms)) {
     data.stampPrograms = data.stampPrograms.map(sp => ({ ...sp, enabled: false }));
+  }
+
+  // If subLoyalty is not subscribed, enforce disabled status for loyaltyEnabled and POS cashier toggles
+  if (data.subLoyalty === false) {
+    data.loyaltyEnabled = false;
+    data.loyaltyAddPoints = false;
+    data.loyaltyRedeemPoints = false;
+  } else if (!existingTenant.subLoyalty && data.subLoyalty === undefined) {
+    if (data.loyaltyEnabled) data.loyaltyEnabled = false;
+    if (data.loyaltyAddPoints) data.loyaltyAddPoints = false;
+    if (data.loyaltyRedeemPoints) data.loyaltyRedeemPoints = false;
   }
 
   return mainPrisma.tenant.update({ where: { id }, data });
@@ -377,6 +390,9 @@ const getSubscriptions = async () => {
     if (tenant.subKds) { amount += getMonthlyEquivalent(tenant.priceKds, "cycleKds"); activeFeatures.push("KDS"); }
     if (tenant.subCds) { amount += getMonthlyEquivalent(tenant.priceCds, "cycleCds"); activeFeatures.push("CDS"); }
     if (tenant.subBranch) { amount += getMonthlyEquivalent(tenant.priceBranch, "cycleBranch"); activeFeatures.push("Physical Branches"); }
+    if (tenant.subBrandStory) { amount += getMonthlyEquivalent(tenant.priceBrandStory, "cycleBrandStory"); activeFeatures.push("Brand Story"); }
+    if (tenant.subLoyalty) { amount += getMonthlyEquivalent(tenant.priceLoyalty, "cycleLoyalty"); activeFeatures.push("Loyalty Points"); }
+    if (tenant.subStamps) { amount += getMonthlyEquivalent(tenant.priceStamps, "cycleStamps"); activeFeatures.push("Digital Stamps"); }
 
     const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
 
@@ -573,8 +589,22 @@ const getSubscriptions = async () => {
       subQrCashier: tenant.subQrCashier,
       subKds: tenant.subKds,
       subCds: tenant.subCds,
+      subBranch: tenant.subBranch,
+      subBrandStory: tenant.subBrandStory,
+      subLoyalty: tenant.subLoyalty,
+      subStamps: tenant.subStamps,
       kdsQuantity: tenant.kdsQuantity,
       cdsQuantity: tenant.cdsQuantity,
+      priceLoyalty: tenant.priceLoyalty,
+      cycleLoyalty: tenant.cycleLoyalty,
+      priceStamps: tenant.priceStamps,
+      cycleStamps: tenant.cycleStamps,
+      priceBrandStory: tenant.priceBrandStory,
+      cycleBrandStory: tenant.cycleBrandStory,
+      priceAppBrand: tenant.priceAppBrand,
+      cycleAppBrand: tenant.cycleAppBrand,
+      priceAppServi: tenant.priceAppServi,
+      cycleAppServi: tenant.cycleAppServi,
     });
   }
 
@@ -652,10 +682,11 @@ const getLoyaltyOverview = async (filters = {}) => {
       id: tenant.id,
       tenantName: tenant.name,
       slug: tenant.slug,
-      enabled: tenant.loyaltyEnabled,
+      enabled: (tenant.subLoyalty ? tenant.loyaltyEnabled : false),
+      subLoyalty: tenant.subLoyalty || false,
       subStamps: tenant.subStamps || false,
-      loyaltyAddPoints: tenant.loyaltyAddPoints,
-      loyaltyRedeemPoints: tenant.loyaltyRedeemPoints,
+      loyaltyAddPoints: tenant.subLoyalty ? (tenant.loyaltyAddPoints !== false) : false,
+      loyaltyRedeemPoints: tenant.subLoyalty ? (tenant.loyaltyRedeemPoints !== false) : false,
       earnRate: tenant.loyaltyEarnRate,
       redeemRate: tenant.loyaltyRedeemRate,
       stampPrograms: (tenant.stampPrograms || []).map(sp => ({
@@ -809,6 +840,8 @@ const getInvoices = async (filters = {}) => {
         { flag: "subCds", qtyKey: "cdsQuantity", priceKey: "priceCds", cycleKey: "cycleCds", defaultPrice: 0.0, label: "CDS Customer Display", isSlot: true, typeKey: "cds" },
         { flag: "subBranch", qtyKey: "branchLimit", priceKey: "priceBranch", cycleKey: "cycleBranch", defaultPrice: 0.0, label: "Branch Location", isSlot: true, typeKey: "branch" },
         { flag: "subBrandStory", priceKey: "priceBrandStory", cycleKey: "cycleBrandStory", defaultPrice: 0.0, label: "Brand Story Feature", isSlot: false, typeKey: "brand_story" },
+        { flag: "subLoyalty", priceKey: "priceLoyalty", cycleKey: "cycleLoyalty", defaultPrice: 0.0, label: "Loyalty Points Program", isSlot: false, typeKey: "loyalty" },
+        { flag: "subStamps", priceKey: "priceStamps", cycleKey: "cycleStamps", defaultPrice: 0.0, label: "Digital Stamps Program", isSlot: false, typeKey: "stamps" },
       ];
 
       // Track base slot counts to align add-on slots with remaining registered devices
@@ -903,6 +936,7 @@ const getInvoices = async (filters = {}) => {
                 globalServices.push({
                   id: `${gsvc.typeKey}_slot_${i + 1}`,
                   typeKey: gsvc.typeKey,
+                  isSlot: true,
                   slotIndex: i + 1,
                   name: `${gsvc.label} Slot #${i + 1}`,
                   isCanceled: isSlotCanceled,
@@ -938,6 +972,7 @@ const getInvoices = async (filters = {}) => {
               globalServices.push({
                 id: `${gsvc.typeKey}_license`,
                 typeKey: gsvc.typeKey,
+                isSlot: false,
                 slotIndex: 1,
                 name: gsvc.label,
                 isCanceled: false,
@@ -963,17 +998,18 @@ const getInvoices = async (filters = {}) => {
       }
 
       // Mid-month Slot Add-on Prorated Charges (split into separate single-slot lines)
+      // Only process physical/slot-based add-ons (global licenses are handled in globalServiceConfigs)
       const serviceLabels = {
         pos: "POS Terminal",
         qr_table: "QR Table Dining",
         qr_cashier: "QR Cashier Counter",
         kds: "KDS Kitchen Screen",
         cds: "CDS Customer Display",
-        branch: "Branch Location",
-        app_brand: "App Brand License"
+        branch: "Branch Location"
       };
 
-      const tenantAddons = tenant.slotAddons || [];
+      const slotBasedServiceTypes = ["pos", "qr_table", "qr_cashier", "kds", "cds", "branch"];
+      const tenantAddons = (tenant.slotAddons || []).filter(a => slotBasedServiceTypes.includes((a.serviceType || "").toLowerCase()));
       const addonCounts = {};
       for (const addon of tenantAddons) {
         const addedDate = new Date(addon.addedAt);
@@ -1174,6 +1210,10 @@ const getInvoices = async (filters = {}) => {
       if (tenant.subQrCashier) activeFeatures.push("QR Cashier");
       if (tenant.subKds) activeFeatures.push("KDS");
       if (tenant.subCds) activeFeatures.push("CDS");
+      if (tenant.subBranch) activeFeatures.push("Physical Branches");
+      if (tenant.subBrandStory) activeFeatures.push("Brand Story");
+      if (tenant.subLoyalty) activeFeatures.push("Loyalty Points");
+      if (tenant.subStamps) activeFeatures.push("Digital Stamps");
       const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
 
       const startPeriodStr = new Date(Math.max(monthStart.getTime(), startedAt.getTime())).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -1502,13 +1542,21 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
 };
 
 const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
-  const targetTenantId = (tenantId && tenantId !== "null" && tenantId !== "undefined" && tenantId !== "all")
+  let targetTenantId = (tenantId && tenantId !== "null" && tenantId !== "undefined" && tenantId !== "all")
     ? tenantId
     : null;
 
-  const tenant = targetTenantId
-    ? await mainPrisma.tenant.findUnique({ where: { id: targetTenantId } })
-    : null;
+  let tenant = null;
+  if (targetTenantId) {
+    tenant = await mainPrisma.tenant.findFirst({
+      where: {
+        OR: [{ id: targetTenantId }, { slug: targetTenantId }]
+      }
+    });
+    if (tenant) {
+      targetTenantId = tenant.id;
+    }
+  }
 
   const customer = await mainPrisma.appUser.findUnique({
     where: { id: customerId }
@@ -1607,6 +1655,14 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     }
   }
 
+  const customerCoupons = await mainPrisma.earnedCoupon.findMany({
+    where: { appUserId: customerId },
+    include: {
+      tenant: { select: { id: true, name: true, stampPrograms: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
   const orders = rawOrders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const visits = orders.map((o) => ({
     id: `v_${o.id}`,
@@ -1701,6 +1757,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
       items: o.items ? o.items.reduce((acc, item) => acc + item.quantity, 0) : 0,
       itemsList: (o.items || []).map((i) => ({
         id: i.id,
+        menuItemId: i.menuItemId || i.itemId || i.id,
         quantity: i.quantity,
         price: Number(i.price || 0),
         name: i.menuItem?.name || i.name || i.title || "Menu Item",
@@ -1731,6 +1788,141 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     tier: getCustomerTier(wallet, tenant, customer),
     joinedAt: customer.createdAt,
     pointsHistory,
+    stampHistory: (() => {
+      const history = [];
+
+      for (const tObj of targetTenants) {
+        const stampProg = Array.isArray(tObj?.stampPrograms) ? tObj.stampPrograms[0] : null;
+        const requiredStamps = Number(stampProg?.requiredStamps || 4);
+        const isStampActive = stampProg && (tObj.subStamps === true || stampProg.enabled !== false);
+        const eligibleIds = Array.isArray(stampProg?.eligibleItemIds) ? stampProg.eligibleItemIds.map(String).filter(Boolean) : [];
+        const eligibleNames = Array.isArray(stampProg?.eligibleItemNames) ? stampProg.eligibleItemNames.map(n => String(n).toLowerCase().trim()).filter(Boolean) : [];
+
+        // 1. Coupons for this brand
+        const brandCoupons = (customerCoupons || []).filter(c => c.tenantId === tObj.id);
+        const couponEvents = [];
+        brandCoupons.forEach((c) => {
+          if (c.isUsed) {
+            couponEvents.push({
+              id: `redeem_${c.id}`,
+              date: new Date(c.usedAt || c.updatedAt || c.createdAt),
+              status: "redeemed",
+              reason: `Redeemed for ${c.prizeLabel}`,
+              stampsCount: `0/${requiredStamps}`,
+              branchName: c.branchName || "—",
+              brandName: tObj.name || "Brand",
+              tenantId: tObj.id,
+              couponCode: c.code,
+              type: "coupon_redeem",
+            });
+          }
+
+          if (c.expiresAt && !c.isUsed && new Date(c.expiresAt) < new Date()) {
+            couponEvents.push({
+              id: `exp_${c.id}`,
+              date: new Date(c.expiresAt),
+              status: "expired",
+              reason: `Expired: ${c.prizeLabel}`,
+              stampsCount: `${requiredStamps}/${requiredStamps}`,
+              branchName: "—",
+              brandName: tObj.name || "Brand",
+              tenantId: tObj.id,
+              couponCode: c.code,
+              type: "coupon_exp",
+            });
+          }
+
+          couponEvents.push({
+            id: `gen_${c.id}`,
+            date: new Date(c.createdAt),
+            status: "generated",
+            reason: `Generated for ${c.prizeLabel}`,
+            stampsCount: `${requiredStamps}/${requiredStamps}`,
+            branchName: "—",
+            brandName: tObj.name || "Brand",
+            tenantId: tObj.id,
+            couponCode: c.code,
+            type: "coupon_gen",
+          });
+        });
+
+        // 2. Completed orders for this brand that earned stamps
+        const brandOrders = orderHistory.filter(o => o.tenantId === tObj.id && (o.status || "").toUpperCase() === "COMPLETED");
+        const orderEvents = [];
+        if (isStampActive) {
+          brandOrders.forEach((o) => {
+            let earnedStamps = 0;
+            if (Array.isArray(o.itemsList)) {
+              o.itemsList.forEach((it) => {
+                const mId = String(it.menuItemId || it.itemId || it.id || "");
+                const itName = String(it.name || "").toLowerCase().trim();
+                const matchesId = eligibleIds.length === 0 || (mId && eligibleIds.includes(mId));
+                const matchesName = eligibleNames.length > 0 && itName && eligibleNames.some(en => itName.includes(en) || en.includes(itName));
+
+                if (eligibleIds.length === 0 || matchesId || matchesName) {
+                  earnedStamps += Number(it.quantity || 1);
+                }
+              });
+            }
+
+            if (earnedStamps > 0) {
+              orderEvents.push({
+                id: `order_${o.id}`,
+                date: new Date(o.createdAt || o.date),
+                earnedStamps,
+                reason: `Earned for Order #${o.orderNumber || o.id.slice(0, 6)}`,
+                branchName: o.branch || o.branchName || "Register Terminal",
+                brandName: o.tenantName || tObj.name || "Brand",
+                tenantId: tObj.id,
+                type: "order",
+              });
+            }
+          });
+        }
+
+        // 3. Chronological timeline to track stamp card cycle (0 -> 1/N -> 2/N -> N/N -> Generated)
+        const combined = [...couponEvents, ...orderEvents];
+        combined.sort((a, b) => a.date - b.date);
+
+        let cumulative = 0;
+        combined.forEach((ev) => {
+          if (ev.type === "order") {
+            cumulative += ev.earnedStamps;
+            const isCompleted = cumulative >= requiredStamps;
+            const display = Math.min(cumulative, requiredStamps);
+            history.push({
+              id: ev.id,
+              date: ev.date.toISOString(),
+              status: isCompleted ? "completed" : "earned",
+              reason: ev.reason,
+              stampsCount: `${display}/${requiredStamps}`,
+              branchName: ev.branchName,
+              brandName: ev.brandName,
+              tenantId: ev.tenantId,
+            });
+            if (isCompleted) cumulative = 0;
+          } else {
+            history.push({
+              id: ev.id,
+              date: ev.date.toISOString(),
+              status: ev.status,
+              reason: ev.reason,
+              stampsCount: ev.stampsCount,
+              branchName: ev.branchName,
+              brandName: ev.brandName,
+              tenantId: ev.tenantId,
+              couponCode: ev.couponCode,
+            });
+            if (ev.type === "coupon_gen") {
+              cumulative = 0;
+            }
+          }
+        });
+      }
+
+      history.sort((a, b) => new Date(b.date) - new Date(a.date));
+      return history;
+    })(),
     orders: orderHistory,
     visits,
   };
@@ -2546,6 +2738,300 @@ const getTenantProducts = async (tenantId) => {
   }
 };
 
+const getSuperAdminStampActivity = async (tenantId = null) => {
+  let resolvedTenantId = null;
+  if (tenantId && tenantId !== "all" && tenantId !== "null" && tenantId !== "undefined") {
+    const matched = await mainPrisma.tenant.findFirst({
+      where: {
+        OR: [{ id: tenantId }, { slug: tenantId }]
+      },
+      select: { id: true }
+    });
+    if (matched) {
+      resolvedTenantId = matched.id;
+    } else {
+      resolvedTenantId = tenantId;
+    }
+  }
+
+  const where = {};
+  if (resolvedTenantId) {
+    where.tenantId = resolvedTenantId;
+  }
+
+  // 1. Fetch recent earned coupons
+  const coupons = await mainPrisma.earnedCoupon.findMany({
+    where,
+    include: {
+      appUser: { select: { id: true, name: true, phone: true } },
+      tenant: { select: { id: true, name: true, stampPrograms: true, subStamps: true, dbUrl: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
+
+  // 2. Fetch active tenants to get completed orders
+  const tenantWhere = { isActive: true };
+  if (resolvedTenantId) {
+    tenantWhere.id = resolvedTenantId;
+  }
+  const tenants = await mainPrisma.tenant.findMany({ where: tenantWhere });
+
+  // Map of app users for resolving names and phones
+  const appUsers = await mainPrisma.appUser.findMany({
+    select: { id: true, name: true, phone: true }
+  });
+  const userById = new Map();
+  const userByPhone = new Map();
+  appUsers.forEach((u) => {
+    if (u.id) userById.set(u.id, u);
+    if (u.phone) {
+      const clean = u.phone.trim();
+      userByPhone.set(clean, u);
+      const digits = clean.replace(/\D/g, "");
+      if (digits) userByPhone.set(digits, u);
+      const last9 = digits.slice(-9);
+      if (last9) userByPhone.set(last9, u);
+    }
+  });
+
+  const activity = [];
+
+  for (const t of tenants) {
+    const stampProg = Array.isArray(t.stampPrograms) ? t.stampPrograms[0] : null;
+    const requiredStamps = Number(stampProg?.requiredStamps || 4);
+    const isStampActive = stampProg && (t.subStamps === true || stampProg.enabled !== false);
+    const eligibleIds = Array.isArray(stampProg?.eligibleItemIds) ? stampProg.eligibleItemIds.map(String).filter(Boolean) : [];
+    const eligibleNames = Array.isArray(stampProg?.eligibleItemNames) ? stampProg.eligibleItemNames.map((n) => String(n).toLowerCase().trim()).filter(Boolean) : [];
+
+    // Coupons for this tenant
+    const tCoupons = coupons.filter((c) => c.tenantId === t.id);
+    const couponEvents = [];
+    tCoupons.forEach((c) => {
+      const cUserKey = c.appUser?.phone || c.appUserId || "unknown";
+      if (c.isUsed) {
+        couponEvents.push({
+          id: `redeem_${c.id}`,
+          date: new Date(c.usedAt || c.updatedAt || c.createdAt),
+          status: "redeemed",
+          reason: `Redeemed for ${c.prizeLabel}`,
+          stampsCount: `0/${requiredStamps}`,
+          branchName: c.branchName || "—",
+          brandName: t.name || "Brand",
+          tenantId: t.id,
+          customerName: c.appUser?.name || "Valued Customer",
+          customerPhone: c.appUser?.phone || "—",
+          userKey: cUserKey,
+          type: "coupon_redeem",
+        });
+      }
+      if (c.expiresAt && !c.isUsed && new Date(c.expiresAt) < new Date()) {
+        couponEvents.push({
+          id: `exp_${c.id}`,
+          date: new Date(c.expiresAt),
+          status: "expired",
+          reason: `Expired: ${c.prizeLabel}`,
+          stampsCount: `${requiredStamps}/${requiredStamps}`,
+          branchName: "—",
+          brandName: t.name || "Brand",
+          tenantId: t.id,
+          customerName: c.appUser?.name || "Valued Customer",
+          customerPhone: c.appUser?.phone || "—",
+          userKey: cUserKey,
+          type: "coupon_exp",
+        });
+      }
+      couponEvents.push({
+        id: `gen_${c.id}`,
+        date: new Date(c.createdAt),
+        status: "generated",
+        reason: `Generated for ${c.prizeLabel}`,
+        stampsCount: `${requiredStamps}/${requiredStamps}`,
+        branchName: "—",
+        brandName: t.name || "Brand",
+        tenantId: t.id,
+        customerName: c.appUser?.name || "Valued Customer",
+        customerPhone: c.appUser?.phone || "—",
+        userKey: cUserKey,
+        type: "coupon_gen",
+      });
+    });
+
+    // Orders for this tenant if stamps are active
+    const orderEvents = [];
+    if (isStampActive && t.dbUrl) {
+      try {
+        const tenantDb = getTenantClient(t.dbUrl);
+        const orders = await tenantDb.order.findMany({
+          where: { status: "COMPLETED" },
+          include: { branch: true, items: { include: { menuItem: true } } },
+          orderBy: { createdAt: "asc" },
+          take: 200,
+        });
+
+        orders.forEach((o) => {
+          let earnedStamps = 0;
+          if (Array.isArray(o.items)) {
+            o.items.forEach((it) => {
+              const mId = String(it.menuItemId || it.itemId || it.id || "");
+              const itName = String(it.name || it.menuItem?.name || "").toLowerCase().trim();
+              const matchesId = eligibleIds.length === 0 || (mId && eligibleIds.includes(mId));
+              const matchesName = eligibleNames.length > 0 && itName && eligibleNames.some((en) => itName.includes(en) || en.includes(itName));
+
+              if (eligibleIds.length === 0 || matchesId || matchesName) {
+                earnedStamps += Number(it.quantity || 1);
+              }
+            });
+          }
+
+          if (earnedStamps > 0) {
+            let resolvedUser = null;
+            if (o.customerId) resolvedUser = userById.get(o.customerId);
+            if (!resolvedUser && o.customerPhone) {
+              const clean = o.customerPhone.trim();
+              const last9 = clean.replace(/\D/g, "").slice(-9);
+              resolvedUser = userByPhone.get(clean) || userByPhone.get(last9);
+            }
+
+            const cName = resolvedUser?.name || o.customerName || "Valued Customer";
+            const cPhone = o.customerPhone || resolvedUser?.phone || "—";
+            const cUserKey = cPhone !== "—" ? cPhone : (o.customerId || `order_${o.id}`);
+
+            orderEvents.push({
+              id: `order_${o.id}`,
+              date: new Date(o.createdAt),
+              earnedStamps,
+              reason: `Earned for Order #${o.orderNumber || o.id.slice(0, 6)}`,
+              branchName: o.branch?.name || "Main Branch",
+              brandName: t.name || "Brand",
+              tenantId: t.id,
+              customerName: cName,
+              customerPhone: cPhone,
+              userKey: cUserKey,
+              type: "order",
+            });
+          }
+        });
+      } catch (err) {
+        console.error(`Failed to fetch orders for stamp activity from tenant ${t.name}:`, err.message);
+      }
+    }
+
+    // Combine and group by userKey to calculate stamp progress per customer
+    const userGroups = new Map();
+    [...couponEvents, ...orderEvents].forEach((item) => {
+      const k = item.userKey || "unknown";
+      if (!userGroups.has(k)) userGroups.set(k, []);
+      userGroups.get(k).push(item);
+    });
+
+    for (const [_, items] of userGroups.entries()) {
+      items.sort((a, b) => a.date - b.date);
+      let cumulative = 0;
+      items.forEach((item) => {
+        if (item.type === "order") {
+          cumulative += item.earnedStamps;
+          const isCompleted = cumulative >= requiredStamps;
+          const display = Math.min(cumulative, requiredStamps);
+          activity.push({
+            id: item.id,
+            date: item.date.toISOString(),
+            status: isCompleted ? "completed" : "earned",
+            reason: item.reason,
+            stampsCount: `${display}/${requiredStamps}`,
+            branchName: item.branchName,
+            brandName: item.brandName,
+            tenantId: item.tenantId,
+            customerName: item.customerName,
+            customerPhone: item.customerPhone,
+          });
+          if (isCompleted) cumulative = 0;
+        } else {
+          activity.push({
+            id: item.id,
+            date: item.date.toISOString(),
+            status: item.status,
+            reason: item.reason,
+            stampsCount: item.stampsCount,
+            branchName: item.branchName,
+            brandName: item.brandName,
+            tenantId: item.tenantId,
+            customerName: item.customerName,
+            customerPhone: item.customerPhone,
+          });
+          if (item.type === "coupon_gen") {
+            cumulative = 0;
+          }
+        }
+      });
+    }
+  }
+
+  // 3. Fallback: Include any standalone walletTransactions mentioning Stamp not yet represented
+  const seenOrderIds = new Set(activity.map((a) => a.id));
+  const seenOrderNumbers = new Set();
+  activity.forEach((a) => {
+    const match = a.reason && a.reason.match(/#([A-Za-z0-9\-]+)/);
+    if (match) seenOrderNumbers.add(match[1]);
+  });
+
+  const txWhere = {
+    description: { contains: "Stamp", mode: "insensitive" },
+  };
+  if (resolvedTenantId) {
+    txWhere.tenantId = resolvedTenantId;
+  }
+
+  try {
+    const stampTxs = await mainPrisma.walletTransaction.findMany({
+      where: txWhere,
+      include: {
+        wallet: {
+          include: {
+            appUser: { select: { id: true, name: true, phone: true } },
+            tenant: { select: { id: true, name: true, stampPrograms: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+
+    stampTxs.forEach((tx) => {
+      const ref = tx.orderNumber ? tx.orderNumber.replace(/^#/, "") : null;
+      if (ref && seenOrderNumbers.has(ref)) return;
+      if (tx.orderId && seenOrderIds.has(`order_${tx.orderId}`)) return;
+      const desc = (tx.description || "").toLowerCase();
+      if (desc.includes("generated") || desc.includes("claimed") || desc.includes("redeem")) return;
+
+      const tId = tx.tenantId || tx.wallet?.tenantId;
+      const stampProg = Array.isArray(tx.wallet?.tenant?.stampPrograms) ? tx.wallet.tenant.stampPrograms[0] : null;
+      const requiredStamps = Number(stampProg?.requiredStamps || 4);
+      const match = tx.description ? tx.description.match(/\+(\d+)\s*Stamp/i) : null;
+      const earnedQty = match ? Number(match[1]) : 1;
+      const isCompleted = earnedQty >= requiredStamps;
+
+      activity.push({
+        id: `tx_${tx.id}`,
+        date: new Date(tx.createdAt).toISOString(),
+        status: isCompleted ? "completed" : "earned",
+        reason: tx.orderNumber ? `Earned for Order #${tx.orderNumber}` : (tx.description || "Earned stamps"),
+        stampsCount: isCompleted ? `${requiredStamps}/${requiredStamps}` : `${earnedQty}/${requiredStamps}`,
+        branchName: "Main Branch",
+        brandName: tx.wallet?.tenant?.name || "Brand",
+        tenantId: tId,
+        customerName: tx.wallet?.appUser?.name || "Valued Customer",
+        customerPhone: tx.wallet?.appUser?.phone || "—",
+      });
+    });
+  } catch (txErr) {
+    console.error("Failed to query fallback stamp transactions:", txErr.message);
+  }
+
+  activity.sort((a, b) => new Date(b.date) - new Date(a.date));
+  return activity;
+};
+
 module.exports = {
   getAll,
   getById,
@@ -2561,6 +3047,7 @@ module.exports = {
   syncAllTenantOrders,
   getSuperAdminCustomers,
   getSuperAdminCustomerDetails,
+  getSuperAdminStampActivity,
   addSuperAdminCustomer,
   deleteSuperAdminCustomer,
   bulkUploadSuperAdminCustomers,

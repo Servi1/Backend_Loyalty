@@ -655,13 +655,12 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
             earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
           }
 
-          const pointsToEarn = Math.floor(updated.total * earnRate);
-          if (pointsToEarn > 0) {
-            await loyaltyService.earnPoints(db, targetCustomerId, pointsToEarn, description, tenantId, {
-              orderId: updated.id,
-              orderNumber: updated.orderNumber
-            });
-          }
+          const pointsToEarn = earnRate > 0 ? Math.floor(updated.total * earnRate) : 0;
+          await loyaltyService.earnPoints(db, targetCustomerId, pointsToEarn, description, tenantId, {
+            orderId: updated.id,
+            orderNumber: updated.orderNumber,
+            items: updated.items
+          });
         }
       }
     } catch (err) {

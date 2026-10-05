@@ -100,6 +100,21 @@ const getSuperAdminCustomerDetails = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+const getSuperAdminStampActivity = catchAsync(async (req, res) => {
+  let tenantId = req.query.tenantId;
+  if (!tenantId || tenantId === "all") {
+    if (req.tenant && req.tenant.id) {
+      tenantId = req.tenant.id;
+    } else if (req.headers["x-tenant-id"]) {
+      tenantId = req.headers["x-tenant-id"];
+    } else if (req.user && req.user.role !== "SUPER_ADMIN" && req.user.tenantId) {
+      tenantId = req.user.tenantId;
+    }
+  }
+  const result = await tenantsService.getSuperAdminStampActivity(tenantId);
+  res.json({ success: true, data: result });
+});
+
 const addSuperAdminCustomer = catchAsync(async (req, res) => {
   const customer = await tenantsService.addSuperAdminCustomer(req.body);
   res.status(201).json({ success: true, data: customer });
@@ -180,6 +195,7 @@ module.exports = {
   getSuperAdminOrderDetail,
   getSuperAdminCustomers,
   getSuperAdminCustomerDetails,
+  getSuperAdminStampActivity,
   addSuperAdminCustomer,
   deleteSuperAdminCustomer,
   bulkUploadSuperAdminCustomers,
