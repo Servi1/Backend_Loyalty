@@ -250,11 +250,15 @@ const update = async (id, data) => {
     data.stampPrograms = data.stampPrograms.map(sp => ({ ...sp, enabled: false }));
   }
 
-  // If subLoyalty is not subscribed, enforce disabled status for loyaltyEnabled
+  // If subLoyalty is not subscribed, enforce disabled status for loyaltyEnabled and POS cashier toggles
   if (data.subLoyalty === false) {
     data.loyaltyEnabled = false;
-  } else if (!existingTenant.subLoyalty && data.subLoyalty === undefined && data.loyaltyEnabled) {
-    data.loyaltyEnabled = false;
+    data.loyaltyAddPoints = false;
+    data.loyaltyRedeemPoints = false;
+  } else if (!existingTenant.subLoyalty && data.subLoyalty === undefined) {
+    if (data.loyaltyEnabled) data.loyaltyEnabled = false;
+    if (data.loyaltyAddPoints) data.loyaltyAddPoints = false;
+    if (data.loyaltyRedeemPoints) data.loyaltyRedeemPoints = false;
   }
 
   return mainPrisma.tenant.update({ where: { id }, data });
@@ -662,8 +666,8 @@ const getLoyaltyOverview = async (filters = {}) => {
       enabled: (tenant.subLoyalty ? tenant.loyaltyEnabled : false),
       subLoyalty: tenant.subLoyalty || false,
       subStamps: tenant.subStamps || false,
-      loyaltyAddPoints: tenant.loyaltyAddPoints,
-      loyaltyRedeemPoints: tenant.loyaltyRedeemPoints,
+      loyaltyAddPoints: tenant.subLoyalty ? (tenant.loyaltyAddPoints !== false) : false,
+      loyaltyRedeemPoints: tenant.subLoyalty ? (tenant.loyaltyRedeemPoints !== false) : false,
       earnRate: tenant.loyaltyEarnRate,
       redeemRate: tenant.loyaltyRedeemRate,
       stampPrograms: (tenant.stampPrograms || []).map(sp => ({
