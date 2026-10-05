@@ -10,7 +10,7 @@ router.get("/profile/me", extractTenant, authenticate, ctrl.getProfile);
 router.put("/profile/me", extractTenant, authenticate, ctrl.updateProfile);
 
 // Admin-only endpoints
-router.use(extractTenant, authenticate);
+router.use(authenticate);
 router.get("/sync-status", authorize("SUPER_ADMIN"), ctrl.getSyncStatus);
 router.post("/:id/sync-orders", authorize("SUPER_ADMIN"), ctrl.syncTenantOrders);
 router.get("/overview", authorize("SUPER_ADMIN"), ctrl.getOverview);

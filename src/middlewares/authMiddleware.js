@@ -61,6 +61,22 @@ const authenticate = async (req, _res, next) => {
       };
     } else {
       if (!req.tenantDb) {
+        const tenantHeader = req.params?.tenantId || req.headers?.["x-tenant-id"] || req.query?.tenantId;
+        if (tenantHeader && tenantHeader !== "all" && tenantHeader !== "null" && tenantHeader !== "undefined") {
+          const tenantObj = await mainPrisma.tenant.findFirst({
+            where: {
+              OR: [{ id: tenantHeader }, { slug: tenantHeader }]
+            }
+          });
+          if (tenantObj && tenantObj.isActive) {
+            const { getTenantClient } = require("../config/tenantManager");
+            req.tenantId = tenantObj.id;
+            req.tenant = tenantObj;
+            req.tenantDb = getTenantClient(tenantObj.dbUrl);
+          }
+        }
+      }
+      if (!req.tenantDb) {
         throw new ApiError(400, "Tenant context required for this user token");
       }
       const user = await req.tenantDb.user.findUnique({

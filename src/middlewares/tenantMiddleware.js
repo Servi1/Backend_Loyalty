@@ -13,7 +13,7 @@ const extractTenant = async (req, _res, next) => {
 
     console.log(`[DEBUG extractTenant] tenantId: "${tenantId}"`);
 
-    if (!tenantId) {
+    if (!tenantId || tenantId === "all" || tenantId === "null" || tenantId === "undefined") {
       return next();
     }
 
