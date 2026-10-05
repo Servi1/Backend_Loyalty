@@ -250,6 +250,13 @@ const update = async (id, data) => {
     data.stampPrograms = data.stampPrograms.map(sp => ({ ...sp, enabled: false }));
   }
 
+  // If subLoyalty is not subscribed, enforce disabled status for loyaltyEnabled
+  if (data.subLoyalty === false) {
+    data.loyaltyEnabled = false;
+  } else if (!existingTenant.subLoyalty && data.subLoyalty === undefined && data.loyaltyEnabled) {
+    data.loyaltyEnabled = false;
+  }
+
   return mainPrisma.tenant.update({ where: { id }, data });
 };
 
@@ -652,7 +659,8 @@ const getLoyaltyOverview = async (filters = {}) => {
       id: tenant.id,
       tenantName: tenant.name,
       slug: tenant.slug,
-      enabled: tenant.loyaltyEnabled,
+      enabled: (tenant.subLoyalty ? tenant.loyaltyEnabled : false),
+      subLoyalty: tenant.subLoyalty || false,
       subStamps: tenant.subStamps || false,
       loyaltyAddPoints: tenant.loyaltyAddPoints,
       loyaltyRedeemPoints: tenant.loyaltyRedeemPoints,
