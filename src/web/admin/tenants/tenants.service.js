@@ -1502,13 +1502,21 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
 };
 
 const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
-  const targetTenantId = (tenantId && tenantId !== "null" && tenantId !== "undefined" && tenantId !== "all")
+  let targetTenantId = (tenantId && tenantId !== "null" && tenantId !== "undefined" && tenantId !== "all")
     ? tenantId
     : null;
 
-  const tenant = targetTenantId
-    ? await mainPrisma.tenant.findUnique({ where: { id: targetTenantId } })
-    : null;
+  let tenant = null;
+  if (targetTenantId) {
+    tenant = await mainPrisma.tenant.findFirst({
+      where: {
+        OR: [{ id: targetTenantId }, { slug: targetTenantId }]
+      }
+    });
+    if (tenant) {
+      targetTenantId = tenant.id;
+    }
+  }
 
   const customer = await mainPrisma.appUser.findUnique({
     where: { id: customerId }
@@ -2691,9 +2699,24 @@ const getTenantProducts = async (tenantId) => {
 };
 
 const getSuperAdminStampActivity = async (tenantId = null) => {
-  const where = {};
+  let resolvedTenantId = null;
   if (tenantId && tenantId !== "all" && tenantId !== "null" && tenantId !== "undefined") {
-    where.tenantId = tenantId;
+    const matched = await mainPrisma.tenant.findFirst({
+      where: {
+        OR: [{ id: tenantId }, { slug: tenantId }]
+      },
+      select: { id: true }
+    });
+    if (matched) {
+      resolvedTenantId = matched.id;
+    } else {
+      resolvedTenantId = tenantId;
+    }
+  }
+
+  const where = {};
+  if (resolvedTenantId) {
+    where.tenantId = resolvedTenantId;
   }
 
   // 1. Fetch recent earned coupons
@@ -2709,8 +2732,8 @@ const getSuperAdminStampActivity = async (tenantId = null) => {
 
   // 2. Fetch active tenants to get completed orders
   const tenantWhere = { isActive: true };
-  if (tenantId && tenantId !== "all" && tenantId !== "null" && tenantId !== "undefined") {
-    tenantWhere.id = tenantId;
+  if (resolvedTenantId) {
+    tenantWhere.id = resolvedTenantId;
   }
   const tenants = await mainPrisma.tenant.findMany({ where: tenantWhere });
 
@@ -2915,8 +2938,8 @@ const getSuperAdminStampActivity = async (tenantId = null) => {
   const txWhere = {
     description: { contains: "Stamp", mode: "insensitive" },
   };
-  if (tenantId && tenantId !== "all" && tenantId !== "null" && tenantId !== "undefined") {
-    txWhere.tenantId = tenantId;
+  if (resolvedTenantId) {
+    txWhere.tenantId = resolvedTenantId;
   }
 
   try {

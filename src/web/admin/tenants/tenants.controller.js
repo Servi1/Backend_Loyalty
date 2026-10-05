@@ -101,7 +101,16 @@ const getSuperAdminCustomerDetails = catchAsync(async (req, res) => {
 });
 
 const getSuperAdminStampActivity = catchAsync(async (req, res) => {
-  const { tenantId } = req.query;
+  let tenantId = req.query.tenantId;
+  if (!tenantId || tenantId === "all") {
+    if (req.tenant && req.tenant.id) {
+      tenantId = req.tenant.id;
+    } else if (req.headers["x-tenant-id"]) {
+      tenantId = req.headers["x-tenant-id"];
+    } else if (req.user && req.user.role !== "SUPER_ADMIN" && req.user.tenantId) {
+      tenantId = req.user.tenantId;
+    }
+  }
   const result = await tenantsService.getSuperAdminStampActivity(tenantId);
   res.json({ success: true, data: result });
 });
