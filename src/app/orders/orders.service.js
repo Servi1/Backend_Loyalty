@@ -184,11 +184,57 @@ const isBranchOpenNow = (branch) => {
 // ─── placeOrder ───────────────────────────────────────────────────────────────
 
 const placeOrder = async (db, userId, body, tenantId, tenant) => {
-  const { branchId, tableId, qrCashierId, cashierId, type = "DINE_IN", customOrderTypeId, items, notes, total, paymentMethod, source, staffId, earnRate, selectedSlot, selectedSlotDate, customerName, customerPhone } = body;
+  const { branchId, tableId, qrCashierId, cashierId, type = "DINE_IN", customOrderTypeId, items, notes, total, paymentMethod, source, staffId, earnRate, selectedSlot, selectedSlotDate, customerName, customerPhone, couponCode, coupon } = body;
 
   if (!branchId) throw new ApiError(400, "branchId is required");
   if (!items || !Array.isArray(items) || items.length === 0) {
     throw new ApiError(400, "Order must contain at least one item");
+  }
+
+  // Validate coupon if provided or if paymentMethod is free_reward
+  let validatedCoupon = null;
+  let isFreeRewardOrder = paymentMethod === "free_reward";
+  const rawCouponCode = couponCode || coupon;
+
+  if (rawCouponCode || isFreeRewardOrder) {
+    if (rawCouponCode) {
+      const cleanCode = String(rawCouponCode).trim().toUpperCase();
+
+      // Check mainPrisma EarnedCoupon (Stamp / Loyalty reward coupons)
+      validatedCoupon = await mainPrisma.earnedCoupon.findFirst({
+        where: { code: cleanCode }
+      });
+
+      if (validatedCoupon) {
+        if (validatedCoupon.isUsed) {
+          throw new ApiError(400, `Reward coupon code ${cleanCode} has already been redeemed.`);
+        }
+        if (validatedCoupon.expiresAt && new Date(validatedCoupon.expiresAt) < new Date()) {
+          throw new ApiError(400, `Reward coupon code ${cleanCode} has expired.`);
+        }
+        isFreeRewardOrder = true;
+      } else {
+        // Fallback check tenant database Coupon table
+        const tenantCoupon = await db.coupon.findFirst({
+          where: { code: cleanCode, isActive: true }
+        });
+
+        if (tenantCoupon) {
+          if (tenantCoupon.endDate && new Date(tenantCoupon.endDate) < new Date()) {
+            throw new ApiError(400, `Coupon code ${cleanCode} has expired.`);
+          }
+          if (tenantCoupon.quantity > 0 && tenantCoupon.usedCount >= tenantCoupon.quantity) {
+            throw new ApiError(400, `Coupon code ${cleanCode} usage limit reached.`);
+          }
+          validatedCoupon = { ...tenantCoupon, isTenantCoupon: true };
+          if (tenantCoupon.type === "items" || paymentMethod === "free_reward") {
+            isFreeRewardOrder = true;
+          }
+        } else if (paymentMethod === "free_reward") {
+          throw new ApiError(404, `Invalid or unrecognized reward coupon code: ${cleanCode}`);
+        }
+      }
+    }
   }
 
   // Validate branch exists and is open according to operating hours
@@ -275,7 +321,13 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
         });
       }
 
-      const itemPrice = menuItem.price + modifiersPrice;
+      let itemPrice = menuItem.price + modifiersPrice;
+      if (isFreeRewardOrder) {
+        if (!validatedCoupon?.menuItemId || validatedCoupon.menuItemId === targetId || isFreeRewardOrder) {
+          itemPrice = 0.00;
+        }
+      }
+
       const lineTotal = itemPrice * (item.quantity || 1);
       subtotal += lineTotal;
 
@@ -444,11 +496,65 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     },
   });
 
+  // Mark redeemed coupon unusable and deduct stamps if coupon was supplied
+  if (validatedCoupon) {
+    if (validatedCoupon.isTenantCoupon) {
+      try {
+        await db.coupon.update({
+          where: { id: validatedCoupon.id },
+          data: { usedCount: { increment: 1 } }
+        });
+      } catch (err) {
+        console.error("[APP ORDER] Failed to increment tenant coupon usedCount:", err.message);
+      }
+    } else {
+      try {
+        await mainPrisma.earnedCoupon.update({
+          where: { id: validatedCoupon.id },
+          data: {
+            isUsed: true,
+            usedAt: new Date()
+          }
+        });
+
+        // Deduct stamps from customer wallet
+        const appUserId = validatedCoupon.appUserId || finalCustomerId || userId;
+        if (appUserId && tenantId) {
+          const tenantObj = tenant || (await mainPrisma.tenant.findUnique({ where: { id: tenantId } }));
+          const stampList = Array.isArray(tenantObj?.stampPrograms) ? tenantObj.stampPrograms : [];
+          const stampProg = stampList[0] || null;
+          const requiredStamps = Number(stampProg?.requiredStamps || 4);
+
+          const wallet = await mainPrisma.wallet.findFirst({
+            where: { appUserId, tenantId }
+          });
+          if (wallet) {
+            const remainingStamps = Math.max(0, (wallet.stamps || 0) - requiredStamps);
+            await mainPrisma.wallet.update({
+              where: { id: wallet.id },
+              data: { stamps: remainingStamps }
+            });
+            await mainPrisma.walletTransaction.create({
+              data: {
+                walletId: wallet.id,
+                points: 0,
+                description: `Redeemed Stamp Coupon ${validatedCoupon.code} for Free Order #${orderNumber}`,
+                tenantId
+              }
+            });
+          }
+        }
+      } catch (err) {
+        console.error("[APP ORDER] Failed to redeem earned coupon:", err.message);
+      }
+    }
+  }
+
   const initialStatus = order.status;
 
-  // Award points & stamps if order is COMPLETED upon creation (except if paid by points)
+  // Award points & stamps if order is COMPLETED upon creation (except if paid by points or free reward)
   const effectiveEarnRate = earnRate !== undefined && earnRate !== null ? parseFloat(earnRate) : Number(tenant?.loyaltyEarnRate || 1.0);
-  if (order.status === "COMPLETED" && (userId || finalCustomerId) && paymentMethod !== "points") {
+  if (order.status === "COMPLETED" && (userId || finalCustomerId) && paymentMethod !== "points" && paymentMethod !== "free_reward") {
     const pointsEarned = effectiveEarnRate > 0 ? Math.floor(order.total * effectiveEarnRate) : 0;
     try {
       await loyaltyService.earnPoints(
