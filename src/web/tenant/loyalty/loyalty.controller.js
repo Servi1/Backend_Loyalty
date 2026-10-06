@@ -61,6 +61,13 @@ const updateTiers = catchAsync(async (req, res) => {
   res.json({ success: true, data: tiers });
 });
 
+const getBrandStampActivity = catchAsync(async (req, res) => {
+  const tenantsService = require("../../admin/tenants/tenants.service");
+  const { startDate, endDate } = req.query;
+  const result = await tenantsService.getSuperAdminStampActivity(req.tenantId, { startDate, endDate });
+  res.json({ success: true, data: result });
+});
+
 module.exports = { 
   getWallet, 
   earn, 
@@ -68,6 +75,7 @@ module.exports = {
   searchCustomers, 
   getAllCustomers, 
   getAllTransactions,
+  getBrandStampActivity,
   createCustomer,
   getTiers,
   updateTiers,

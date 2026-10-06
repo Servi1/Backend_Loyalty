@@ -111,7 +111,8 @@ const getSuperAdminStampActivity = catchAsync(async (req, res) => {
       tenantId = req.user.tenantId;
     }
   }
-  const result = await tenantsService.getSuperAdminStampActivity(tenantId);
+  const { startDate, endDate } = req.query;
+  const result = await tenantsService.getSuperAdminStampActivity(tenantId, { startDate, endDate });
   res.json({ success: true, data: result });
 });
 

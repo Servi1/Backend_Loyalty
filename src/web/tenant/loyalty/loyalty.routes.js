@@ -28,5 +28,6 @@ router.put("/tiers", authorize("SUPER_ADMIN", "ADMIN", "BRAND_MANAGER"), ctrl.up
 // Report lists for Brand Owner / Manager
 router.get("/members", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.getAllCustomers);
 router.get("/transactions", authorize("ADMIN", "BRAND_MANAGER"), ctrl.getAllTransactions);
+router.get("/stamps", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.getBrandStampActivity);
 
 module.exports = router;

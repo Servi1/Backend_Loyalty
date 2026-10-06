@@ -26,9 +26,7 @@ const getMenu = async (db) => {
         select: {
           id: true,
           name: true,
-          nameAr: true,
           description: true,
-          descriptionAr: true,
           price: true,
           imageUrl: true,
           isAvailable: true,
@@ -48,7 +46,14 @@ const getMenu = async (db) => {
       },
     },
   });
-  return categories;
+  return categories.map((cat) => ({
+    ...cat,
+    items: (cat.items || []).map((item) => ({
+      ...item,
+      nameAr: item.nameAr || null,
+      descriptionAr: item.descriptionAr || null,
+    })),
+  }));
 };
 
 // ─── getItem ──────────────────────────────────────────────────────────────────

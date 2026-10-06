@@ -517,15 +517,7 @@ const claimRewardCoupon = async ({ customerId, tenantId, menuItemId }) => {
   });
 
   // Note: Stamps remain intact (e.g. 4/4) until the coupon is claimed / redeemed at the cashier / POS.
-  // Log coupon generation to wallet transaction history without deducting stamps
-  await mainPrisma.walletTransaction.create({
-    data: {
-      walletId: wallet.id,
-      points: 0,
-      description: `Generated Stamp Reward Coupon: ${couponCode} for Free ${itemName}`,
-      tenantId: tenant.id,
-    },
-  });
+  // Stamps and coupons are tracked in EarnedCoupon and Wallet.stamps, strictly keeping wallet transactions for points.
 
   const couponQrPayload = JSON.stringify({
     code: coupon.code,
@@ -617,14 +609,7 @@ const redeemRewardCoupon = async ({ code, customerId, tenantId }) => {
       data: { stamps: remainingStamps },
     });
 
-    await mainPrisma.walletTransaction.create({
-      data: {
-        walletId: wallet.id,
-        points: 0,
-        description: `Redeemed Stamp Reward Coupon: ${cleanCode} (${coupon.prizeLabel}) (-${requiredStamps} Stamps)`,
-        tenantId: coupon.tenantId,
-      },
-    });
+
   }
 
   return {
