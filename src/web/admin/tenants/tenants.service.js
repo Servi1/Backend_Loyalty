@@ -1698,6 +1698,16 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     seenTxKeys.add(key);
 
     const desc = (t.description || "").toLowerCase();
+
+    // Keep loyalty points history strictly for points only - exclude zero-point and stamp entries
+    const isStampDesc =
+      desc.includes("stamp reward") ||
+      desc.includes("stamp coupon") ||
+      desc.startsWith("generated stamp") ||
+      desc.startsWith("claimed stamp") ||
+      desc.startsWith("redeemed stamp");
+    if (isStampDesc || t.points === 0) continue;
+
     let type = t.points >= 0 ? "earned" : "redeemed";
 
     if (desc.includes("refund") || desc.includes("reverse")) {
@@ -1715,13 +1725,21 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     const brandName = linkedOrder?.tenantName || walletForTx?.tenant?.name || tenant?.name || "Platform";
     const txTenantId = walletForTx?.tenantId || linkedOrder?.tenantId || tenant?.id || null;
 
+    // Clean up any (+X Stamp) annotations from the points transaction description
+    let cleanReason = t.description || "Loyalty points transaction";
+    cleanReason = cleanReason
+      .replace(/\s*\(\+\d+\s*stamps?\)/gi, "")
+      .replace(/\s*&\s*\+\d+\s*stamp\(?s?\)?\s*earned/gi, "Points earned")
+      .trim();
+    if (!cleanReason) cleanReason = "Points earned";
+
     pointsHistory.push({
       id: t.id,
       date: new Date(txDate).toISOString().slice(0, 10),
       type,
       points: Math.abs(t.points),
       rawPoints: t.points,
-      reason: t.description || "Loyalty points transaction",
+      reason: cleanReason,
       brandName,
       tenantId: txTenantId,
     });
@@ -1885,11 +1903,14 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
         combined.sort((a, b) => a.date - b.date);
 
         let cumulative = 0;
+        let lastCompletedOrderIdx = -1;
+
         combined.forEach((ev) => {
           if (ev.type === "order") {
             cumulative += ev.earnedStamps;
             const isCompleted = cumulative >= requiredStamps;
             const display = Math.min(cumulative, requiredStamps);
+            const historyIdx = history.length;
             history.push({
               id: ev.id,
               date: ev.date.toISOString(),
@@ -1899,8 +1920,12 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
               branchName: ev.branchName,
               brandName: ev.brandName,
               tenantId: ev.tenantId,
+              couponCode: null,
             });
-            if (isCompleted) cumulative = 0;
+            if (isCompleted) {
+              cumulative = 0;
+              lastCompletedOrderIdx = historyIdx;
+            }
           } else {
             history.push({
               id: ev.id,
@@ -1911,10 +1936,33 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
               branchName: ev.branchName,
               brandName: ev.brandName,
               tenantId: ev.tenantId,
-              couponCode: ev.couponCode,
+              couponCode: ev.couponCode || null,
             });
             if (ev.type === "coupon_gen") {
+              if (lastCompletedOrderIdx >= 0 && history[lastCompletedOrderIdx] && !history[lastCompletedOrderIdx].couponCode) {
+                history[lastCompletedOrderIdx].couponCode = ev.couponCode;
+              }
               cumulative = 0;
+              lastCompletedOrderIdx = -1;
+            }
+          }
+        });
+
+        // Link completed orders with the closest generated coupon code if not already linked
+        history.forEach((h) => {
+          if (h.status === "completed" && !h.couponCode && brandCoupons.length > 0) {
+            const hTime = new Date(h.date).getTime();
+            let closest = null;
+            let minDiff = Infinity;
+            brandCoupons.forEach((c) => {
+              const diff = Math.abs(new Date(c.createdAt).getTime() - hTime);
+              if (diff < minDiff) {
+                minDiff = diff;
+                closest = c;
+              }
+            });
+            if (closest) {
+              h.couponCode = closest.code;
             }
           }
         });
@@ -2738,7 +2786,7 @@ const getTenantProducts = async (tenantId) => {
   }
 };
 
-const getSuperAdminStampActivity = async (tenantId = null) => {
+const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
   let resolvedTenantId = null;
   if (tenantId && tenantId !== "all" && tenantId !== "null" && tenantId !== "undefined") {
     const matched = await mainPrisma.tenant.findFirst({
@@ -2758,6 +2806,15 @@ const getSuperAdminStampActivity = async (tenantId = null) => {
   if (resolvedTenantId) {
     where.tenantId = resolvedTenantId;
   }
+  if (dateParams?.startDate || dateParams?.endDate) {
+    where.createdAt = {};
+    if (dateParams.startDate) where.createdAt.gte = new Date(dateParams.startDate);
+    if (dateParams.endDate) {
+      const end = new Date(dateParams.endDate);
+      end.setHours(23, 59, 59, 999);
+      where.createdAt.lte = end;
+    }
+  }
 
   // 1. Fetch recent earned coupons
   const coupons = await mainPrisma.earnedCoupon.findMany({
@@ -2767,7 +2824,7 @@ const getSuperAdminStampActivity = async (tenantId = null) => {
       tenant: { select: { id: true, name: true, stampPrograms: true, subStamps: true, dbUrl: true } },
     },
     orderBy: { createdAt: "desc" },
-    take: 200,
+    take: 500,
   });
 
   // 2. Fetch active tenants to get completed orders
@@ -2816,12 +2873,15 @@ const getSuperAdminStampActivity = async (tenantId = null) => {
           status: "redeemed",
           reason: `Redeemed for ${c.prizeLabel}`,
           stampsCount: `0/${requiredStamps}`,
-          branchName: c.branchName || "—",
+          stampsGenerated: requiredStamps,
+          generatedBy: "Cashier / Counter Staff (Redeemed)",
+          branchName: c.branchName || "Main Branch",
           brandName: t.name || "Brand",
           tenantId: t.id,
           customerName: c.appUser?.name || "Valued Customer",
           customerPhone: c.appUser?.phone || "—",
           userKey: cUserKey,
+          couponCode: c.code,
           type: "coupon_redeem",
         });
       }
@@ -2832,12 +2892,15 @@ const getSuperAdminStampActivity = async (tenantId = null) => {
           status: "expired",
           reason: `Expired: ${c.prizeLabel}`,
           stampsCount: `${requiredStamps}/${requiredStamps}`,
+          stampsGenerated: 0,
+          generatedBy: "System (Expired Reward)",
           branchName: "—",
           brandName: t.name || "Brand",
           tenantId: t.id,
           customerName: c.appUser?.name || "Valued Customer",
           customerPhone: c.appUser?.phone || "—",
           userKey: cUserKey,
+          couponCode: c.code,
           type: "coupon_exp",
         });
       }
@@ -2847,12 +2910,15 @@ const getSuperAdminStampActivity = async (tenantId = null) => {
         status: "generated",
         reason: `Generated for ${c.prizeLabel}`,
         stampsCount: `${requiredStamps}/${requiredStamps}`,
+        stampsGenerated: requiredStamps,
+        generatedBy: "Customer Self-Service (Stamp Card Claim)",
         branchName: "—",
         brandName: t.name || "Brand",
         tenantId: t.id,
         customerName: c.appUser?.name || "Valued Customer",
         customerPhone: c.appUser?.phone || "—",
         userKey: cUserKey,
+        couponCode: c.code,
         type: "coupon_gen",
       });
     });
@@ -2862,11 +2928,22 @@ const getSuperAdminStampActivity = async (tenantId = null) => {
     if (isStampActive && t.dbUrl) {
       try {
         const tenantDb = getTenantClient(t.dbUrl);
+        const orderWhere = { status: "COMPLETED" };
+        if (dateParams?.startDate || dateParams?.endDate) {
+          orderWhere.createdAt = {};
+          if (dateParams.startDate) orderWhere.createdAt.gte = new Date(dateParams.startDate);
+          if (dateParams.endDate) {
+            const end = new Date(dateParams.endDate);
+            end.setHours(23, 59, 59, 999);
+            orderWhere.createdAt.lte = end;
+          }
+        }
+
         const orders = await tenantDb.order.findMany({
-          where: { status: "COMPLETED" },
-          include: { branch: true, items: { include: { menuItem: true } } },
+          where: orderWhere,
+          include: { branch: true, user: true, items: { include: { menuItem: true } } },
           orderBy: { createdAt: "asc" },
-          take: 200,
+          take: 500,
         });
 
         orders.forEach((o) => {
@@ -2897,10 +2974,27 @@ const getSuperAdminStampActivity = async (tenantId = null) => {
             const cPhone = o.customerPhone || resolvedUser?.phone || "—";
             const cUserKey = cPhone !== "—" ? cPhone : (o.customerId || `order_${o.id}`);
 
+            let generatedBy = "POS Cashier";
+            if (o.staffName) {
+              generatedBy = `Staff (${o.staffName})`;
+            } else if (o.user?.name) {
+              generatedBy = `Staff (${o.user.name})`;
+            } else if (o.source === "qr_table") {
+              generatedBy = "QR Table (Customer Order)";
+            } else if (o.source === "qr_cashier") {
+              generatedBy = "QR Cashier Counter";
+            } else if (o.source === "app") {
+              generatedBy = "App Self-Service (Customer)";
+            } else if (o.source === "pos") {
+              generatedBy = o.posUnit ? `POS (${o.posUnit})` : "POS Cashier";
+            }
+
             orderEvents.push({
               id: `order_${o.id}`,
               date: new Date(o.createdAt),
               earnedStamps,
+              stampsGenerated: earnedStamps,
+              generatedBy,
               reason: `Earned for Order #${o.orderNumber || o.id.slice(0, 6)}`,
               branchName: o.branch?.name || "Main Branch",
               brandName: t.name || "Brand",
@@ -2908,6 +3002,7 @@ const getSuperAdminStampActivity = async (tenantId = null) => {
               customerName: cName,
               customerPhone: cPhone,
               userKey: cUserKey,
+              couponCode: null,
               type: "order",
             });
           }
@@ -2939,11 +3034,14 @@ const getSuperAdminStampActivity = async (tenantId = null) => {
             status: isCompleted ? "completed" : "earned",
             reason: item.reason,
             stampsCount: `${display}/${requiredStamps}`,
+            stampsGenerated: item.stampsGenerated,
+            generatedBy: item.generatedBy,
             branchName: item.branchName,
             brandName: item.brandName,
             tenantId: item.tenantId,
             customerName: item.customerName,
             customerPhone: item.customerPhone,
+            couponCode: item.couponCode || null,
           });
           if (isCompleted) cumulative = 0;
         } else {
@@ -2953,11 +3051,14 @@ const getSuperAdminStampActivity = async (tenantId = null) => {
             status: item.status,
             reason: item.reason,
             stampsCount: item.stampsCount,
+            stampsGenerated: item.stampsGenerated,
+            generatedBy: item.generatedBy,
             branchName: item.branchName,
             brandName: item.brandName,
             tenantId: item.tenantId,
             customerName: item.customerName,
             customerPhone: item.customerPhone,
+            couponCode: item.couponCode || null,
           });
           if (item.type === "coupon_gen") {
             cumulative = 0;
@@ -2981,6 +3082,15 @@ const getSuperAdminStampActivity = async (tenantId = null) => {
   if (resolvedTenantId) {
     txWhere.tenantId = resolvedTenantId;
   }
+  if (dateParams?.startDate || dateParams?.endDate) {
+    txWhere.createdAt = {};
+    if (dateParams.startDate) txWhere.createdAt.gte = new Date(dateParams.startDate);
+    if (dateParams.endDate) {
+      const end = new Date(dateParams.endDate);
+      end.setHours(23, 59, 59, 999);
+      txWhere.createdAt.lte = end;
+    }
+  }
 
   try {
     const stampTxs = await mainPrisma.walletTransaction.findMany({
@@ -2994,7 +3104,7 @@ const getSuperAdminStampActivity = async (tenantId = null) => {
         },
       },
       orderBy: { createdAt: "desc" },
-      take: 100,
+      take: 200,
     });
 
     stampTxs.forEach((tx) => {
@@ -3017,11 +3127,14 @@ const getSuperAdminStampActivity = async (tenantId = null) => {
         status: isCompleted ? "completed" : "earned",
         reason: tx.orderNumber ? `Earned for Order #${tx.orderNumber}` : (tx.description || "Earned stamps"),
         stampsCount: isCompleted ? `${requiredStamps}/${requiredStamps}` : `${earnedQty}/${requiredStamps}`,
+        stampsGenerated: earnedQty,
+        generatedBy: "System Transaction / Order",
         branchName: "Main Branch",
         brandName: tx.wallet?.tenant?.name || "Brand",
         tenantId: tId,
         customerName: tx.wallet?.appUser?.name || "Valued Customer",
         customerPhone: tx.wallet?.appUser?.phone || "—",
+        couponCode: null,
       });
     });
   } catch (txErr) {
