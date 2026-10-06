@@ -13,11 +13,32 @@ const ApiError = require("../../utils/ApiError");
 const getMenu = async (db) => {
   const categories = await db.menuCategory.findMany({
     orderBy: { order: "asc" },
-    include: {
+    select: {
+      id: true,
+      name: true,
+      nameAr: true,
+      imageUrl: true,
+      iconUrl: true,
+      order: true,
       items: {
         where: { isAvailable: true },
         orderBy: { name: "asc" },
-        include: {
+        select: {
+          id: true,
+          name: true,
+          nameAr: true,
+          description: true,
+          descriptionAr: true,
+          price: true,
+          imageUrl: true,
+          isAvailable: true,
+          categoryId: true,
+          createdAt: true,
+          updatedAt: true,
+          isChefPick: true,
+          rating: true,
+          modifiers: true,
+          prepTime: true,
           specialists: {
             include: {
               schedules: true

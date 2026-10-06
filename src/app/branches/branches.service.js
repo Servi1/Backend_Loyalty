@@ -61,6 +61,7 @@ const getBranches = async (db) => {
     select: {
       id: true,
       name: true,
+      nameAr: true,
       address: true,
       city: true,
       phone: true,
@@ -79,7 +80,7 @@ const getBranches = async (db) => {
       qrEnabled: true,
       customOrderTypes: {
         where: { isActive: true },
-        select: { id: true, name: true, description: true },
+        select: { id: true, name: true, nameAr: true, description: true, descriptionAr: true },
       },
     },
   });
@@ -99,11 +100,11 @@ const getBranch = async (db, branchId) => {
     include: {
       tables: {
         where: { isActive: true },
-        select: { id: true, label: true, seats: true, zone: true, qrCode: true, isActive: true, expiresAt: true },
+        select: { id: true, label: true, labelAr: true, seats: true, zone: true, zoneAr: true, qrCode: true, isActive: true, expiresAt: true },
       },
       customOrderTypes: {
         where: { isActive: true },
-        select: { id: true, name: true, description: true },
+        select: { id: true, name: true, nameAr: true, description: true, descriptionAr: true },
       },
       qrCashiers: {
         select: { id: true, name: true, isActive: true },
@@ -114,6 +115,7 @@ const getBranch = async (db, branchId) => {
   
   return {
     ...branch,
+    nameAr: branch.nameAr || null,
     isOpen: checkIsOpen(branch),
     hours: formatBranchHours(branch),
   };
@@ -232,8 +234,10 @@ const getBranchStaff = async (db, branchId) => {
     select: {
       id: true,
       name: true,
+      nameAr: true,
       role: true,
       customRole: true,
+      designationAr: true,
       avatarUrl: true,
       schedules: {
         select: {
