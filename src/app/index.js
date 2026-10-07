@@ -47,6 +47,7 @@ const router = Router({ mergeParams: true });
 const branchCtrl = require("./branches/branches.controller");
 
 router.get("/qr/resolve", branchCtrl.resolveQrToken);
+router.post("/qr/resolve", branchCtrl.resolveQrToken);
 router.post("/qr/encode", branchCtrl.encodeQrTokenEndpoint);
 
 router.use("/stamp",    stampRoutes);

@@ -413,7 +413,7 @@ model EarnedCoupon {
   isUsed        Boolean   @default(false)
   usedAt        DateTime?
   winDate       DateTime  @default(now())
-  expiresAt     DateTime  // 30-day validity
+  expiresAt     DateTime  // 7-day validity
   appUserId     String
   appUser       AppUser   @relation(fields: [appUserId], references: [id], onDelete: Cascade)
   createdAt     DateTime  @default(now())

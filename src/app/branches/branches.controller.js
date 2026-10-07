@@ -2,6 +2,8 @@ const catchAsync = require("../../utils/catchAsync");
 const branchesService = require("./branches.service");
 const { getAppImageURL } = require("../../config");
 const { encodeQrToken, decodeQrToken } = require("../../utils/qrToken.utils");
+const mainPrisma = require("../../config/prisma");
+const { getTenantClient } = require("../../config/tenantManager");
 
 const getAll = catchAsync(async (req, res) => {
   const branches = await branchesService.getBranches(req.tenantDb);
@@ -95,24 +97,104 @@ const getScheduleSlots = catchAsync(async (req, res) => {
 });
 
 const resolveQrToken = catchAsync(async (req, res) => {
-  const token = req.query.token || req.body.token;
+  const token = req.query.token || req.body?.token;
   if (!token) {
     return res.status(400).json({ success: false, message: "Token parameter is required" });
   }
   try {
     const payload = decodeQrToken(token);
-    res.json({ success: true, data: payload });
+
+    let table = null;
+    let branch = null;
+    let tenantInfo = null;
+
+    if (payload.tenantId) {
+      try {
+        const tenant = await mainPrisma.tenant.findUnique({
+          where: { id: payload.tenantId },
+          select: { id: true, name: true, nameAr: true, slug: true, dbUrl: true, logoUrl: true }
+        });
+        if (tenant) {
+          tenantInfo = {
+            id: tenant.id,
+            name: tenant.name,
+            nameAr: tenant.nameAr,
+            slug: tenant.slug,
+            logoUrl: getAppImageURL(tenant.logoUrl)
+          };
+
+          if (tenant.dbUrl) {
+            const tenantDb = getTenantClient(tenant.dbUrl);
+
+            if (payload.tableId) {
+              const tableDoc = await tenantDb.table.findUnique({
+                where: { id: payload.tableId }
+              });
+              if (tableDoc) {
+                table = {
+                  id: tableDoc.id,
+                  label: tableDoc.label,
+                  tableNumber: tableDoc.label,
+                  labelAr: tableDoc.labelAr,
+                  seats: tableDoc.seats,
+                  zone: tableDoc.zone,
+                  zoneAr: tableDoc.zoneAr,
+                  branchId: tableDoc.branchId
+                };
+              }
+            }
+
+            if (payload.branchId) {
+              const branchDoc = await tenantDb.branch.findUnique({
+                where: { id: payload.branchId },
+                select: { id: true, name: true, nameAr: true, address: true, phone: true }
+              });
+              if (branchDoc) {
+                branch = branchDoc;
+              }
+            }
+          }
+        }
+      } catch (dbErr) {
+        console.warn("[resolveQrToken] Error fetching table/branch details:", dbErr.message);
+      }
+    }
+
+    const tableNumber = table?.tableNumber || payload.tableNumber || payload.tableLabel || null;
+
+    res.json({
+      success: true,
+      data: {
+        ...payload,
+        tableNumber,
+        tableLabel: tableNumber,
+        table,
+        branch,
+        tenant: tenantInfo
+      }
+    });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
 });
 
 const encodeQrTokenEndpoint = catchAsync(async (req, res) => {
-  const { tenantId, branchId, tableId, qrCashierId, orderTypeId, stampId, type, customerId } = req.body;
+  const { tenantId, branchId, tableId, tableNumber, tableLabel, qrCashierId, orderTypeId, stampId, type, customerId } = req.body;
   if (!tenantId) {
     return res.status(400).json({ success: false, message: "tenantId is required" });
   }
-  const token = encodeQrToken({ tenantId, branchId, tableId, qrCashierId, orderTypeId, stampId, type, customerId });
+  const token = encodeQrToken({
+    tenantId,
+    branchId,
+    tableId,
+    tableNumber: tableNumber || tableLabel,
+    tableLabel: tableLabel || tableNumber,
+    qrCashierId,
+    orderTypeId,
+    stampId,
+    type,
+    customerId
+  });
   res.json({ success: true, token });
 });
 

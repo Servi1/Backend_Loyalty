@@ -80,8 +80,16 @@ async function ensureTenantColumns(client) {
       'ALTER TABLE "PosDevice" ADD COLUMN IF NOT EXISTS "nameAr" TEXT;',
       'ALTER TABLE "KdsDevice" ADD COLUMN IF NOT EXISTS "nameAr" TEXT;',
       'ALTER TABLE "Discount" ADD COLUMN IF NOT EXISTS "nameAr" TEXT;',
+      'ALTER TABLE "Discount" ADD COLUMN IF NOT EXISTS "targetTier" TEXT DEFAULT \'all\';',
+      'ALTER TABLE "Discount" ADD COLUMN IF NOT EXISTS "maxCustomerCount" INTEGER;',
+      'ALTER TABLE "Discount" ADD COLUMN IF NOT EXISTS "customerCount" INTEGER DEFAULT 0;',
+      'ALTER TABLE "Discount" ADD COLUMN IF NOT EXISTS "specificCustomers" JSONB DEFAULT \'[]\';',
       'ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "titleAr" TEXT;',
       'ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "termsAr" TEXT;',
+      'ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "targetTier" TEXT DEFAULT \'all\';',
+      'ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "maxCustomerCount" INTEGER;',
+      'ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "customerCount" INTEGER DEFAULT 0;',
+      'ALTER TABLE "Coupon" ADD COLUMN IF NOT EXISTS "specificCustomers" JSONB DEFAULT \'[]\';',
       'ALTER TABLE "CustomPaymentType" ADD COLUMN IF NOT EXISTS "nameAr" TEXT;',
       'ALTER TABLE "LocationGroup" ADD COLUMN IF NOT EXISTS "nameAr" TEXT;',
       'ALTER TABLE "ProductRequest" ADD COLUMN IF NOT EXISTS "detailsAr" TEXT;',
@@ -90,7 +98,8 @@ async function ensureTenantColumns(client) {
       'ALTER TABLE "CustomOrderType" ADD COLUMN IF NOT EXISTS "descriptionAr" TEXT;',
       'ALTER TABLE "MenuItem" ADD COLUMN IF NOT EXISTS "nameAr" TEXT;',
       'ALTER TABLE "MenuItem" ADD COLUMN IF NOT EXISTS "descriptionAr" TEXT;',
-      'ALTER TABLE "Branch" ADD COLUMN IF NOT EXISTS "addressAr" TEXT;'
+      'ALTER TABLE "Branch" ADD COLUMN IF NOT EXISTS "addressAr" TEXT;',
+      'ALTER TABLE "Branch" ADD COLUMN IF NOT EXISTS "prepExtraTime" INTEGER DEFAULT 0;'
     ];
     for (const patch of patches) {
       await client.$executeRawUnsafe(patch).catch(() => null);

@@ -116,6 +116,7 @@ model Branch {
   timezone              String?   @default("Asia/Riyadh")
   openingTime           String?   @default("08:00 AM")
   closingTime           String?   @default("11:00 PM")
+  prepExtraTime         Int?      @default(0)
   license               String?
   vatId                 String?
   receiptLogoUrl        String?
@@ -407,6 +408,10 @@ model Discount {
   weeklySchedule     Json?    // Array of day schedules
   isActive           Boolean  @default(true)
   itemsList          Json?    // Array of selected items
+  targetTier         String?  @default("all") // "all" or specific tier id/name
+  maxCustomerCount   Int?     // limit to first N customers (e.g. 10), null = unlimited
+  customerCount      Int?     @default(0) // tracks how many unique customers used it
+  specificCustomers  Json?    // Array of customer phone numbers: ["+96650...", ...]
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }
@@ -431,6 +436,11 @@ model Coupon {
   discountValue      Float?
   priceCap           Float?    // Price Cap for percentage
   minOrderAmount     Float?    @default(0)
+
+  targetTier         String?   @default("all") // "all" or specific tier id/name
+  maxCustomerCount   Int?      // limit to first N customers (e.g. 10), null = unlimited
+  customerCount      Int?      @default(0) // tracks how many unique customers used it
+  specificCustomers  Json?     // Array of customer phone numbers: ["+96650...", ...]
 
   startDate          DateTime
   endDate            DateTime
