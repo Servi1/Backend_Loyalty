@@ -512,7 +512,7 @@ const claimRewardCoupon = async ({ customerId, tenantId, menuItemId }) => {
       menuItemId: selectedItem?.id || menuItemId || null,
       tenantId: tenant.id,
       appUserId: customerId,
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days valid
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days valid
     },
   });
 
