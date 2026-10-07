@@ -1,15 +1,48 @@
 const ApiError = require("../../../utils/ApiError");
 
 const getAll = async (db) => {
-  return db.discount.findMany({
+  const discounts = await db.discount.findMany({
     orderBy: {
       createdAt: "desc"
     }
   });
+
+  try {
+    const extraRows = await db.$queryRawUnsafe('SELECT "id", "targetTier", "maxCustomerCount", "customerCount", "specificCustomers" FROM "Discount"');
+    const extraMap = new Map(extraRows.map(r => [r.id, r]));
+    discounts.forEach(d => {
+      const extra = extraMap.get(d.id);
+      if (extra) {
+        d.targetTier = extra.targetTier || "all";
+        d.maxCustomerCount = extra.maxCustomerCount !== undefined ? extra.maxCustomerCount : null;
+        d.customerCount = extra.customerCount || 0;
+        d.specificCustomers = Array.isArray(extra.specificCustomers) ? extra.specificCustomers : [];
+      } else {
+        d.targetTier = d.targetTier || "all";
+        d.maxCustomerCount = d.maxCustomerCount !== undefined ? d.maxCustomerCount : null;
+        d.customerCount = d.customerCount || 0;
+        d.specificCustomers = Array.isArray(d.specificCustomers) ? d.specificCustomers : [];
+      }
+    });
+  } catch (e) {
+    discounts.forEach(d => {
+      d.targetTier = d.targetTier || "all";
+      d.maxCustomerCount = d.maxCustomerCount !== undefined ? d.maxCustomerCount : null;
+      d.customerCount = d.customerCount || 0;
+      d.specificCustomers = Array.isArray(d.specificCustomers) ? d.specificCustomers : [];
+    });
+  }
+
+  return discounts;
 };
 
 const create = async (db, data) => {
-  return db.discount.create({
+  const targetTier = data.targetTier || "all";
+  const maxCustomerCount = data.maxCustomerCount !== undefined && data.maxCustomerCount !== null && data.maxCustomerCount !== "" ? parseInt(data.maxCustomerCount) : null;
+  const customerCount = data.customerCount !== undefined ? parseInt(data.customerCount) : 0;
+  const specificCustomers = Array.isArray(data.specificCustomers) ? data.specificCustomers : [];
+
+  const created = await db.discount.create({
     data: {
       nameEn: data.nameEn,
       nameAr: data.nameAr || null,
@@ -28,13 +61,36 @@ const create = async (db, data) => {
       itemsList: data.itemsList || null,
     }
   });
+
+  try {
+    await db.$executeRawUnsafe(
+      'UPDATE "Discount" SET "targetTier" = $1, "maxCustomerCount" = $2, "customerCount" = $3, "specificCustomers" = $4::jsonb WHERE "id" = $5',
+      targetTier,
+      maxCustomerCount,
+      customerCount,
+      JSON.stringify(specificCustomers),
+      created.id
+    );
+  } catch (e) {}
+
+  created.targetTier = targetTier;
+  created.maxCustomerCount = maxCustomerCount;
+  created.customerCount = customerCount;
+  created.specificCustomers = specificCustomers;
+
+  return created;
 };
 
 const update = async (db, id, data) => {
   const discount = await db.discount.findUnique({ where: { id } });
   if (!discount) throw new ApiError(404, "Discount not found");
 
-  return db.discount.update({
+  const targetTier = data.targetTier !== undefined ? (data.targetTier || "all") : (discount.targetTier || "all");
+  const maxCustomerCount = data.maxCustomerCount !== undefined ? (data.maxCustomerCount === "" || data.maxCustomerCount === null ? null : parseInt(data.maxCustomerCount)) : (discount.maxCustomerCount ?? null);
+  const customerCount = data.customerCount !== undefined ? parseInt(data.customerCount) : (discount.customerCount || 0);
+  const specificCustomers = data.specificCustomers !== undefined ? (Array.isArray(data.specificCustomers) ? data.specificCustomers : []) : (Array.isArray(discount.specificCustomers) ? discount.specificCustomers : []);
+
+  const updated = await db.discount.update({
     where: { id },
     data: {
       nameEn: data.nameEn !== undefined ? data.nameEn : discount.nameEn,
@@ -54,6 +110,24 @@ const update = async (db, id, data) => {
       itemsList: data.itemsList !== undefined ? data.itemsList : discount.itemsList,
     }
   });
+
+  try {
+    await db.$executeRawUnsafe(
+      'UPDATE "Discount" SET "targetTier" = $1, "maxCustomerCount" = $2, "customerCount" = $3, "specificCustomers" = $4::jsonb WHERE "id" = $5',
+      targetTier,
+      maxCustomerCount,
+      customerCount,
+      JSON.stringify(specificCustomers),
+      id
+    );
+  } catch (e) {}
+
+  updated.targetTier = targetTier;
+  updated.maxCustomerCount = maxCustomerCount;
+  updated.customerCount = customerCount;
+  updated.specificCustomers = specificCustomers;
+
+  return updated;
 };
 
 const remove = async (db, id) => {

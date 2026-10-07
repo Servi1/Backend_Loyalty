@@ -1,19 +1,51 @@
 const ApiError = require("../../../utils/ApiError");
 
 const getAll = async (db) => {
-  return db.coupon.findMany({
+  const coupons = await db.coupon.findMany({
     orderBy: {
       createdAt: "desc"
     }
   });
+
+  try {
+    const extraRows = await db.$queryRawUnsafe('SELECT "id", "targetTier", "maxCustomerCount", "customerCount", "specificCustomers" FROM "Coupon"');
+    const extraMap = new Map(extraRows.map(r => [r.id, r]));
+    coupons.forEach(c => {
+      const extra = extraMap.get(c.id);
+      if (extra) {
+        c.targetTier = extra.targetTier || "all";
+        c.maxCustomerCount = extra.maxCustomerCount !== undefined ? extra.maxCustomerCount : null;
+        c.customerCount = extra.customerCount || 0;
+        c.specificCustomers = Array.isArray(extra.specificCustomers) ? extra.specificCustomers : [];
+      } else {
+        c.targetTier = c.targetTier || "all";
+        c.maxCustomerCount = c.maxCustomerCount !== undefined ? c.maxCustomerCount : null;
+        c.customerCount = c.customerCount || 0;
+        c.specificCustomers = Array.isArray(c.specificCustomers) ? c.specificCustomers : [];
+      }
+    });
+  } catch (e) {
+    coupons.forEach(c => {
+      c.targetTier = c.targetTier || "all";
+      c.maxCustomerCount = c.maxCustomerCount !== undefined ? c.maxCustomerCount : null;
+      c.customerCount = c.customerCount || 0;
+      c.specificCustomers = Array.isArray(c.specificCustomers) ? c.specificCustomers : [];
+    });
+  }
+
+  return coupons;
 };
 
 const create = async (db, data) => {
-  // Check if coupon code already exists
   const existing = await db.coupon.findUnique({ where: { code: data.code } });
   if (existing) throw new ApiError(400, "Coupon code already exists");
 
-  return db.coupon.create({
+  const targetTier = data.targetTier || "all";
+  const maxCustomerCount = data.maxCustomerCount !== undefined && data.maxCustomerCount !== null && data.maxCustomerCount !== "" ? parseInt(data.maxCustomerCount) : null;
+  const customerCount = data.customerCount !== undefined ? parseInt(data.customerCount) : 0;
+  const specificCustomers = Array.isArray(data.specificCustomers) ? data.specificCustomers : [];
+
+  const created = await db.coupon.create({
     data: {
       title: data.title,
       titleAr: data.titleAr || null,
@@ -34,6 +66,24 @@ const create = async (db, data) => {
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
     }
   });
+
+  try {
+    await db.$executeRawUnsafe(
+      'UPDATE "Coupon" SET "targetTier" = $1, "maxCustomerCount" = $2, "customerCount" = $3, "specificCustomers" = $4::jsonb WHERE "id" = $5',
+      targetTier,
+      maxCustomerCount,
+      customerCount,
+      JSON.stringify(specificCustomers),
+      created.id
+    );
+  } catch (e) {}
+
+  created.targetTier = targetTier;
+  created.maxCustomerCount = maxCustomerCount;
+  created.customerCount = customerCount;
+  created.specificCustomers = specificCustomers;
+
+  return created;
 };
 
 const update = async (db, id, data) => {
@@ -45,7 +95,12 @@ const update = async (db, id, data) => {
     if (existing) throw new ApiError(400, "Coupon code already exists");
   }
 
-  return db.coupon.update({
+  const targetTier = data.targetTier !== undefined ? (data.targetTier || "all") : (coupon.targetTier || "all");
+  const maxCustomerCount = data.maxCustomerCount !== undefined ? (data.maxCustomerCount === "" || data.maxCustomerCount === null ? null : parseInt(data.maxCustomerCount)) : (coupon.maxCustomerCount ?? null);
+  const customerCount = data.customerCount !== undefined ? parseInt(data.customerCount) : (coupon.customerCount || 0);
+  const specificCustomers = data.specificCustomers !== undefined ? (Array.isArray(data.specificCustomers) ? data.specificCustomers : []) : (Array.isArray(coupon.specificCustomers) ? coupon.specificCustomers : []);
+
+  const updated = await db.coupon.update({
     where: { id },
     data: {
       title: data.title !== undefined ? data.title : coupon.title,
@@ -66,6 +121,24 @@ const update = async (db, id, data) => {
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : coupon.isActive,
     }
   });
+
+  try {
+    await db.$executeRawUnsafe(
+      'UPDATE "Coupon" SET "targetTier" = $1, "maxCustomerCount" = $2, "customerCount" = $3, "specificCustomers" = $4::jsonb WHERE "id" = $5',
+      targetTier,
+      maxCustomerCount,
+      customerCount,
+      JSON.stringify(specificCustomers),
+      id
+    );
+  } catch (e) {}
+
+  updated.targetTier = targetTier;
+  updated.maxCustomerCount = maxCustomerCount;
+  updated.customerCount = customerCount;
+  updated.specificCustomers = specificCustomers;
+
+  return updated;
 };
 
 const remove = async (db, id) => {
