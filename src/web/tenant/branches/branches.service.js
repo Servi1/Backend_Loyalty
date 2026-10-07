@@ -1,7 +1,7 @@
 const ApiError = require("../../../utils/ApiError");
 
-const getAll = async (db) =>
-  db.branch.findMany({
+const getAll = async (db) => {
+  const branches = await db.branch.findMany({
     include: {
       locationGroup: true,
       customPaymentTypes: true,
@@ -9,6 +9,19 @@ const getAll = async (db) =>
       _count: { select: { tables: true, orders: true, staff: true, posDevices: true, kdsDevices: true } }
     }
   });
+  try {
+    const extraRows = await db.$queryRawUnsafe('SELECT "id", "prepExtraTime" FROM "Branch"');
+    const extraMap = new Map(extraRows.map(r => [r.id, r.prepExtraTime]));
+    branches.forEach(b => {
+      b.prepExtraTime = Number(extraMap.get(b.id)) || 0;
+    });
+  } catch (e) {
+    branches.forEach(b => {
+      b.prepExtraTime = Number(b.prepExtraTime) || 0;
+    });
+  }
+  return branches;
+};
 
 const getById = async (db, id) => {
   const branch = await db.branch.findUnique({
@@ -25,11 +38,21 @@ const getById = async (db, id) => {
     }
   });
   if (!branch) throw new ApiError(404, "Branch not found");
+  try {
+    const [extraRow] = await db.$queryRawUnsafe('SELECT "prepExtraTime" FROM "Branch" WHERE "id" = $1', id);
+    if (extraRow && extraRow.prepExtraTime !== undefined) {
+      branch.prepExtraTime = Number(extraRow.prepExtraTime) || 0;
+    } else {
+      branch.prepExtraTime = Number(branch.prepExtraTime) || 0;
+    }
+  } catch (e) {
+    branch.prepExtraTime = Number(branch.prepExtraTime) || 0;
+  }
   return branch;
 };
 
 const create = async (db, data) => {
-  const { customPaymentTypeIds, customOrderTypeIds, ...rest } = data;
+  const { customPaymentTypeIds, customOrderTypeIds, prepExtraTime, ...rest } = data;
   const insertData = { ...rest };
 
   if (!insertData.locationGroupId || insertData.locationGroupId === "none") {
@@ -69,7 +92,7 @@ const create = async (db, data) => {
     };
   }
 
-  return db.branch.create({
+  const created = await db.branch.create({
     data: {
       ...insertData,
       ...relations
@@ -80,11 +103,19 @@ const create = async (db, data) => {
       customOrderTypes: true
     }
   });
+
+  if (prepExtraTime !== undefined) {
+    const extraVal = Number(prepExtraTime) || 0;
+    await db.$executeRawUnsafe('UPDATE "Branch" SET "prepExtraTime" = $1 WHERE "id" = $2', extraVal, created.id).catch(() => null);
+    created.prepExtraTime = extraVal;
+  }
+
+  return created;
 };
 
 const update = async (db, id, data) => {
   const current = await getById(db, id);
-  const { customPaymentTypeIds, customOrderTypeIds, ...rest } = data;
+  const { customPaymentTypeIds, customOrderTypeIds, prepExtraTime, ...rest } = data;
   const updatedData = { ...rest };
 
   if (data.name !== undefined) {
@@ -128,7 +159,7 @@ const update = async (db, id, data) => {
     };
   }
 
-  return db.branch.update({
+  const updated = await db.branch.update({
     where: { id },
     data: {
       ...updatedData,
@@ -142,6 +173,16 @@ const update = async (db, id, data) => {
       customOrderTypes: true
     }
   });
+
+  if (prepExtraTime !== undefined) {
+    const extraVal = Number(prepExtraTime) || 0;
+    await db.$executeRawUnsafe('UPDATE "Branch" SET "prepExtraTime" = $1 WHERE "id" = $2', extraVal, id).catch(() => null);
+    updated.prepExtraTime = extraVal;
+  } else {
+    updated.prepExtraTime = current.prepExtraTime || 0;
+  }
+
+  return updated;
 };
 
 const remove = async (db, id) => {

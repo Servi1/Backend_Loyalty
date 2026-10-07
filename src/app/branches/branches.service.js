@@ -85,8 +85,15 @@ const getBranches = async (db) => {
     },
   });
 
+  let extraMap = new Map();
+  try {
+    const extraRows = await db.$queryRawUnsafe('SELECT "id", "prepExtraTime" FROM "Branch"');
+    extraMap = new Map(extraRows.map(r => [r.id, r.prepExtraTime]));
+  } catch (e) {}
+
   return branches.map(b => ({
     ...b,
+    prepExtraTime: Number(extraMap.get(b.id)) || Number(b.prepExtraTime) || 0,
     isOpen: checkIsOpen(b),
     hours: formatBranchHours(b),
   }));
@@ -112,9 +119,18 @@ const getBranch = async (db, branchId) => {
     },
   });
   if (!branch) throw new ApiError(404, "Branch not found");
+
+  let prepExtraTime = Number(branch.prepExtraTime) || 0;
+  try {
+    const [extraRow] = await db.$queryRawUnsafe('SELECT "prepExtraTime" FROM "Branch" WHERE "id" = $1', branchId);
+    if (extraRow && extraRow.prepExtraTime !== undefined) {
+      prepExtraTime = Number(extraRow.prepExtraTime) || 0;
+    }
+  } catch (e) {}
   
   return {
     ...branch,
+    prepExtraTime,
     nameAr: branch.nameAr || null,
     isOpen: checkIsOpen(branch),
     hours: formatBranchHours(branch),

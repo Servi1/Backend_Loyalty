@@ -90,7 +90,8 @@ async function ensureTenantColumns(client) {
       'ALTER TABLE "CustomOrderType" ADD COLUMN IF NOT EXISTS "descriptionAr" TEXT;',
       'ALTER TABLE "MenuItem" ADD COLUMN IF NOT EXISTS "nameAr" TEXT;',
       'ALTER TABLE "MenuItem" ADD COLUMN IF NOT EXISTS "descriptionAr" TEXT;',
-      'ALTER TABLE "Branch" ADD COLUMN IF NOT EXISTS "addressAr" TEXT;'
+      'ALTER TABLE "Branch" ADD COLUMN IF NOT EXISTS "addressAr" TEXT;',
+      'ALTER TABLE "Branch" ADD COLUMN IF NOT EXISTS "prepExtraTime" INTEGER DEFAULT 0;'
     ];
     for (const patch of patches) {
       await client.$executeRawUnsafe(patch).catch(() => null);
