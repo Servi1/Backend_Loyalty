@@ -412,6 +412,7 @@ model Discount {
   maxCustomerCount   Int?     // limit to first N customers (e.g. 10), null = unlimited
   customerCount      Int?     @default(0) // tracks how many unique customers used it
   specificCustomers  Json?    // Array of customer phone numbers: ["+96650...", ...]
+  applicableFeatures Json?    // Array of features: ["servi_app", "qr_table", "qr_cashier"] or null = all
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }
@@ -441,6 +442,7 @@ model Coupon {
   maxCustomerCount   Int?      // limit to first N customers (e.g. 10), null = unlimited
   customerCount      Int?      @default(0) // tracks how many unique customers used it
   specificCustomers  Json?     // Array of customer phone numbers: ["+96650...", ...]
+  applicableFeatures Json?     // Array of features: ["servi_app", "qr_table", "qr_cashier"] or null = all
 
   startDate          DateTime
   endDate            DateTime

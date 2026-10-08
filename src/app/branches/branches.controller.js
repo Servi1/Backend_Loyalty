@@ -86,12 +86,13 @@ const getStaffSlots = catchAsync(async (req, res) => {
 });
 
 const getScheduleSlots = catchAsync(async (req, res) => {
-  const { date, duration } = req.query;
+  const { date, duration, tableId } = req.query;
   const data = await branchesService.getBranchScheduleSlots(
     req.tenantDb,
     req.params.branchId,
     date,
-    parseInt(duration) || 60
+    parseInt(duration) || 60,
+    tableId || null
   );
   res.json({ success: true, data });
 });

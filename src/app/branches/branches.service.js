@@ -139,7 +139,7 @@ const getBranch = async (db, branchId) => {
 
 // ─── getBranchScheduleSlots ────────────────────────────────────────────────────
 
-const getBranchScheduleSlots = async (db, branchId, dateStr, durationMin = 60) => {
+const getBranchScheduleSlots = async (db, branchId, dateStr, durationMin = 60, tableId = null) => {
   const branch = await db.branch.findUnique({
     where: { id: branchId },
     select: { hours: true, openingTime: true, closingTime: true }
@@ -215,28 +215,48 @@ const getBranchScheduleSlots = async (db, branchId, dateStr, durationMin = 60) =
       branchId,
       selectedSlotDate: targetDate,
       selectedSlot: { not: null },
-      status: { notIn: ["CANCELLED"] }
+      status: { notIn: ["CANCELLED", "REJECTED"] }
     },
-    select: { selectedSlot: true }
+    select: { selectedSlot: true, tableId: true }
   });
 
   const bookedCounts = {};
+  const tableBookedSlots = new Set();
   for (const o of existingOrders) {
     if (o.selectedSlot) {
       bookedCounts[o.selectedSlot] = (bookedCounts[o.selectedSlot] || 0) + 1;
+      if (tableId && o.tableId === tableId) {
+        tableBookedSlots.add(o.selectedSlot);
+      }
     }
   }
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const currentMinToday = now.getHours() * 60 + now.getMinutes();
+  const isToday = targetDate === todayStr;
 
   const MAX_PER_SLOT = 3; // configurable capacity per time slot
 
   return {
     date: targetDate,
     slotDuration: durationMin,
-    slots: slots.map(time => ({
-      time,
-      available: (bookedCounts[time] || 0) < MAX_PER_SLOT,
-      bookedCount: bookedCounts[time] || 0
-    }))
+    slots: slots.map(time => {
+      const [h, m] = time.split(":").map(Number);
+      const slotMin = h * 60 + m;
+      const isPast = isToday && slotMin <= currentMinToday;
+      const isTableBooked = tableId ? tableBookedSlots.has(time) : false;
+      const isBranchFull = (bookedCounts[time] || 0) >= MAX_PER_SLOT;
+      const available = !isPast && !isTableBooked && !isBranchFull;
+
+      return {
+        time,
+        available,
+        isPast,
+        isTableBooked,
+        bookedCount: bookedCounts[time] || 0
+      };
+    })
   };
 };
 
