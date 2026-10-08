@@ -266,7 +266,7 @@ const normalizePhone = (rawPhone) => {
           tableId,
           selectedSlotDate,
           selectedSlot,
-          status: { notIn: ["CANCELLED", "REJECTED"] }
+          status: { notIn: ["CANCELLED", "REFUNDED"] }
         }
       });
       if (existingTableBooking) {
@@ -282,7 +282,7 @@ const normalizePhone = (rawPhone) => {
         staffId,
         selectedSlotDate,
         selectedSlot,
-        status: { notIn: ["CANCELLED", "REJECTED"] }
+        status: { notIn: ["CANCELLED", "REFUNDED"] }
       }
     });
     if (existingStaffBooking) {

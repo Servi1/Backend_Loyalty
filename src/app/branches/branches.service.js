@@ -140,6 +140,7 @@ const getBranch = async (db, branchId) => {
 // ─── getBranchScheduleSlots ────────────────────────────────────────────────────
 
 const getBranchScheduleSlots = async (db, branchId, dateStr, durationMin = 60, tableId = null) => {
+  const duration = parseInt(durationMin, 10) || 60;
   const branch = await db.branch.findUnique({
     where: { id: branchId },
     select: { hours: true, openingTime: true, closingTime: true }
@@ -201,7 +202,7 @@ const getBranchScheduleSlots = async (db, branchId, dateStr, durationMin = 60, t
   }
   const totalMinutesDiff = endTotalMin - startTotalMin;
 
-  for (let offset = 0; offset < totalMinutesDiff; offset += durationMin) {
+  for (let offset = 0; offset < totalMinutesDiff; offset += duration) {
     const totalMin = startTotalMin + offset;
     const h = Math.floor((totalMin % (24 * 60)) / 60);
     const m = totalMin % 60;
@@ -215,7 +216,7 @@ const getBranchScheduleSlots = async (db, branchId, dateStr, durationMin = 60, t
       branchId,
       selectedSlotDate: targetDate,
       selectedSlot: { not: null },
-      status: { notIn: ["CANCELLED", "REJECTED"] }
+      status: { notIn: ["CANCELLED", "REFUNDED"] }
     },
     select: { selectedSlot: true, tableId: true }
   });
@@ -240,7 +241,7 @@ const getBranchScheduleSlots = async (db, branchId, dateStr, durationMin = 60, t
 
   return {
     date: targetDate,
-    slotDuration: durationMin,
+    slotDuration: duration,
     slots: slots.map(time => {
       const [h, m] = time.split(":").map(Number);
       const slotMin = h * 60 + m;

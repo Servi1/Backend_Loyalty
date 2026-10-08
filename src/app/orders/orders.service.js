@@ -286,7 +286,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
           tableId,
           selectedSlotDate,
           selectedSlot,
-          status: { notIn: ["CANCELLED", "REJECTED"] }
+          status: { notIn: ["CANCELLED", "REFUNDED"] }
         }
       });
       if (existingTableBooking) {
@@ -303,7 +303,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
         staffId,
         selectedSlotDate,
         selectedSlot,
-        status: { notIn: ["CANCELLED", "REJECTED"] }
+        status: { notIn: ["CANCELLED", "REFUNDED"] }
       }
     });
     if (existingStaffBooking) {
