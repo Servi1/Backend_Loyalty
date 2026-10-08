@@ -226,6 +226,12 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
           if (tenantCoupon.quantity > 0 && tenantCoupon.usedCount >= tenantCoupon.quantity) {
             throw new ApiError(400, `Coupon code ${cleanCode} usage limit reached.`);
           }
+          if (Array.isArray(tenantCoupon.applicableFeatures) && tenantCoupon.applicableFeatures.length > 0) {
+            const currentChannel = tableId ? "qr_table" : (qrCashierId ? "qr_cashier" : "servi_app");
+            if (!tenantCoupon.applicableFeatures.includes(currentChannel)) {
+              throw new ApiError(400, `Coupon code ${cleanCode} is not applicable for this ordering channel.`);
+            }
+          }
           validatedCoupon = { ...tenantCoupon, isTenantCoupon: true };
           if (tenantCoupon.type === "items" || paymentMethod === "free_reward") {
             isFreeRewardOrder = true;
@@ -270,6 +276,38 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     }
     if (table.expiresAt && new Date(table.expiresAt) < new Date()) {
       throw new ApiError(403, "Table ordering subscription is expired. Please contact restaurant staff.");
+    }
+
+    // Prevent double booking: check if this table is already booked for this slot
+    if (selectedSlot && selectedSlotDate) {
+      const existingTableBooking = await db.order.findFirst({
+        where: {
+          branchId,
+          tableId,
+          selectedSlotDate,
+          selectedSlot,
+          status: { notIn: ["CANCELLED", "REJECTED"] }
+        }
+      });
+      if (existingTableBooking) {
+        throw new ApiError(409, `This table is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
+      }
+    }
+  }
+
+  // Prevent double booking for scheduled staff specialists
+  if (staffId && selectedSlot && selectedSlotDate) {
+    const existingStaffBooking = await db.order.findFirst({
+      where: {
+        branchId,
+        staffId,
+        selectedSlotDate,
+        selectedSlot,
+        status: { notIn: ["CANCELLED", "REJECTED"] }
+      }
+    });
+    if (existingStaffBooking) {
+      throw new ApiError(409, `The selected specialist is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
     }
   }
 
