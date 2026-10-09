@@ -1,5 +1,7 @@
 const ApiError = require("../../../utils/ApiError");
 
+const DEFAULT_FEATURES = ["servi_app", "qr_table", "qr_cashier", "pos"];
+
 const getAll = async (db) => {
   const discounts = await db.discount.findMany({
     orderBy: {
@@ -8,7 +10,7 @@ const getAll = async (db) => {
   });
 
   try {
-    const extraRows = await db.$queryRawUnsafe('SELECT "id", "targetTier", "maxCustomerCount", "customerCount", "specificCustomers" FROM "Discount"');
+    const extraRows = await db.$queryRawUnsafe('SELECT "id", "targetTier", "maxCustomerCount", "customerCount", "specificCustomers", "applicableFeatures" FROM "Discount"');
     const extraMap = new Map(extraRows.map(r => [r.id, r]));
     discounts.forEach(d => {
       const extra = extraMap.get(d.id);
@@ -17,11 +19,13 @@ const getAll = async (db) => {
         d.maxCustomerCount = extra.maxCustomerCount !== undefined ? extra.maxCustomerCount : null;
         d.customerCount = extra.customerCount || 0;
         d.specificCustomers = Array.isArray(extra.specificCustomers) ? extra.specificCustomers : [];
+        d.applicableFeatures = Array.isArray(extra.applicableFeatures) ? extra.applicableFeatures : DEFAULT_FEATURES;
       } else {
         d.targetTier = d.targetTier || "all";
         d.maxCustomerCount = d.maxCustomerCount !== undefined ? d.maxCustomerCount : null;
         d.customerCount = d.customerCount || 0;
         d.specificCustomers = Array.isArray(d.specificCustomers) ? d.specificCustomers : [];
+        d.applicableFeatures = Array.isArray(d.applicableFeatures) ? d.applicableFeatures : DEFAULT_FEATURES;
       }
     });
   } catch (e) {
@@ -30,6 +34,7 @@ const getAll = async (db) => {
       d.maxCustomerCount = d.maxCustomerCount !== undefined ? d.maxCustomerCount : null;
       d.customerCount = d.customerCount || 0;
       d.specificCustomers = Array.isArray(d.specificCustomers) ? d.specificCustomers : [];
+      d.applicableFeatures = Array.isArray(d.applicableFeatures) ? d.applicableFeatures : DEFAULT_FEATURES;
     });
   }
 
@@ -41,6 +46,7 @@ const create = async (db, data) => {
   const maxCustomerCount = data.maxCustomerCount !== undefined && data.maxCustomerCount !== null && data.maxCustomerCount !== "" ? parseInt(data.maxCustomerCount) : null;
   const customerCount = data.customerCount !== undefined ? parseInt(data.customerCount) : 0;
   const specificCustomers = Array.isArray(data.specificCustomers) ? data.specificCustomers : [];
+  const applicableFeatures = Array.isArray(data.applicableFeatures) ? data.applicableFeatures : DEFAULT_FEATURES;
 
   const created = await db.discount.create({
     data: {
@@ -64,19 +70,34 @@ const create = async (db, data) => {
 
   try {
     await db.$executeRawUnsafe(
-      'UPDATE "Discount" SET "targetTier" = $1, "maxCustomerCount" = $2, "customerCount" = $3, "specificCustomers" = $4::jsonb WHERE "id" = $5',
+      'UPDATE "Discount" SET "targetTier" = $1, "maxCustomerCount" = $2, "customerCount" = $3, "specificCustomers" = $4::jsonb, "applicableFeatures" = $5::jsonb WHERE "id" = $6',
       targetTier,
       maxCustomerCount,
       customerCount,
       JSON.stringify(specificCustomers),
+      JSON.stringify(applicableFeatures),
       created.id
     );
-  } catch (e) {}
+  } catch (e) {
+    try {
+      await db.$executeRawUnsafe('ALTER TABLE "Discount" ADD COLUMN IF NOT EXISTS "applicableFeatures" JSONB');
+      await db.$executeRawUnsafe(
+        'UPDATE "Discount" SET "targetTier" = $1, "maxCustomerCount" = $2, "customerCount" = $3, "specificCustomers" = $4::jsonb, "applicableFeatures" = $5::jsonb WHERE "id" = $6',
+        targetTier,
+        maxCustomerCount,
+        customerCount,
+        JSON.stringify(specificCustomers),
+        JSON.stringify(applicableFeatures),
+        created.id
+      );
+    } catch (err) {}
+  }
 
   created.targetTier = targetTier;
   created.maxCustomerCount = maxCustomerCount;
   created.customerCount = customerCount;
   created.specificCustomers = specificCustomers;
+  created.applicableFeatures = applicableFeatures;
 
   return created;
 };
@@ -89,6 +110,9 @@ const update = async (db, id, data) => {
   const maxCustomerCount = data.maxCustomerCount !== undefined ? (data.maxCustomerCount === "" || data.maxCustomerCount === null ? null : parseInt(data.maxCustomerCount)) : (discount.maxCustomerCount ?? null);
   const customerCount = data.customerCount !== undefined ? parseInt(data.customerCount) : (discount.customerCount || 0);
   const specificCustomers = data.specificCustomers !== undefined ? (Array.isArray(data.specificCustomers) ? data.specificCustomers : []) : (Array.isArray(discount.specificCustomers) ? discount.specificCustomers : []);
+  const applicableFeatures = data.applicableFeatures !== undefined 
+    ? (Array.isArray(data.applicableFeatures) ? data.applicableFeatures : DEFAULT_FEATURES)
+    : (Array.isArray(discount.applicableFeatures) ? discount.applicableFeatures : DEFAULT_FEATURES);
 
   const updated = await db.discount.update({
     where: { id },
@@ -113,19 +137,34 @@ const update = async (db, id, data) => {
 
   try {
     await db.$executeRawUnsafe(
-      'UPDATE "Discount" SET "targetTier" = $1, "maxCustomerCount" = $2, "customerCount" = $3, "specificCustomers" = $4::jsonb WHERE "id" = $5',
+      'UPDATE "Discount" SET "targetTier" = $1, "maxCustomerCount" = $2, "customerCount" = $3, "specificCustomers" = $4::jsonb, "applicableFeatures" = $5::jsonb WHERE "id" = $6',
       targetTier,
       maxCustomerCount,
       customerCount,
       JSON.stringify(specificCustomers),
+      JSON.stringify(applicableFeatures),
       id
     );
-  } catch (e) {}
+  } catch (e) {
+    try {
+      await db.$executeRawUnsafe('ALTER TABLE "Discount" ADD COLUMN IF NOT EXISTS "applicableFeatures" JSONB');
+      await db.$executeRawUnsafe(
+        'UPDATE "Discount" SET "targetTier" = $1, "maxCustomerCount" = $2, "customerCount" = $3, "specificCustomers" = $4::jsonb, "applicableFeatures" = $5::jsonb WHERE "id" = $6',
+        targetTier,
+        maxCustomerCount,
+        customerCount,
+        JSON.stringify(specificCustomers),
+        JSON.stringify(applicableFeatures),
+        id
+      );
+    } catch (err) {}
+  }
 
   updated.targetTier = targetTier;
   updated.maxCustomerCount = maxCustomerCount;
   updated.customerCount = customerCount;
   updated.specificCustomers = specificCustomers;
+  updated.applicableFeatures = applicableFeatures;
 
   return updated;
 };

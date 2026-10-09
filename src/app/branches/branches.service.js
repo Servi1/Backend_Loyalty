@@ -128,18 +128,57 @@ const getBranch = async (db, branchId) => {
     }
   } catch (e) {}
   
+  // Fetch active discounts that apply to this branch
+  let activeDiscounts = [];
+  try {
+    const allDiscounts = await db.discount.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: "desc" },
+    });
+    let extraFeaturesMap = new Map();
+    try {
+      const extraRows = await db.$queryRawUnsafe('SELECT "id", "applicableFeatures" FROM "Discount"');
+      extraFeaturesMap = new Map(extraRows.map(r => [r.id, r.applicableFeatures]));
+    } catch (e) {}
+
+    const now = new Date();
+    activeDiscounts = allDiscounts.filter(d => {
+      if (Array.isArray(d.locations) && d.locations.length > 0) {
+        if (!d.locations.includes(branchId)) return false;
+      }
+      if (d.hasDateRange) {
+        if (d.startDate && new Date(d.startDate) > now) return false;
+        if (d.endDate && new Date(d.endDate) < now) return false;
+      }
+      const extraFeat = extraFeaturesMap.get(d.id);
+      d.applicableFeatures = Array.isArray(extraFeat)
+        ? extraFeat
+        : (Array.isArray(d.applicableFeatures) ? d.applicableFeatures : ["servi_app", "qr_table", "qr_cashier", "pos"]);
+      return true;
+    });
+  } catch (err) {
+    console.error("Failed to fetch branch discounts:", err.message);
+  }
+
   return {
     ...branch,
     prepExtraTime,
     nameAr: branch.nameAr || null,
     isOpen: checkIsOpen(branch),
     hours: formatBranchHours(branch),
+    discounts: activeDiscounts,
   };
+};
+
+const getBranchDiscounts = async (db, branchId) => {
+  const branchData = await getBranch(db, branchId);
+  return branchData.discounts || [];
 };
 
 // ─── getBranchScheduleSlots ────────────────────────────────────────────────────
 
-const getBranchScheduleSlots = async (db, branchId, dateStr, durationMin = 60) => {
+const getBranchScheduleSlots = async (db, branchId, dateStr, durationMin = 60, tableId = null) => {
+  const duration = parseInt(durationMin, 10) || 60;
   const branch = await db.branch.findUnique({
     where: { id: branchId },
     select: { hours: true, openingTime: true, closingTime: true }
@@ -201,7 +240,7 @@ const getBranchScheduleSlots = async (db, branchId, dateStr, durationMin = 60) =
   }
   const totalMinutesDiff = endTotalMin - startTotalMin;
 
-  for (let offset = 0; offset < totalMinutesDiff; offset += durationMin) {
+  for (let offset = 0; offset < totalMinutesDiff; offset += duration) {
     const totalMin = startTotalMin + offset;
     const h = Math.floor((totalMin % (24 * 60)) / 60);
     const m = totalMin % 60;
@@ -215,28 +254,48 @@ const getBranchScheduleSlots = async (db, branchId, dateStr, durationMin = 60) =
       branchId,
       selectedSlotDate: targetDate,
       selectedSlot: { not: null },
-      status: { notIn: ["CANCELLED"] }
+      status: { notIn: ["CANCELLED", "REFUNDED"] }
     },
-    select: { selectedSlot: true }
+    select: { selectedSlot: true, tableId: true }
   });
 
   const bookedCounts = {};
+  const tableBookedSlots = new Set();
   for (const o of existingOrders) {
     if (o.selectedSlot) {
       bookedCounts[o.selectedSlot] = (bookedCounts[o.selectedSlot] || 0) + 1;
+      if (tableId && o.tableId === tableId) {
+        tableBookedSlots.add(o.selectedSlot);
+      }
     }
   }
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const currentMinToday = now.getHours() * 60 + now.getMinutes();
+  const isToday = targetDate === todayStr;
 
   const MAX_PER_SLOT = 3; // configurable capacity per time slot
 
   return {
     date: targetDate,
-    slotDuration: durationMin,
-    slots: slots.map(time => ({
-      time,
-      available: (bookedCounts[time] || 0) < MAX_PER_SLOT,
-      bookedCount: bookedCounts[time] || 0
-    }))
+    slotDuration: duration,
+    slots: slots.map(time => {
+      const [h, m] = time.split(":").map(Number);
+      const slotMin = h * 60 + m;
+      const isPast = isToday && slotMin <= currentMinToday;
+      const isTableBooked = tableId ? tableBookedSlots.has(time) : false;
+      const isBranchFull = (bookedCounts[time] || 0) >= MAX_PER_SLOT;
+      const available = !isPast && !isTableBooked && !isBranchFull;
+
+      return {
+        time,
+        available,
+        isPast,
+        isTableBooked,
+        bookedCount: bookedCounts[time] || 0
+      };
+    })
   };
 };
 
@@ -358,4 +417,4 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
   return slots;
 };
 
-module.exports = { getBranches, getBranch, getBranchStaff, getStaffSlots, getBranchScheduleSlots };
+module.exports = { getBranches, getBranch, getBranchStaff, getStaffSlots, getBranchScheduleSlots, getBranchDiscounts };

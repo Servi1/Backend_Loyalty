@@ -15,9 +15,19 @@ const seedDefaultCategoriesIfEmpty = async () => {
 
 const getAll = async () => {
   await seedDefaultCategoriesIfEmpty();
-  return mainPrisma.tenantCategory.findMany({
+  const categories = await mainPrisma.tenantCategory.findMany({
     orderBy: { name: "asc" }
   });
+  try {
+    const rawWithAr = await mainPrisma.$queryRawUnsafe('SELECT id, "nameAr" FROM "TenantCategory"');
+    const arMap = new Map(rawWithAr.map(r => [r.id, r.nameAr]));
+    return categories.map(c => ({
+      ...c,
+      nameAr: arMap.get(c.id) || null
+    }));
+  } catch (e) {
+    return categories;
+  }
 };
 
 const create = async (data) => {
@@ -30,12 +40,22 @@ const create = async (data) => {
   if (existing) {
     throw new ApiError(400, "Category already exists");
   }
-  return mainPrisma.tenantCategory.create({
-    data: { 
-      name: data.name,
-      nameAr: data.nameAr || null
-    }
+  const created = await mainPrisma.tenantCategory.create({
+    data: { name: data.name }
   });
+  if (data.nameAr) {
+    try {
+      await mainPrisma.$executeRawUnsafe(
+        'UPDATE "TenantCategory" SET "nameAr" = $1 WHERE id = $2',
+        data.nameAr,
+        created.id
+      );
+      created.nameAr = data.nameAr;
+    } catch (e) {
+      console.warn("Could not save nameAr for category:", e.message);
+    }
+  }
+  return created;
 };
 
 const update = async (id, data) => {
@@ -48,13 +68,23 @@ const update = async (id, data) => {
   if (existing && existing.id !== id) {
     throw new ApiError(400, "Category name already exists");
   }
-  return mainPrisma.tenantCategory.update({
+  const updated = await mainPrisma.tenantCategory.update({
     where: { id },
-    data: { 
-      name: data.name,
-      nameAr: data.nameAr !== undefined ? data.nameAr : undefined
-    }
+    data: { name: data.name }
   });
+  if (data.nameAr !== undefined) {
+    try {
+      await mainPrisma.$executeRawUnsafe(
+        'UPDATE "TenantCategory" SET "nameAr" = $1 WHERE id = $2',
+        data.nameAr || null,
+        id
+      );
+      updated.nameAr = data.nameAr || null;
+    } catch (e) {
+      console.warn("Could not update nameAr for category:", e.message);
+    }
+  }
+  return updated;
 };
 
 const remove = async (id) => {

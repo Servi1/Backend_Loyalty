@@ -258,6 +258,36 @@ const normalizePhone = (rawPhone) => {
         throw new ApiError(400, "Table ordering subscription is expired. Please renew.");
       }
     }
+
+    if (selectedSlot && selectedSlotDate) {
+      const existingTableBooking = await db.order.findFirst({
+        where: {
+          branchId,
+          tableId,
+          selectedSlotDate,
+          selectedSlot,
+          status: { notIn: ["CANCELLED", "REFUNDED"] }
+        }
+      });
+      if (existingTableBooking) {
+        throw new ApiError(409, `This table is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
+      }
+    }
+  }
+
+  if (staffId && selectedSlot && selectedSlotDate) {
+    const existingStaffBooking = await db.order.findFirst({
+      where: {
+        branchId,
+        staffId,
+        selectedSlotDate,
+        selectedSlot,
+        status: { notIn: ["CANCELLED", "REFUNDED"] }
+      }
+    });
+    if (existingStaffBooking) {
+      throw new ApiError(409, `The selected specialist is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
+    }
   }
 
   if (posUnit) {
