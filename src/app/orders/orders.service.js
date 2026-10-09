@@ -356,10 +356,31 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
 
     let fallbackItem = null;
     if (validatedCoupon && validatedCoupon.menuItemId) {
-      fallbackItem = await db.menuItem.findUnique({ where: { id: validatedCoupon.menuItemId } });
+      fallbackItem = await db.menuItem.findFirst({ where: { id: validatedCoupon.menuItemId, isAvailable: true } });
+    }
+    if (!fallbackItem && validatedCoupon?.prizeLabel) {
+      const prizeName = String(validatedCoupon.prizeLabel).trim();
+      fallbackItem = await db.menuItem.findFirst({
+        where: {
+          isAvailable: true,
+          name: { contains: prizeName, mode: "insensitive" }
+        }
+      });
+    }
+    if (!fallbackItem && items && items[0] && items[0].name) {
+      const itemName = String(items[0].name).trim();
+      fallbackItem = await db.menuItem.findFirst({
+        where: {
+          isAvailable: true,
+          name: { contains: itemName, mode: "insensitive" }
+        }
+      });
     }
     if (!fallbackItem) {
       fallbackItem = await db.menuItem.findFirst({ where: { isAvailable: true } });
+    }
+    if (!fallbackItem) {
+      fallbackItem = await db.menuItem.findFirst();
     }
 
     if (fallbackItem) {
@@ -378,7 +399,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
 
       menuItemIds = items.map((i) => i.menuItemId || i.itemId || i.id).filter(Boolean);
       menuItems = await db.menuItem.findMany({
-        where: { id: { in: menuItemIds }, isAvailable: true },
+        where: { id: { in: menuItemIds } },
       });
     }
   }
