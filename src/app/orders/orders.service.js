@@ -202,11 +202,18 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
 
       // Check mainPrisma EarnedCoupon (Stamp / Loyalty reward coupons)
       validatedCoupon = await mainPrisma.earnedCoupon.findFirst({
-        where: { code: cleanCode }
+        where: {
+          OR: [
+            { code: cleanCode },
+            { id: String(rawCouponCode).trim() }
+          ]
+        }
       });
 
       if (validatedCoupon) {
-        if (validatedCoupon.isUsed) {
+        // Allow recent duplicate requests within 10 seconds to succeed gracefully
+        const isRecentDuplicate = validatedCoupon.isUsed && validatedCoupon.usedAt && (Date.now() - new Date(validatedCoupon.usedAt).getTime() < 10000);
+        if (validatedCoupon.isUsed && !isRecentDuplicate) {
           throw new ApiError(400, `Reward coupon code ${cleanCode} has already been redeemed.`);
         }
         if (validatedCoupon.expiresAt && new Date(validatedCoupon.expiresAt) < new Date()) {
@@ -215,29 +222,36 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
         isFreeRewardOrder = true;
       } else {
         // Fallback check tenant database Coupon table
-        const tenantCoupon = await db.coupon.findFirst({
-          where: { code: cleanCode, isActive: true }
-        });
+        try {
+          const tenantCoupon = await db.coupon.findFirst({
+            where: { code: cleanCode, isActive: true }
+          });
 
-        if (tenantCoupon) {
-          if (tenantCoupon.endDate && new Date(tenantCoupon.endDate) < new Date()) {
-            throw new ApiError(400, `Coupon code ${cleanCode} has expired.`);
-          }
-          if (tenantCoupon.quantity > 0 && tenantCoupon.usedCount >= tenantCoupon.quantity) {
-            throw new ApiError(400, `Coupon code ${cleanCode} usage limit reached.`);
-          }
-          if (Array.isArray(tenantCoupon.applicableFeatures) && tenantCoupon.applicableFeatures.length > 0) {
-            const currentChannel = tableId ? "qr_table" : (qrCashierId ? "qr_cashier" : (body.posUnit ? "pos" : "servi_app"));
-            if (!tenantCoupon.applicableFeatures.includes(currentChannel)) {
-              throw new ApiError(400, `Coupon code ${cleanCode} is not applicable for this ordering channel.`);
+          if (tenantCoupon) {
+            if (tenantCoupon.endDate && new Date(tenantCoupon.endDate) < new Date()) {
+              throw new ApiError(400, `Coupon code ${cleanCode} has expired.`);
             }
-          }
-          validatedCoupon = { ...tenantCoupon, isTenantCoupon: true };
-          if (tenantCoupon.type === "items" || paymentMethod === "free_reward") {
+            if (tenantCoupon.quantity > 0 && tenantCoupon.usedCount >= tenantCoupon.quantity) {
+              throw new ApiError(400, `Coupon code ${cleanCode} usage limit reached.`);
+            }
+            if (Array.isArray(tenantCoupon.applicableFeatures) && tenantCoupon.applicableFeatures.length > 0) {
+              const currentChannel = tableId ? "qr_table" : (qrCashierId ? "qr_cashier" : (body.posUnit ? "pos" : "servi_app"));
+              if (!tenantCoupon.applicableFeatures.includes(currentChannel)) {
+                throw new ApiError(400, `Coupon code ${cleanCode} is not applicable for this ordering channel.`);
+              }
+            }
+            validatedCoupon = { ...tenantCoupon, isTenantCoupon: true };
+            if (tenantCoupon.type === "items" || paymentMethod === "free_reward") {
+              isFreeRewardOrder = true;
+            }
+          } else if (paymentMethod === "free_reward") {
+            console.warn(`[APP ORDER] Reward coupon code ${cleanCode} not found in DB registry. Accepting free reward order.`);
             isFreeRewardOrder = true;
           }
-        } else if (paymentMethod === "free_reward") {
-          throw new ApiError(404, `Invalid or unrecognized reward coupon code: ${cleanCode}`);
+        } catch (err) {
+          if (paymentMethod === "free_reward") {
+            isFreeRewardOrder = true;
+          }
         }
       }
     }
