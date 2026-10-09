@@ -184,7 +184,7 @@ const isBranchOpenNow = (branch) => {
 // ─── placeOrder ───────────────────────────────────────────────────────────────
 
 const placeOrder = async (db, userId, body, tenantId, tenant) => {
-  const { branchId, tableId, qrCashierId, cashierId, type = "DINE_IN", customOrderTypeId, items, notes, total, paymentMethod, source, staffId, earnRate, selectedSlot, selectedSlotDate, customerName, customerPhone, couponCode, coupon } = body;
+  let { branchId, tableId, qrCashierId, cashierId, type = "DINE_IN", customOrderTypeId, items, notes, total, paymentMethod, source, staffId, earnRate, selectedSlot, selectedSlotDate, customerName, customerPhone, couponCode, coupon } = body;
 
   if (!branchId) throw new ApiError(400, "branchId is required");
   if (!items || !Array.isArray(items) || items.length === 0) {
