@@ -169,6 +169,154 @@ const checkPhoneAndSendOtp = async (rawPhone) => {
  * Verifies OTP, registers or fetches customer, creates wallet for brand if missing,
  * and generates customer's personal stamp QR payload.
  */
+/**
+ * Calculates and synchronizes customer earned stamps from completed orders
+ * across the tenant's database, taking into account any generated coupons.
+ */
+const syncCustomerStamps = async (user, tenant, stampProg) => {
+  if (!user || !tenant || !stampProg) {
+    return { stamps: 0, wallet: null };
+  }
+
+  const requiredStamps = Number(stampProg.requiredStamps || 6);
+  const eligibleIds = Array.isArray(stampProg.eligibleItemIds)
+    ? stampProg.eligibleItemIds.map(String).filter(Boolean)
+    : [];
+  const eligibleNames = Array.isArray(stampProg.eligibleItemNames)
+    ? stampProg.eligibleItemNames.map((n) => String(n).toLowerCase().trim()).filter(Boolean)
+    : [];
+
+  let earnedStampsTotal = 0;
+
+  if (tenant.dbUrl) {
+    try {
+      const { getTenantClient } = require("../../config/tenantManager");
+      const tenantDb = getTenantClient(tenant.dbUrl);
+
+      const phoneCandidates = getPhoneCandidates(user.phone);
+      const OR = [
+        { customerId: user.id },
+        { userId: user.id },
+      ];
+      if (phoneCandidates.length > 0) {
+        OR.push({ customerPhone: { in: phoneCandidates } });
+      }
+
+      // Also backfill customerId on anonymous orders if matching phone
+      try {
+        if (phoneCandidates.length > 0) {
+          await tenantDb.order.updateMany({
+            where: {
+              customerPhone: { in: phoneCandidates },
+              customerId: null,
+            },
+            data: {
+              customerId: user.id,
+            },
+          });
+        }
+      } catch (err) {
+        // Non-critical backfill
+      }
+
+      const completedOrders = await tenantDb.order.findMany({
+        where: {
+          OR,
+          status: "COMPLETED",
+        },
+        include: {
+          items: {
+            include: {
+              menuItem: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "asc" },
+      });
+
+      completedOrders.forEach((o) => {
+        let orderStamps = 0;
+        if (Array.isArray(o.items)) {
+          o.items.forEach((it) => {
+            const mId = String(it.menuItemId || it.itemId || it.id || "");
+            const itName = String(it.name || it.menuItem?.name || "").toLowerCase().trim();
+            const matchesId = eligibleIds.length === 0 || (mId && eligibleIds.includes(mId));
+            const matchesName = eligibleNames.length > 0 && itName && eligibleNames.some((en) => itName.includes(en) || en.includes(itName));
+
+            if (eligibleIds.length === 0 || matchesId || matchesName) {
+              orderStamps += Number(it.quantity || 1);
+            }
+          });
+        }
+        earnedStampsTotal += orderStamps;
+      });
+    } catch (err) {
+      console.error(`Failed to calculate stamps from tenant DB for user ${user.id}:`, err.message);
+    }
+  }
+
+  // Count generated coupons for this brand & customer
+  const customerCoupons = await mainPrisma.earnedCoupon.findMany({
+    where: {
+      appUserId: user.id,
+      tenantId: tenant.id,
+    },
+    select: { id: true, isUsed: true, expiresAt: true },
+  });
+
+  // Each coupon created consumed one full cycle of stamps (requiredStamps)
+  const consumedStamps = customerCoupons.length * requiredStamps;
+  const remainingOrderStamps = Math.max(0, earnedStampsTotal - consumedStamps);
+
+  // Get current wallet
+  let wallet = await mainPrisma.wallet.findFirst({
+    where: {
+      appUserId: user.id,
+      tenantId: tenant.id,
+    },
+  });
+
+  if (!wallet) {
+    try {
+      wallet = await mainPrisma.wallet.create({
+        data: {
+          appUserId: user.id,
+          tenantId: tenant.id,
+          points: 0,
+          lifetimeEarn: 0,
+          tier: "bronze",
+          stamps: remainingOrderStamps,
+        },
+      });
+    } catch (e) {
+      console.error("Failed to auto-create wallet in syncCustomerStamps:", e.message);
+    }
+  }
+
+  const finalStamps = Math.max(wallet?.stamps || 0, remainingOrderStamps);
+
+  if (wallet && wallet.stamps !== finalStamps) {
+    try {
+      wallet = await mainPrisma.wallet.update({
+        where: { id: wallet.id },
+        data: { stamps: finalStamps },
+      });
+    } catch (e) {
+      console.error("Failed to update wallet stamps:", e.message);
+    }
+  }
+
+  return {
+    stamps: finalStamps,
+    wallet,
+  };
+};
+
+/**
+ * Verifies OTP code, ensures customer appUser & wallet exists for the brand,
+ * synchronizes customer stamps from completed orders,
+ * and generates customer's personal stamp QR payload.
+ */
 const verifyOtpAndGetStampCard = async ({ phone: rawPhone, code, name, token, tenantId }) => {
   const phone = normalisePhone(rawPhone);
   if (!phone || !code) {
@@ -203,6 +351,7 @@ const verifyOtpAndGetStampCard = async ({ phone: rawPhone, code, name, token, te
       slug: true,
       logoUrl: true,
       stampPrograms: true,
+      dbUrl: true,
     },
   });
 
@@ -254,28 +403,12 @@ const verifyOtpAndGetStampCard = async ({ phone: rawPhone, code, name, token, te
     });
   }
 
-  // Ensure customer has a wallet for this tenant
-  let wallet = await mainPrisma.wallet.findFirst({
-    where: {
-      appUserId: user.id,
-      tenantId: tenant.id,
-    },
-  });
-
-  if (!wallet) {
-    wallet = await mainPrisma.wallet.create({
-      data: {
-        appUserId: user.id,
-        tenantId: tenant.id,
-        points: 0,
-        lifetimeEarn: 0,
-        tier: "bronze",
-      },
-    });
-  }
-
   const stampList = Array.isArray(tenant.stampPrograms) ? tenant.stampPrograms : [];
   const stampProg = (stampId ? stampList.find((s) => s.id === stampId) : null) || stampList[0] || null;
+
+  // Calculate & sync customer's earned stamps dynamically from completed brand orders
+  const syncResult = await syncCustomerStamps(user, tenant, stampProg);
+  const currentStamps = syncResult.stamps;
 
   // Generate Customer's Personal Stamp QR Payload (scannable by POS & mobile app)
   const qrPayload = JSON.stringify({
@@ -340,8 +473,136 @@ const verifyOtpAndGetStampCard = async ({ phone: rawPhone, code, name, token, te
     },
     stampCard: {
       stamps: activeCouponData
-        ? Math.max(wallet.stamps || 0, Number(stampProg?.requiredStamps || 6))
-        : (wallet.stamps || 0),
+        ? Math.max(currentStamps, Number(stampProg?.requiredStamps || 6))
+        : currentStamps,
+      requiredStamps: Number(stampProg?.requiredStamps || 6),
+      nameEn: stampProg?.nameEn || "Drinks",
+      nameAr: stampProg?.nameAr || "المشروبات",
+      cardBgColor: stampProg?.cardBgColor || "#7F1D1D",
+      cardTextColor: stampProg?.cardTextColor || "#FFFFFF",
+      rewardTextEn: stampProg?.rewardTextEn || "Free Drink on 6th stamp",
+      rewardTextAr: stampProg?.rewardTextAr || "مشروب مجاني عند الختم السادس",
+    },
+    qrPayload,
+    customerStampToken,
+    activeCoupon: activeCouponData,
+  };
+};
+
+/**
+ * Fetches the customer's stamp card with live synced stamps.
+ */
+const getCustomerStampCard = async ({ customerId, tenantId, token }) => {
+  let resolvedTenantId = tenantId;
+  let stampId = null;
+
+  if (token) {
+    try {
+      const decoded = decodeQrToken(token);
+      resolvedTenantId = decoded.tenantId || resolvedTenantId;
+      stampId = decoded.stampId || null;
+    } catch (err) {
+      // Ignored
+    }
+  }
+
+  if (!resolvedTenantId || !customerId) {
+    throw new ApiError(400, "Brand context and customerId are required");
+  }
+
+  const tenant = await mainPrisma.tenant.findFirst({
+    where: {
+      OR: [{ id: resolvedTenantId }, { slug: resolvedTenantId }],
+    },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      logoUrl: true,
+      stampPrograms: true,
+      dbUrl: true,
+    },
+  });
+
+  if (!tenant) {
+    throw new ApiError(404, "Brand not found");
+  }
+
+  const user = await mainPrisma.appUser.findUnique({
+    where: { id: customerId },
+  });
+
+  if (!user) {
+    throw new ApiError(404, "Customer not found");
+  }
+
+  const stampList = Array.isArray(tenant.stampPrograms) ? tenant.stampPrograms : [];
+  const stampProg = (stampId ? stampList.find((s) => s.id === stampId) : null) || stampList[0] || null;
+
+  // Calculate & sync stamps from completed orders
+  const syncResult = await syncCustomerStamps(user, tenant, stampProg);
+  const currentStamps = syncResult.stamps;
+
+  // Check for any active, unredeemed coupon
+  const activeCoupon = await mainPrisma.earnedCoupon.findFirst({
+    where: {
+      appUserId: user.id,
+      tenantId: tenant.id,
+      isUsed: false,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  let activeCouponData = null;
+  if (activeCoupon) {
+    const couponQrPayload = JSON.stringify({
+      code: activeCoupon.code,
+      tenantId: tenant.id,
+      customerId: user.id,
+      menuItemId: activeCoupon.menuItemId || null,
+      type: "COUPON",
+    });
+    activeCouponData = {
+      id: activeCoupon.id,
+      code: activeCoupon.code,
+      prizeLabel: activeCoupon.prizeLabel,
+      itemName: activeCoupon.prizeLabel?.replace("Free ", "")?.replace(" (Stamp Reward)", "") || "Reward Item",
+      menuItemId: activeCoupon.menuItemId || null,
+      expiresAt: activeCoupon.expiresAt,
+      qrPayload: couponQrPayload,
+    };
+  }
+
+  const qrPayload = JSON.stringify({
+    customerId: user.id,
+    phone: user.phone,
+    tenantId: tenant.id,
+    type: "STAMP",
+  });
+
+  const customerStampToken = encodeQrToken({
+    tenantId: tenant.id,
+    customerId: user.id,
+    type: "CUSTOMER_STAMP",
+  });
+
+  return {
+    customer: {
+      id: user.id,
+      name: user.name,
+      phone: user.phone,
+    },
+    brand: {
+      id: tenant.id,
+      name: tenant.name,
+      slug: tenant.slug,
+      logoUrl: tenant.logoUrl,
+    },
+    stampCard: {
+      stamps: activeCouponData
+        ? Math.max(currentStamps, Number(stampProg?.requiredStamps || 6))
+        : currentStamps,
       requiredStamps: Number(stampProg?.requiredStamps || 6),
       nameEn: stampProg?.nameEn || "Drinks",
       nameAr: stampProg?.nameAr || "المشروبات",
@@ -379,10 +640,21 @@ const getEligibleItemsHistory = async ({ customerId, tenantId }) => {
   const stampProg = stampList[0] || null;
   const eligibleIds = Array.isArray(stampProg?.eligibleItemIds) ? stampProg.eligibleItemIds.map(String) : [];
 
+  const user = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
+  const candidates = user ? getPhoneCandidates(user.phone) : [];
+
+  const OR = [
+    { customerId },
+    { userId: customerId },
+  ];
+  if (candidates.length > 0) {
+    OR.push({ customerPhone: { in: candidates } });
+  }
+
   // Find customer's completed orders
   const orders = await tenantDb.order.findMany({
     where: {
-      customerId,
+      OR,
       status: "COMPLETED",
     },
     include: {
@@ -409,6 +681,20 @@ const getEligibleItemsHistory = async ({ customerId, tenantId }) => {
       where: {
         id: { in: targetIds },
       },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        price: true,
+        imageUrl: true,
+      },
+    });
+  }
+
+  if (items.length === 0) {
+    items = await tenantDb.menuItem.findMany({
+      where: { isAvailable: true },
+      take: 20,
       select: {
         id: true,
         name: true,
@@ -446,6 +732,11 @@ const claimRewardCoupon = async ({ customerId, tenantId, menuItemId }) => {
   const stampList = Array.isArray(tenant.stampPrograms) ? tenant.stampPrograms : [];
   const stampProg = stampList[0] || null;
   const requiredStamps = Number(stampProg?.requiredStamps || 6);
+
+  const user = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
+  if (user) {
+    await syncCustomerStamps(user, tenant, stampProg);
+  }
 
   const wallet = await mainPrisma.wallet.findFirst({
     where: {
@@ -647,6 +938,8 @@ module.exports = {
   resolveStampProgram,
   checkPhoneAndSendOtp,
   verifyOtpAndGetStampCard,
+  getCustomerStampCard,
+  syncCustomerStamps,
   getEligibleItemsHistory,
   claimRewardCoupon,
   generateRewardCoupon: claimRewardCoupon,

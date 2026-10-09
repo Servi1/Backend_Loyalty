@@ -59,10 +59,19 @@ const updateCustomerName = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data });
 });
 
+const getCustomerCard = catchAsync(async (req, res) => {
+  const customerId = req.query.customerId || req.user?.id;
+  const tenantId = req.query.tenantId || req.params?.tenantId;
+  const token = req.query.token;
+  const data = await stampService.getCustomerStampCard({ customerId, tenantId, token });
+  res.status(200).json({ success: true, data });
+});
+
 module.exports = {
   getStampProgramInfo,
   checkCustomerPhone,
   verifyOtpAndGetCard,
+  getCustomerCard,
   getEligibleItems,
   claimReward,
   redeemCoupon,

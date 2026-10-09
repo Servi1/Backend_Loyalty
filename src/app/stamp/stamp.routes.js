@@ -12,6 +12,7 @@ const ctrl = require("./stamp.controller");
 const router = Router({ mergeParams: true });
 
 router.get("/info", ctrl.getStampProgramInfo);
+router.get("/card", ctrl.getCustomerCard);
 router.post("/check-phone", ctrl.checkCustomerPhone);
 router.post("/verify-otp", ctrl.verifyOtpAndGetCard);
 router.get("/eligible-items", ctrl.getEligibleItems);
