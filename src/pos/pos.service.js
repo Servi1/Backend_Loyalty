@@ -200,8 +200,8 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
     await syncToAggregatedOrder(db, tenantId, order).catch(console.error);
   }
 
-  // Award loyalty points immediately at order creation if completed (except if paid by points)
-  if (order.customerId && order.status === "COMPLETED" && orderData.paymentMethod !== "points") {
+  // Award loyalty points immediately at order creation if completed (except if paid by points or free reward)
+  if (order.customerId && order.status === "COMPLETED" && orderData.paymentMethod !== "points" && orderData.paymentMethod !== "free_reward") {
     try {
       const mainPrisma = require("../config/prisma");
       const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
@@ -434,9 +434,9 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
     }
   }
 
-  // If completed and customer exists, handle loyalty points auto-award
+  // If completed and customer exists, handle loyalty points auto-award (except points or free reward)
   if (upperStatus === "COMPLETED" && updated.customerId) {
-    if (!(updated.notes && updated.notes.includes("Points Payment") || updated.paymentMethod === "points")) {
+    if (!(updated.notes && (updated.notes.includes("Points Payment") || updated.notes.toLowerCase().includes("free reward")) || updated.paymentMethod === "points" || updated.paymentMethod === "free_reward")) {
       try {
         const mainPrisma = require("../config/prisma");
         const customer = await mainPrisma.appUser.findUnique({

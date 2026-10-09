@@ -647,7 +647,8 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
   if (!targetCustomerId) return;
 
   if (status === "COMPLETED") {
-    if ((updated.paymentMethod || "").toLowerCase() === "points" || (updated.notes && (updated.notes.includes("Paid by Loyalty Points") || updated.notes.includes("Points Payment")))) {
+    const pMethod = (updated.paymentMethod || "").toLowerCase();
+    if (pMethod === "points" || pMethod === "free_reward" || (updated.notes && (updated.notes.includes("Paid by Loyalty Points") || updated.notes.includes("Points Payment") || updated.notes.toLowerCase().includes("free reward")))) {
       return;
     }
 
