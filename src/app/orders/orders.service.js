@@ -286,7 +286,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   }
 
   // Validate and price items from the database (never trust client prices)
-  const menuItemIds = items
+  let menuItemIds = items
     .map((i) => i.menuItemId || i.itemId || i.id)
     .filter(Boolean);
 
@@ -294,9 +294,42 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     throw new ApiError(400, "Order must contain valid menu items");
   }
 
-  const menuItems = await db.menuItem.findMany({
+  let menuItems = await db.menuItem.findMany({
     where: { id: { in: menuItemIds }, isAvailable: true },
   });
+
+  // If this is a free reward order and an item ID is synthetic (e.g. reward_... or missing in DB), resolve to a valid db menuItem
+  if ((isFreeRewardOrder || validatedCoupon) && menuItems.length !== menuItemIds.length) {
+    const existingIds = new Set(menuItems.map(m => m.id));
+
+    let fallbackItem = null;
+    if (validatedCoupon && validatedCoupon.menuItemId) {
+      fallbackItem = await db.menuItem.findUnique({ where: { id: validatedCoupon.menuItemId } });
+    }
+    if (!fallbackItem) {
+      fallbackItem = await db.menuItem.findFirst({ where: { isAvailable: true } });
+    }
+
+    if (fallbackItem) {
+      items = items.map(i => {
+        const currentId = i.menuItemId || i.itemId || i.id;
+        if (!existingIds.has(currentId)) {
+          return {
+            ...i,
+            menuItemId: fallbackItem.id,
+            itemId: fallbackItem.id,
+            id: fallbackItem.id,
+          };
+        }
+        return i;
+      });
+
+      menuItemIds = items.map((i) => i.menuItemId || i.itemId || i.id).filter(Boolean);
+      menuItems = await db.menuItem.findMany({
+        where: { id: { in: menuItemIds }, isAvailable: true },
+      });
+    }
+  }
 
   if (menuItems.length !== menuItemIds.length) {
     throw new ApiError(400, "One or more menu items are unavailable or not found");
