@@ -97,6 +97,11 @@ const getScheduleSlots = catchAsync(async (req, res) => {
   res.json({ success: true, data });
 });
 
+const getBranchDiscounts = catchAsync(async (req, res) => {
+  const discounts = await branchesService.getBranchDiscounts(req.tenantDb, req.params.branchId);
+  res.json({ success: true, data: discounts });
+});
+
 const resolveQrToken = catchAsync(async (req, res) => {
   const token = req.query.token || req.body?.token;
   if (!token) {
@@ -199,6 +204,6 @@ const encodeQrTokenEndpoint = catchAsync(async (req, res) => {
   res.json({ success: true, token });
 });
 
-module.exports = { getAll, getOne, getStaff, getStaffSlots, getScheduleSlots, resolveQrToken, encodeQrTokenEndpoint };
+module.exports = { getAll, getOne, getStaff, getStaffSlots, getScheduleSlots, getBranchDiscounts, resolveQrToken, encodeQrTokenEndpoint };
 
 

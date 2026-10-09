@@ -1,6 +1,6 @@
 const ApiError = require("../../../utils/ApiError");
 
-const DEFAULT_FEATURES = ["servi_app", "qr_table", "qr_cashier"];
+const DEFAULT_FEATURES = ["servi_app", "qr_table", "qr_cashier", "pos"];
 
 const getAll = async (db) => {
   const discounts = await db.discount.findMany({
@@ -65,7 +65,6 @@ const create = async (db, data) => {
       weeklySchedule: data.weeklySchedule || null,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
       itemsList: data.itemsList || null,
-      applicableFeatures: applicableFeatures,
     }
   });
 
@@ -133,7 +132,6 @@ const update = async (db, id, data) => {
       weeklySchedule: data.weeklySchedule !== undefined ? data.weeklySchedule : discount.weeklySchedule,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : discount.isActive,
       itemsList: data.itemsList !== undefined ? data.itemsList : discount.itemsList,
-      applicableFeatures: applicableFeatures,
     }
   });
 

@@ -1,6 +1,6 @@
 const ApiError = require("../../../utils/ApiError");
 
-const DEFAULT_FEATURES = ["servi_app", "qr_table", "qr_cashier"];
+const DEFAULT_FEATURES = ["servi_app", "qr_table", "qr_cashier", "pos"];
 
 const getAll = async (db) => {
   const coupons = await db.coupon.findMany({
@@ -70,7 +70,6 @@ const create = async (db, data) => {
       endDate: new Date(data.endDate),
       termsAr: data.termsAr || null,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
-      applicableFeatures: applicableFeatures,
     }
   });
 
@@ -144,7 +143,6 @@ const update = async (db, id, data) => {
       endDate: data.endDate !== undefined ? new Date(data.endDate) : coupon.endDate,
       termsAr: data.termsAr !== undefined ? data.termsAr : coupon.termsAr,
       isActive: data.isActive !== undefined ? Boolean(data.isActive) : coupon.isActive,
-      applicableFeatures: applicableFeatures,
     }
   });
 

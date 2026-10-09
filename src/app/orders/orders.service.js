@@ -227,7 +227,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
             throw new ApiError(400, `Coupon code ${cleanCode} usage limit reached.`);
           }
           if (Array.isArray(tenantCoupon.applicableFeatures) && tenantCoupon.applicableFeatures.length > 0) {
-            const currentChannel = tableId ? "qr_table" : (qrCashierId ? "qr_cashier" : "servi_app");
+            const currentChannel = tableId ? "qr_table" : (qrCashierId ? "qr_cashier" : (body.posUnit ? "pos" : "servi_app"));
             if (!tenantCoupon.applicableFeatures.includes(currentChannel)) {
               throw new ApiError(400, `Coupon code ${cleanCode} is not applicable for this ordering channel.`);
             }
@@ -387,14 +387,59 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     throw new ApiError(400, "Order must contain valid menu items");
   }
 
-  if (typeof total === "number" && Math.abs(total - subtotal) > 0.01) {
-    console.warn(
-      `[APP ORDER] Client total mismatch: client=${total}, server=${subtotal}. Using server total.`
-    );
+  // Check for promotional discounts:
+  let appliedDiscountAmount = 0;
+  let appliedDiscountNote = "";
+  const discountId = body.discountId;
+  const clientDiscountAmount = Number(body.discountAmount) || 0;
+  
+  if (discountId) {
+    try {
+      const discountRecord = await db.discount.findUnique({ where: { id: discountId } });
+      if (discountRecord && discountRecord.isActive) {
+        if (discountRecord.appliedOn === "orders") {
+          if (discountRecord.type === "percentage") {
+            appliedDiscountAmount = (subtotal * discountRecord.value) / 100;
+            if (discountRecord.maxAmount) {
+              appliedDiscountAmount = Math.min(appliedDiscountAmount, discountRecord.maxAmount);
+            }
+          } else {
+            appliedDiscountAmount = Math.min(subtotal, discountRecord.value);
+          }
+        } else if (discountRecord.appliedOn === "items" && Array.isArray(discountRecord.itemsList)) {
+          const discountItemIds = new Set(discountRecord.itemsList.map(i => i.itemId));
+          let eligibleItemsTotal = 0;
+          orderItems.forEach(oi => {
+            if (discountItemIds.has(oi.menuItemId)) {
+              eligibleItemsTotal += oi.price * oi.quantity;
+            }
+          });
+          if (discountRecord.type === "percentage") {
+            appliedDiscountAmount = (eligibleItemsTotal * discountRecord.value) / 100;
+            if (discountRecord.maxAmount) {
+              appliedDiscountAmount = Math.min(appliedDiscountAmount, discountRecord.maxAmount);
+            }
+          } else {
+            appliedDiscountAmount = Math.min(eligibleItemsTotal, discountRecord.value);
+          }
+        }
+        appliedDiscountNote = `Discount: ${discountRecord.nameEn} (-${appliedDiscountAmount.toFixed(2)} SAR)`;
+      }
+    } catch (e) {
+      console.warn("[APP ORDER] Failed to verify discount:", e.message);
+    }
+  } else if (clientDiscountAmount > 0) {
+    appliedDiscountAmount = Math.min(subtotal, clientDiscountAmount);
+    appliedDiscountNote = `Discount: -${appliedDiscountAmount.toFixed(2)} SAR`;
   }
+
+  const finalOrderTotal = Math.max(0, Number((subtotal - appliedDiscountAmount).toFixed(2)));
 
   const orderNumber = generateOrderNumber();
   let finalNotes = notes || "";
+  if (appliedDiscountNote) {
+    finalNotes = finalNotes ? `${finalNotes} | ${appliedDiscountNote}` : appliedDiscountNote;
+  }
   if (customerName) {
     finalNotes = finalNotes ? `Customer: ${customerName} | ${finalNotes}` : `Customer: ${customerName}`;
   }
@@ -518,7 +563,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       slotDetails: slotDetails.length > 0 ? slotDetails : null,
       type,
       notes: finalNotes || null,
-      total: subtotal,
+      total: finalOrderTotal,
       feeRate,
       loyaltyEarnRate: orderLoyaltyEarnRate,
       source: orderSource,
@@ -535,6 +580,15 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   });
 
   // Mark redeemed coupon unusable and deduct stamps if coupon was supplied
+  if (discountId) {
+    try {
+      await db.discount.update({
+        where: { id: discountId },
+        data: { customerCount: { increment: 1 } }
+      });
+    } catch (err) {}
+  }
+
   if (validatedCoupon) {
     if (validatedCoupon.isTenantCoupon) {
       try {

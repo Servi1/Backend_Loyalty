@@ -128,13 +128,51 @@ const getBranch = async (db, branchId) => {
     }
   } catch (e) {}
   
+  // Fetch active discounts that apply to this branch
+  let activeDiscounts = [];
+  try {
+    const allDiscounts = await db.discount.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: "desc" },
+    });
+    let extraFeaturesMap = new Map();
+    try {
+      const extraRows = await db.$queryRawUnsafe('SELECT "id", "applicableFeatures" FROM "Discount"');
+      extraFeaturesMap = new Map(extraRows.map(r => [r.id, r.applicableFeatures]));
+    } catch (e) {}
+
+    const now = new Date();
+    activeDiscounts = allDiscounts.filter(d => {
+      if (Array.isArray(d.locations) && d.locations.length > 0) {
+        if (!d.locations.includes(branchId)) return false;
+      }
+      if (d.hasDateRange) {
+        if (d.startDate && new Date(d.startDate) > now) return false;
+        if (d.endDate && new Date(d.endDate) < now) return false;
+      }
+      const extraFeat = extraFeaturesMap.get(d.id);
+      d.applicableFeatures = Array.isArray(extraFeat)
+        ? extraFeat
+        : (Array.isArray(d.applicableFeatures) ? d.applicableFeatures : ["servi_app", "qr_table", "qr_cashier", "pos"]);
+      return true;
+    });
+  } catch (err) {
+    console.error("Failed to fetch branch discounts:", err.message);
+  }
+
   return {
     ...branch,
     prepExtraTime,
     nameAr: branch.nameAr || null,
     isOpen: checkIsOpen(branch),
     hours: formatBranchHours(branch),
+    discounts: activeDiscounts,
   };
+};
+
+const getBranchDiscounts = async (db, branchId) => {
+  const branchData = await getBranch(db, branchId);
+  return branchData.discounts || [];
 };
 
 // ─── getBranchScheduleSlots ────────────────────────────────────────────────────
@@ -379,4 +417,4 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
   return slots;
 };
 
-module.exports = { getBranches, getBranch, getBranchStaff, getStaffSlots, getBranchScheduleSlots };
+module.exports = { getBranches, getBranch, getBranchStaff, getStaffSlots, getBranchScheduleSlots, getBranchDiscounts };
