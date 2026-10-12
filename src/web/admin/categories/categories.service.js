@@ -4,12 +4,31 @@ const ApiError = require("../../../utils/ApiError");
 const defaultCategories = ["Cafe", "Kitchen", "Spa", "Restaurant", "Saloon"];
 
 const seedDefaultCategoriesIfEmpty = async () => {
-  const count = await mainPrisma.tenantCategory.count();
-  if (count === 0) {
-    console.log("Seeding default Tenant Categories...");
-    for (const name of defaultCategories) {
-      await mainPrisma.tenantCategory.create({ data: { name } });
+  try {
+    const seeded = await mainPrisma.adminSetting.findUnique({
+      where: { key: "initialTenantCategoriesSeeded" }
+    });
+    if (seeded) return;
+
+    const count = await mainPrisma.tenantCategory.count();
+    if (count === 0) {
+      console.log("Seeding default Tenant Categories...");
+      for (const name of defaultCategories) {
+        const existing = await mainPrisma.tenantCategory.findFirst({
+          where: { name: { equals: name, mode: "insensitive" } }
+        });
+        if (!existing) {
+          await mainPrisma.tenantCategory.create({ data: { name } });
+        }
+      }
     }
+    await mainPrisma.adminSetting.upsert({
+      where: { key: "initialTenantCategoriesSeeded" },
+      update: { value: "true" },
+      create: { key: "initialTenantCategoriesSeeded", value: "true" }
+    });
+  } catch (err) {
+    console.warn("Could not check/set initialTenantCategoriesSeeded setting:", err.message);
   }
 };
 
@@ -31,26 +50,28 @@ const getAll = async () => {
 };
 
 const create = async (data) => {
-  if (!data.name) {
+  const cleanName = (data.name || "").trim();
+  if (!cleanName) {
     throw new ApiError(400, "Category name is required");
   }
-  const existing = await mainPrisma.tenantCategory.findUnique({
-    where: { name: data.name }
+  const existing = await mainPrisma.tenantCategory.findFirst({
+    where: { name: { equals: cleanName, mode: "insensitive" } }
   });
   if (existing) {
     throw new ApiError(400, "Category already exists");
   }
   const created = await mainPrisma.tenantCategory.create({
-    data: { name: data.name }
+    data: { name: cleanName }
   });
   if (data.nameAr) {
+    const cleanAr = String(data.nameAr).trim();
     try {
       await mainPrisma.$executeRawUnsafe(
         'UPDATE "TenantCategory" SET "nameAr" = $1 WHERE id = $2',
-        data.nameAr,
+        cleanAr || null,
         created.id
       );
-      created.nameAr = data.nameAr;
+      created.nameAr = cleanAr || null;
     } catch (e) {
       console.warn("Could not save nameAr for category:", e.message);
     }
@@ -59,27 +80,29 @@ const create = async (data) => {
 };
 
 const update = async (id, data) => {
-  if (!data.name) {
+  const cleanName = (data.name || "").trim();
+  if (!cleanName) {
     throw new ApiError(400, "Category name is required");
   }
-  const existing = await mainPrisma.tenantCategory.findUnique({
-    where: { name: data.name }
+  const existing = await mainPrisma.tenantCategory.findFirst({
+    where: { name: { equals: cleanName, mode: "insensitive" } }
   });
   if (existing && existing.id !== id) {
     throw new ApiError(400, "Category name already exists");
   }
   const updated = await mainPrisma.tenantCategory.update({
     where: { id },
-    data: { name: data.name }
+    data: { name: cleanName }
   });
   if (data.nameAr !== undefined) {
+    const cleanAr = data.nameAr ? String(data.nameAr).trim() : null;
     try {
       await mainPrisma.$executeRawUnsafe(
         'UPDATE "TenantCategory" SET "nameAr" = $1 WHERE id = $2',
-        data.nameAr || null,
+        cleanAr || null,
         id
       );
-      updated.nameAr = data.nameAr || null;
+      updated.nameAr = cleanAr || null;
     } catch (e) {
       console.warn("Could not update nameAr for category:", e.message);
     }
@@ -93,7 +116,27 @@ const remove = async (id) => {
     throw new ApiError(404, "Category not found");
   }
   await mainPrisma.tenantCategory.delete({ where: { id } });
-  return { success: true };
+
+  // Clean up disabledCategories setting if it contained this category
+  try {
+    const disabledSetting = await mainPrisma.adminSetting.findUnique({
+      where: { key: "disabledCategories" }
+    });
+    if (disabledSetting && disabledSetting.value) {
+      const list = disabledSetting.value.split(",").map(x => x.trim()).filter(Boolean);
+      if (list.includes(existing.name)) {
+        const updated = list.filter(x => x !== existing.name).join(",");
+        await mainPrisma.adminSetting.update({
+          where: { key: "disabledCategories" },
+          data: { value: updated }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("Could not clean up disabledCategories setting:", err.message);
+  }
+
+  return { success: true, message: "Category deleted successfully" };
 };
 
 module.exports = {
