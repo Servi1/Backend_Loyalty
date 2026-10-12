@@ -41,6 +41,7 @@ const brandsRoutes   = require("./brands/brands.routes");
 const cartRoutes     = require("./cart/cart.routes");
 const supportRoutes  = require("./support/appSupport.routes");
 const stampRoutes    = require("./stamp/stamp.routes");
+const categoriesRoutes = require("./categories/categories.routes");
 const { requireAppTenant } = require("./middlewares/appTenant.middleware");
 const router = Router({ mergeParams: true });
 
@@ -50,15 +51,16 @@ router.get("/qr/resolve", branchCtrl.resolveQrToken);
 router.post("/qr/resolve", branchCtrl.resolveQrToken);
 router.post("/qr/encode", branchCtrl.encodeQrTokenEndpoint);
 
-router.use("/stamp",    stampRoutes);
-router.use("/auth",     authRoutes);
-router.use("/profile",  profileRoutes);
-router.use("/menu",     requireAppTenant, menuRoutes);
-router.use("/branches", requireAppTenant, branchRoutes);
-router.use("/orders",   orderRoutes);
-router.use("/wallet",   walletRoutes);
-router.use("/brands",   brandsRoutes);
-router.use("/cart",     cartRoutes);
-router.use("/support",  supportRoutes);
+router.use("/stamp",      stampRoutes);
+router.use("/auth",       authRoutes);
+router.use("/profile",    profileRoutes);
+router.use("/menu",       requireAppTenant, menuRoutes);
+router.use("/branches",   requireAppTenant, branchRoutes);
+router.use("/orders",     orderRoutes);
+router.use("/wallet",     walletRoutes);
+router.use("/brands",     brandsRoutes);
+router.use("/categories", categoriesRoutes);
+router.use("/cart",       cartRoutes);
+router.use("/support",    supportRoutes);
 
 module.exports = router;
