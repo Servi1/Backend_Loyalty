@@ -37,7 +37,10 @@ const searchCustomers = catchAsync(async (req, res) => {
 });
 
 const getAllCustomers = catchAsync(async (req, res) => {
-  const customers = await loyaltyService.getAllCustomersForReport(req.tenantDb, req.tenantId);
+  let customers = await loyaltyService.getAllCustomersForReport(req.tenantDb, req.tenantId);
+  if (req.query.purchasedOnly === "true") {
+    customers = customers.filter(c => c.hasPurchased || Number(c.completedOrdersCount || 0) > 0 || Number(c.lifetimeSpend || 0) > 0);
+  }
   res.json({ success: true, data: customers });
 });
 

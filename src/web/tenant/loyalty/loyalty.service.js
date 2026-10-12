@@ -484,20 +484,35 @@ const getAllCustomersForReport = async (db, tenantId = null) => {
     }),
     (db && db.order) ? db.order.findMany({
       where: { status: "COMPLETED" },
-      select: { userId: true, total: true, branch: { select: { name: true } } },
+      select: { customerId: true, customerPhone: true, userId: true, total: true, branch: { select: { name: true } } },
       orderBy: { createdAt: "desc" }
     }).catch(() => []) : Promise.resolve([])
   ]);
 
   const statsByUserId = {};
   const branchByUserId = {};
+  const statsByPhoneKey = {};
+  const branchByPhoneKey = {};
+
   for (const ord of allTenantOrders) {
-    if (ord.userId) {
-      if (!statsByUserId[ord.userId]) statsByUserId[ord.userId] = { count: 0, spend: 0 };
-      statsByUserId[ord.userId].count += 1;
-      statsByUserId[ord.userId].spend += Number(ord.total || 0);
-      if (ord.branch?.name && !branchByUserId[ord.userId]) {
-        branchByUserId[ord.userId] = ord.branch.name;
+    const custId = ord.customerId || ord.userId;
+    if (custId) {
+      if (!statsByUserId[custId]) statsByUserId[custId] = { count: 0, spend: 0 };
+      statsByUserId[custId].count += 1;
+      statsByUserId[custId].spend += Number(ord.total || 0);
+      if (ord.branch?.name && !branchByUserId[custId]) {
+        branchByUserId[custId] = ord.branch.name;
+      }
+    }
+    if (ord.customerPhone) {
+      const key = getPhoneDigitsKey(ord.customerPhone);
+      if (key) {
+        if (!statsByPhoneKey[key]) statsByPhoneKey[key] = { count: 0, spend: 0 };
+        statsByPhoneKey[key].count += 1;
+        statsByPhoneKey[key].spend += Number(ord.total || 0);
+        if (ord.branch?.name && !branchByPhoneKey[key]) {
+          branchByPhoneKey[key] = ord.branch.name;
+        }
       }
     }
   }
@@ -510,8 +525,6 @@ const getAllCustomersForReport = async (db, tenantId = null) => {
     }
   }
 
-  const statsByPhoneKey = {};
-  const branchByPhoneKey = {};
   for (const ord of allAggregatedOrders) {
     if (ord.customerPhone) {
       const key = getPhoneDigitsKey(ord.customerPhone);
@@ -538,11 +551,13 @@ const getAllCustomersForReport = async (db, tenantId = null) => {
     const walletEarned = wallet ? Number(wallet.lifetimeEarn || 0) : 0;
     const walletPoints = wallet ? Number(wallet.points || 0) : 0;
     const lifetimeSpend = Math.max(lifetimeSpendFromOrders, walletEarned, walletPoints);
+    const hasPurchased = Boolean(completedOrdersCount > 0 || lifetimeSpendFromOrders > 0 || walletEarned > 0);
 
     const userWithStats = {
       ...c,
       completedOrdersCount,
-      lifetimeSpend
+      lifetimeSpend,
+      hasPurchased
     };
 
     const tier = getCustomerTierDetails(userWithStats, wallet, configuredTiers);
@@ -559,6 +574,7 @@ const getAllCustomersForReport = async (db, tenantId = null) => {
       lifetimeEarn: wallet?.lifetimeEarn || 0,
       completedOrdersCount,
       lifetimeSpend,
+      hasPurchased,
       joinedAt: c.createdAt,
       tier: tier.name,
       tierLevel: tier.level,
