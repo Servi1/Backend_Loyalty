@@ -234,6 +234,8 @@ const syncCustomerStamps = async (user, tenant, stampProg) => {
         orderBy: { createdAt: "asc" },
       });
 
+      // Timeline of order events
+      const events = [];
       completedOrders.forEach((o) => {
         let orderStamps = 0;
         if (Array.isArray(o.items)) {
@@ -248,25 +250,61 @@ const syncCustomerStamps = async (user, tenant, stampProg) => {
             }
           });
         }
-        earnedStampsTotal += orderStamps;
+        if (orderStamps > 0) {
+          events.push({
+            type: "order",
+            date: new Date(o.createdAt),
+            stamps: orderStamps,
+          });
+        }
       });
+
+      // Count generated coupons for this brand & customer
+      const customerCoupons = await mainPrisma.earnedCoupon.findMany({
+        where: {
+          appUserId: user.id,
+          tenantId: tenant.id,
+        },
+        select: { id: true, createdAt: true, isUsed: true, expiresAt: true },
+      });
+
+      customerCoupons.forEach((c) => {
+        events.push({
+          type: "coupon_gen",
+          date: new Date(c.createdAt),
+          stamps: 0,
+        });
+      });
+
+      events.sort((a, b) => a.date - b.date);
+
+      let cumulative = 0;
+      let lastWasCompleted = false;
+
+      events.forEach((ev) => {
+        if (ev.type === "order") {
+          if (lastWasCompleted) {
+            cumulative = 0;
+            lastWasCompleted = false;
+          }
+          cumulative += ev.stamps;
+          if (cumulative >= requiredStamps) {
+            cumulative = requiredStamps;
+            lastWasCompleted = true;
+          }
+        } else if (ev.type === "coupon_gen") {
+          cumulative = 0;
+          lastWasCompleted = false;
+        }
+      });
+
+      earnedStampsTotal = Math.min(requiredStamps, Math.max(0, cumulative));
     } catch (err) {
       console.error(`Failed to calculate stamps from tenant DB for user ${user.id}:`, err.message);
     }
   }
 
-  // Count generated coupons for this brand & customer
-  const customerCoupons = await mainPrisma.earnedCoupon.findMany({
-    where: {
-      appUserId: user.id,
-      tenantId: tenant.id,
-    },
-    select: { id: true, isUsed: true, expiresAt: true },
-  });
-
-  // Each coupon created consumed one full cycle of stamps (requiredStamps)
-  const consumedStamps = customerCoupons.length * requiredStamps;
-  const remainingOrderStamps = Math.max(0, earnedStampsTotal - consumedStamps);
+  const finalStamps = Math.min(requiredStamps, Math.max(0, earnedStampsTotal));
 
   // Get current wallet
   let wallet = await mainPrisma.wallet.findFirst({
@@ -285,17 +323,13 @@ const syncCustomerStamps = async (user, tenant, stampProg) => {
           points: 0,
           lifetimeEarn: 0,
           tier: "bronze",
-          stamps: remainingOrderStamps,
+          stamps: finalStamps,
         },
       });
     } catch (e) {
       console.error("Failed to auto-create wallet in syncCustomerStamps:", e.message);
     }
-  }
-
-  const finalStamps = Math.max(wallet?.stamps || 0, remainingOrderStamps);
-
-  if (wallet && wallet.stamps !== finalStamps) {
+  } else if (wallet.stamps !== finalStamps) {
     try {
       wallet = await mainPrisma.wallet.update({
         where: { id: wallet.id },

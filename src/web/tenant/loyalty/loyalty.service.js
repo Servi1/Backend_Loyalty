@@ -253,9 +253,12 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
 
   let finalStamps = wallet.stamps || 0;
   if (earnedStampsCount > 0 && stampProg && stampProg.enabled !== false) {
-    // Option B: Accumulate and keep stamps filled so the customer can view their completed card
-    // and choose when to generate/claim their reward coupon.
-    finalStamps = (wallet.stamps || 0) + earnedStampsCount;
+    const requiredStamps = Number(stampProg.requiredStamps || 6);
+    if (finalStamps >= requiredStamps) {
+      // Previous card was already completed, start new card with current order's stamps
+      finalStamps = 0;
+    }
+    finalStamps = Math.min(requiredStamps, finalStamps + earnedStampsCount);
   }
 
   // ─── POINTS CALCULATION (Must be subscribed & enabled) ─────────
