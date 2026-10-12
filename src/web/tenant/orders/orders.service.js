@@ -364,8 +364,8 @@ const normalizePhone = (rawPhone) => {
       const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
       if (tenant) {
         if (paymentMethod === "points" || (notes && (notes.includes("Paid by Loyalty Points") || notes.includes("Points Payment")))) {
-          if (tenant.loyaltyEnabled === false) {
-            throw new ApiError(400, "Loyalty points program is currently disabled for this brand.");
+          if (!tenant.subLoyalty || tenant.loyaltyEnabled === false) {
+            throw new ApiError(400, "Loyalty points program is currently disabled or not subscribed for this brand.");
           }
           const src = (orderSource || "").toLowerCase();
           if (src === "pos" && tenant.loyaltyRedeemPoints === false) {
@@ -374,7 +374,7 @@ const normalizePhone = (rawPhone) => {
         }
 
         feeRate = resolveTenantFeeRate(tenant, orderSource);
-        if (tenant.loyaltyEnabled !== false) {
+        if (tenant.subLoyalty && tenant.loyaltyEnabled !== false) {
           const src = (orderSource || "").toLowerCase();
           if (src !== "pos" || tenant.loyaltyAddPoints !== false) {
             loyaltyEarnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
@@ -675,15 +675,22 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
 
         if (!tx) {
           const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-          if (!tenant || tenant.loyaltyEnabled === false) {
-            console.log(`[LOYALTY] Tenant loyalty disabled or not found. Skipping point award for order #${updated.orderNumber}`);
+          const isPointsSubscribed = Boolean(tenant?.subLoyalty);
+          const isPointsEnabled = isPointsSubscribed && tenant?.loyaltyEnabled !== false;
+          const isStampsSubscribed = Boolean(tenant?.subStamps);
+
+          if (!tenant || (!isPointsEnabled && !isStampsSubscribed)) {
+            console.log(`[LOYALTY] Tenant loyalty/stamps disabled or not subscribed. Skipping award for order #${updated.orderNumber}`);
             return;
           }
+
           let earnRate = 0.0;
-          if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null) {
-            earnRate = Number(updated.loyaltyEarnRate);
-          } else {
-            earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+          if (isPointsEnabled) {
+            if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null) {
+              earnRate = Number(updated.loyaltyEarnRate);
+            } else {
+              earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+            }
           }
 
           const pointsToEarn = earnRate > 0 ? Math.floor(updated.total * earnRate) : 0;

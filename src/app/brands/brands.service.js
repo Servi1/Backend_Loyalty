@@ -104,10 +104,11 @@ const getBrands = async (userId) => {
       slug: t.slug,
 
       isFavorite: favBrands.includes(t.id) || favBrands.includes(t.slug),
-      loyaltyEarnRate: Number(t.loyaltyEarnRate || 1.0),
+      loyaltyEarnRate: Boolean(t.subLoyalty && t.loyaltyEnabled !== false) ? Number(t.loyaltyEarnRate || 1.0) : 0.0,
       loyaltyRedeemRate: Number(t.loyaltyRedeemRate || 100.0),
       subBrandStory: Boolean(t.subBrandStory),
-      loyaltyRedeemPoints: Boolean(t.loyaltyEnabled && t.loyaltyRedeemPoints),
+      loyaltyRedeemPoints: Boolean(t.subLoyalty && t.loyaltyEnabled && t.loyaltyRedeemPoints),
+      loyaltyPointsEnabled: Boolean(t.subLoyalty && t.loyaltyEnabled),
       stampEnabled: isStampEnabled,
       stampsEnabled: isStampEnabled,
       loyaltyStamps: isStampEnabled,

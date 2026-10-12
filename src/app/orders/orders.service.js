@@ -593,7 +593,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       const tenantObj = tenant || (await mainPrisma.tenant.findUnique({ where: { id: tenantId } }));
       if (tenantObj) {
         feeRate = resolveTenantFeeRate(tenantObj, orderSource);
-        if (tenantObj.loyaltyEnabled !== false) {
+        if (tenantObj.subLoyalty && tenantObj.loyaltyEnabled !== false) {
           orderLoyaltyEarnRate = Number(tenantObj.loyaltyEarnRate !== undefined && tenantObj.loyaltyEarnRate !== null ? tenantObj.loyaltyEarnRate : 1.0);
         } else {
           orderLoyaltyEarnRate = 0.0;
@@ -713,7 +713,8 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   const initialStatus = order.status;
 
   // Award points & stamps if order is COMPLETED upon creation (except if paid by points or free reward)
-  const effectiveEarnRate = earnRate !== undefined && earnRate !== null ? parseFloat(earnRate) : Number(tenant?.loyaltyEarnRate || 1.0);
+  const isPointsActive = Boolean(tenant?.subLoyalty && tenant?.loyaltyEnabled !== false);
+  const effectiveEarnRate = isPointsActive ? (earnRate !== undefined && earnRate !== null ? parseFloat(earnRate) : Number(tenant?.loyaltyEarnRate || 1.0)) : 0.0;
   if (order.status === "COMPLETED" && (userId || finalCustomerId) && paymentMethod !== "points" && paymentMethod !== "free_reward") {
     const pointsEarned = effectiveEarnRate > 0 ? Math.floor(order.total * effectiveEarnRate) : 0;
     try {

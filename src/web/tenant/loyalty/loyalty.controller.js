@@ -29,7 +29,7 @@ const searchCustomers = catchAsync(async (req, res) => {
     success: true,
     data: customers,
     config: {
-      loyaltyEnabled: tenant?.loyaltyEnabled ?? false,
+      loyaltyEnabled: Boolean(tenant?.subLoyalty && tenant?.loyaltyEnabled),
       loyaltyEarnRate: tenant?.loyaltyEarnRate ?? 1.0,
       loyaltyRedeemRate: tenant?.loyaltyRedeemRate ?? 100.0,
     }

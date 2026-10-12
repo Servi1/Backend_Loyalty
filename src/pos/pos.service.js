@@ -139,7 +139,7 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
         if (tenant.feePos !== undefined && tenant.feePos !== null) {
           feeRate = Number(tenant.feePos);
         }
-        if (tenant.loyaltyEnabled !== false && tenant.loyaltyAddPoints !== false) {
+        if (tenant.subLoyalty && tenant.loyaltyEnabled !== false && tenant.loyaltyAddPoints !== false) {
           loyaltyEarnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
         }
       }
@@ -204,15 +204,20 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
   if (order.customerId && order.status === "COMPLETED" && orderData.paymentMethod !== "points" && orderData.paymentMethod !== "free_reward") {
     try {
       const mainPrisma = require("../config/prisma");
-      const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-      if (!tenant || tenant.loyaltyEnabled === false || tenant.loyaltyAddPoints === false) {
-        console.log(`[POS LOYALTY] Loyalty disabled or addPoints false. Skipping points for order #${order.orderNumber}`);
+      const isPointsSubscribed = Boolean(tenant?.subLoyalty);
+      const isPointsEnabled = isPointsSubscribed && tenant?.loyaltyEnabled !== false && tenant?.loyaltyAddPoints !== false;
+      const isStampsSubscribed = Boolean(tenant?.subStamps);
+
+      if (!tenant || (!isPointsEnabled && !isStampsSubscribed)) {
+        console.log(`[POS LOYALTY] Loyalty/Stamps disabled or not subscribed. Skipping points for order #${order.orderNumber}`);
       } else {
         let earnRate = 0.0;
-        if (order.loyaltyEarnRate !== undefined && order.loyaltyEarnRate !== null && Number(order.loyaltyEarnRate) === 0) {
-          earnRate = 0.0;
-        } else {
-          earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+        if (isPointsEnabled) {
+          if (order.loyaltyEarnRate !== undefined && order.loyaltyEarnRate !== null && Number(order.loyaltyEarnRate) === 0) {
+            earnRate = 0.0;
+          } else {
+            earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+          }
         }
 
         const pointsToEarn = earnRate > 0 ? Math.floor(order.total * earnRate) : 0;
@@ -395,14 +400,20 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
         });
         if (!tx) {
           const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-          if (!tenant || tenant.loyaltyEnabled === false || tenant.loyaltyAddPoints === false) {
-            console.log(`[POS LOYALTY] Loyalty disabled or addPoints false. Skipping points for order #${updated.orderNumber}`);
+          const isPointsSubscribed = Boolean(tenant?.subLoyalty);
+          const isPointsEnabled = isPointsSubscribed && tenant?.loyaltyEnabled !== false && tenant?.loyaltyAddPoints !== false;
+          const isStampsSubscribed = Boolean(tenant?.subStamps);
+
+          if (!tenant || (!isPointsEnabled && !isStampsSubscribed)) {
+            console.log(`[POS LOYALTY] Loyalty/Stamps disabled or not subscribed. Skipping points for order #${updated.orderNumber}`);
           } else {
             let earnRate = 0.0;
-            if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null) {
-              earnRate = Number(updated.loyaltyEarnRate);
-            } else {
-              earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+            if (isPointsEnabled) {
+              if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null) {
+                earnRate = Number(updated.loyaltyEarnRate);
+              } else {
+                earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+              }
             }
 
             const pointsToEarn = earnRate > 0 ? Math.floor(updated.total * earnRate) : 0;
@@ -460,14 +471,20 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
 
           if (!tx) {
             const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-            if (!tenant || tenant.loyaltyEnabled === false || tenant.loyaltyAddPoints === false) {
-              console.log(`[POS LOYALTY] Loyalty disabled or addPoints false. Skipping points for order #${updated.orderNumber}`);
+            const isPointsSubscribed = Boolean(tenant?.subLoyalty);
+            const isPointsEnabled = isPointsSubscribed && tenant?.loyaltyEnabled !== false && tenant?.loyaltyAddPoints !== false;
+            const isStampsSubscribed = Boolean(tenant?.subStamps);
+
+            if (!tenant || (!isPointsEnabled && !isStampsSubscribed)) {
+              console.log(`[POS LOYALTY] Loyalty/Stamps disabled or not subscribed. Skipping points for order #${updated.orderNumber}`);
             } else {
               let earnRate = 0.0;
-              if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null) {
-                earnRate = Number(updated.loyaltyEarnRate);
-              } else {
-                earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+              if (isPointsEnabled) {
+                if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null) {
+                  earnRate = Number(updated.loyaltyEarnRate);
+                } else {
+                  earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+                }
               }
 
               const pointsToEarn = earnRate > 0 ? Math.floor(updated.total * earnRate) : 0;

@@ -170,17 +170,19 @@ const getWallet = async (db, customerId, tenantId = null) => {
 const earnPoints = async (db, customerId, points, description, tenantId, opts = {}) => {
   let tenantTiers = DEFAULT_LOYALTY_TIERS;
   let targetTenantId = tenantId;
+  let tenantObj = null;
 
   if (tenantId) {
     const tenant = await resolveTenant(tenantId);
     if (tenant) {
+      tenantObj = tenant;
       targetTenantId = tenant.id;
       if (Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
         tenantTiers = tenant.loyaltyTiers;
       }
       // Main active toggle affects ALL channels for points
-      if (tenant.loyaltyEnabled === false) {
-        console.log(`[LOYALTY] Earning points disabled globally for tenant ${tenant.name}`);
+      if (!tenant.subLoyalty || tenant.loyaltyEnabled === false) {
+        console.log(`[LOYALTY] Earning points disabled globally/by subscription for tenant ${tenant.name}`);
       }
       // Add Points toggle affects POS Cashier channel only
       const source = (opts.source || "").toLowerCase();
@@ -222,10 +224,17 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
     }
   }
 
+  // ─── RESOLVE TENANT OBJECT IF NOT YET RESOLVED ─────────────────
+  if (!tenantObj && targetTenantId) {
+    tenantObj = await mainPrisma.tenant.findUnique({ where: { id: targetTenantId } });
+  }
+
   // ─── STAMP CARD CALCULATION (Independent of Points) ─────────────
   let earnedStampsCount = Number(opts.earnedStamps || 0);
-  const tenantObj = targetTenantId ? await mainPrisma.tenant.findUnique({ where: { id: targetTenantId } }) : null;
-  const stampProg = Array.isArray(tenantObj?.stampPrograms) && tenantObj.stampPrograms.length > 0 ? tenantObj.stampPrograms[0] : null;
+  const isStampSubscribed = Boolean(tenantObj?.subStamps);
+  const stampProg = (isStampSubscribed && Array.isArray(tenantObj?.stampPrograms) && tenantObj.stampPrograms.length > 0)
+    ? tenantObj.stampPrograms[0]
+    : null;
 
   const isFreeReward = opts.paymentMethod === "free_reward" || Boolean(opts.isFreeRewardOrder);
 
@@ -249,20 +258,26 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
     finalStamps = (wallet.stamps || 0) + earnedStampsCount;
   }
 
-  // Earning points is UNLIMITED
+  // ─── POINTS CALCULATION (Must be subscribed & enabled) ─────────
+  const isPointsSubscribed = Boolean(tenantObj?.subLoyalty);
+  const isPointsEnabled = isPointsSubscribed && tenantObj?.loyaltyEnabled !== false;
+  const isPosAddPointsEnabled = isPointsEnabled && tenantObj?.loyaltyAddPoints !== false;
+
   let finalPointsToEarn = points;
-  if (tenantObj && tenantObj.loyaltyEnabled === false) {
+  if (!isPointsEnabled) {
     finalPointsToEarn = 0;
   }
   const source = (opts.source || "").toLowerCase();
-  if (source === "pos" && tenantObj && tenantObj.loyaltyAddPoints === false) {
+  if (source === "pos" && !isPosAddPointsEnabled) {
     finalPointsToEarn = 0;
   }
 
   if (finalPointsToEarn <= 0 && earnedStampsCount <= 0) return wallet;
 
   let txDesc = description || (earnedStampsCount > 0 ? `Points & +${earnedStampsCount} Stamp(s) earned` : "Points earned");
-  if (earnedStampsCount > 0 && description && !description.toLowerCase().includes("stamp")) {
+  if (finalPointsToEarn <= 0 && earnedStampsCount > 0) {
+    txDesc = `Earned +${earnedStampsCount} Stamp${earnedStampsCount > 1 ? "s" : ""} on Order #${opts.orderNumber || ""}`.trim();
+  } else if (earnedStampsCount > 0 && description && !description.toLowerCase().includes("stamp")) {
     txDesc = `${description} (+${earnedStampsCount} Stamp${earnedStampsCount > 1 ? "s" : ""})`;
   }
 
@@ -306,8 +321,8 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
         tenantTiers = tenant.loyaltyTiers;
       }
       // Main active toggle affects ALL channels
-      if (tenant.loyaltyEnabled === false) {
-        throw new ApiError(400, "Loyalty points program is currently disabled for this brand.");
+      if (!tenant.subLoyalty || tenant.loyaltyEnabled === false) {
+        throw new ApiError(400, "Loyalty points program is currently disabled or not subscribed for this brand.");
       }
       // Redeem Points toggle affects POS Cashier channel only
       const source = (opts.source || "").toLowerCase();

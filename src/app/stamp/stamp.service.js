@@ -108,7 +108,7 @@ const resolveStampProgram = async ({ token, tenantId }) => {
       name: tenant.name,
       slug: tenant.slug,
       logoUrl: tenant.logoUrl,
-      loyaltyEnabled: tenant.loyaltyEnabled,
+      loyaltyEnabled: Boolean(tenant.subLoyalty && tenant.loyaltyEnabled),
     },
     stampProgram: {
       id: stampProg?.id || "default",

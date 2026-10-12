@@ -126,8 +126,8 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
       if (Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
         tenantTiers = tenant.loyaltyTiers;
       }
-      if (tenant.loyaltyEnabled === false) {
-        console.log(`[LOYALTY] Earning points blocked: Loyalty program is globally disabled for tenant ${tenant.name}`);
+      if (!tenant.subLoyalty || tenant.loyaltyEnabled === false) {
+        console.log(`[LOYALTY] Earning points blocked: Loyalty program is globally disabled or not subscribed for tenant ${tenant.name}`);
         return null;
       }
       const source = (opts.source || "").toLowerCase();
@@ -242,8 +242,8 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
       if (Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
         tenantTiers = tenant.loyaltyTiers;
       }
-      if (tenant.loyaltyEnabled === false) {
-        throw new ApiError(400, "Loyalty points program is currently disabled for this brand.");
+      if (!tenant.subLoyalty || tenant.loyaltyEnabled === false) {
+        throw new ApiError(400, "Loyalty points program is currently disabled or not subscribed for this brand.");
       }
       const source = (opts.source || "").toLowerCase();
       if (source === "pos" && tenant.loyaltyRedeemPoints === false) {
@@ -1494,7 +1494,7 @@ const lookupWalletByPhone = async (db, tenantId, phone) => {
 
   const tenant = tenantId ? await mainPrisma.tenant.findUnique({ where: { id: tenantId } }) : null;
   const redeemRate = Number(tenant?.loyaltyRedeemRate || 100.0);
-  const loyaltyEnabled = tenant ? tenant.loyaltyEnabled !== false : true;
+  const loyaltyEnabled = tenant ? (Boolean(tenant.subLoyalty) && tenant.loyaltyEnabled !== false) : true;
 
   const appUser = await mainPrisma.appUser.findUnique({ where: { phone: cleanedPhone } });
   if (!appUser) {
