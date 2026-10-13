@@ -73,11 +73,21 @@ const getBrands = async (userId) => {
 
   const favBrands = user.favoriteBrands || [];
 
-  const tenants = await mainPrisma.tenant.findMany({
-    where: {
-      isActive: true,
-      ordersEnabled: true
-    }
+  const [tenants, activeTenantCategories] = await Promise.all([
+    mainPrisma.tenant.findMany({
+      where: {
+        isActive: true,
+        ordersEnabled: true
+      }
+    }),
+    mainPrisma.tenantCategory.findMany({
+      select: { name: true }
+    })
+  ]);
+
+  const validCategoryMap = new Map();
+  activeTenantCategories.forEach(c => {
+    validCategoryMap.set(c.name.toLowerCase().trim(), c.name);
   });
 
   return tenants.map(t => {
@@ -86,6 +96,27 @@ const getBrands = async (userId) => {
       hero: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&h=400&fit=crop",
       cuisine: "Restaurant"
     };
+
+    let resolvedCategory = null;
+    if (t.category) {
+      const lowerCat = t.category.toLowerCase().trim();
+      if (validCategoryMap.has(lowerCat)) {
+        resolvedCategory = validCategoryMap.get(lowerCat);
+      } else {
+        // Dynamically resolve if category was renamed (e.g. prefix match)
+        const matched = activeTenantCategories.find(c => {
+          const cLower = c.name.toLowerCase().trim();
+          return cLower.startsWith(lowerCat) || lowerCat.startsWith(cLower);
+        });
+        if (matched) {
+          resolvedCategory = matched.name;
+          mainPrisma.tenant.update({
+            where: { id: t.id },
+            data: { category: matched.name }
+          }).catch(() => {});
+        }
+      }
+    }
 
     const stampProgramsList = Array.isArray(t.stampPrograms) ? t.stampPrograms : [];
     const isStampEnabled = Boolean(t.subStamps) && stampProgramsList.some(s => s && s.enabled !== false);
@@ -100,7 +131,7 @@ const getBrands = async (userId) => {
       bannerUrl2: getAppImageURL(t.bannerUrl2),
       bannerUrl3: getAppImageURL(t.bannerUrl3),
       cuisine: details.cuisine,
-      category: t.category || details.cuisine,
+      category: resolvedCategory || (t.category && validCategoryMap.size === 0 ? t.category : null),
       slug: t.slug,
 
       isFavorite: favBrands.includes(t.id) || favBrands.includes(t.slug),
