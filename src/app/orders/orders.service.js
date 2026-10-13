@@ -501,11 +501,15 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     appliedDiscountNote = `Discount: -${appliedDiscountAmount.toFixed(2)} SAR`;
   }
 
-  const finalOrderTotal = Math.max(0, Number((subtotal - appliedDiscountAmount).toFixed(2)));
+  const vatRate = tenant?.vatPercentage !== undefined ? Number(tenant.vatPercentage) : 15.0;
+  const discountedSubtotal = Math.max(0, Number((subtotal - appliedDiscountAmount).toFixed(2)));
+  const vatAmount = Number((discountedSubtotal * (vatRate / 100)).toFixed(2));
+  const calculatedTotalWithVat = Number((discountedSubtotal + vatAmount).toFixed(2));
+  const finalOrderTotal = body.total ? Number(Number(body.total).toFixed(2)) : calculatedTotalWithVat;
 
   const orderNumber = generateOrderNumber();
   let finalNotes = notes || "";
-  if (appliedDiscountNote) {
+  if (appliedDiscountNote && !finalNotes.toLowerCase().includes("discount")) {
     finalNotes = finalNotes ? `${finalNotes} | ${appliedDiscountNote}` : appliedDiscountNote;
   }
   if (customerName) {

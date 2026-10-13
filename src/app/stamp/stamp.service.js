@@ -265,7 +265,7 @@ const syncCustomerStamps = async (user, tenant, stampProg) => {
           appUserId: user.id,
           tenantId: tenant.id,
         },
-        select: { id: true, createdAt: true, isUsed: true, expiresAt: true },
+        select: { id: true, createdAt: true, isUsed: true, usedAt: true, expiresAt: true },
       });
 
       customerCoupons.forEach((c) => {
@@ -274,27 +274,35 @@ const syncCustomerStamps = async (user, tenant, stampProg) => {
           date: new Date(c.createdAt),
           stamps: 0,
         });
+        if (c.isUsed && c.usedAt) {
+          events.push({
+            type: "coupon_redeem",
+            date: new Date(c.usedAt),
+            stamps: 0,
+          });
+        }
       });
 
       events.sort((a, b) => a.date - b.date);
 
       let cumulative = 0;
-      let lastWasCompleted = false;
+      let hasUnclaimedCoupon = false;
 
       events.forEach((ev) => {
         if (ev.type === "order") {
-          if (lastWasCompleted) {
-            cumulative = 0;
-            lastWasCompleted = false;
-          }
-          cumulative += ev.stamps;
-          if (cumulative >= requiredStamps) {
-            cumulative = requiredStamps;
-            lastWasCompleted = true;
+          // If customer already has an unclaimed reward coupon, they do not earn new stamps until redeemed
+          if (!hasUnclaimedCoupon) {
+            cumulative += ev.stamps;
+            if (cumulative >= requiredStamps) {
+              cumulative = requiredStamps;
+            }
           }
         } else if (ev.type === "coupon_gen") {
+          hasUnclaimedCoupon = true;
+          cumulative = requiredStamps;
+        } else if (ev.type === "coupon_redeem") {
+          hasUnclaimedCoupon = false;
           cumulative = 0;
-          lastWasCompleted = false;
         }
       });
 

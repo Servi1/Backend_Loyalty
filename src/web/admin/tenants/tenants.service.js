@@ -1903,10 +1903,15 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
         combined.sort((a, b) => a.date - b.date);
 
         let cumulative = 0;
+        let hasUnclaimedCoupon = false;
         let lastCompletedOrderIdx = -1;
 
         combined.forEach((ev) => {
           if (ev.type === "order") {
+            if (hasUnclaimedCoupon) {
+              // Customer already has an unclaimed reward coupon — card stays capped, no new stamps earned
+              return;
+            }
             cumulative += ev.earnedStamps;
             const isCompleted = cumulative >= requiredStamps;
             const display = Math.min(cumulative, requiredStamps);
@@ -1923,9 +1928,40 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
               couponCode: null,
             });
             if (isCompleted) {
-              cumulative = 0;
+              cumulative = requiredStamps;
               lastCompletedOrderIdx = historyIdx;
             }
+          } else if (ev.type === "coupon_gen") {
+            hasUnclaimedCoupon = true;
+            history.push({
+              id: ev.id,
+              date: ev.date.toISOString(),
+              status: ev.status,
+              reason: ev.reason,
+              stampsCount: ev.stampsCount,
+              branchName: ev.branchName,
+              brandName: ev.brandName,
+              tenantId: ev.tenantId,
+              couponCode: ev.couponCode || null,
+            });
+            if (lastCompletedOrderIdx >= 0 && history[lastCompletedOrderIdx] && !history[lastCompletedOrderIdx].couponCode) {
+              history[lastCompletedOrderIdx].couponCode = ev.couponCode;
+            }
+            lastCompletedOrderIdx = -1;
+          } else if (ev.type === "coupon_redeem") {
+            hasUnclaimedCoupon = false;
+            cumulative = 0;
+            history.push({
+              id: ev.id,
+              date: ev.date.toISOString(),
+              status: ev.status,
+              reason: ev.reason,
+              stampsCount: ev.stampsCount,
+              branchName: ev.branchName,
+              brandName: ev.brandName,
+              tenantId: ev.tenantId,
+              couponCode: ev.couponCode || null,
+            });
           } else {
             history.push({
               id: ev.id,
@@ -1938,32 +1974,6 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
               tenantId: ev.tenantId,
               couponCode: ev.couponCode || null,
             });
-            if (ev.type === "coupon_gen") {
-              if (lastCompletedOrderIdx >= 0 && history[lastCompletedOrderIdx] && !history[lastCompletedOrderIdx].couponCode) {
-                history[lastCompletedOrderIdx].couponCode = ev.couponCode;
-              }
-              cumulative = 0;
-              lastCompletedOrderIdx = -1;
-            }
-          }
-        });
-
-        // Link completed orders with the closest generated coupon code if not already linked
-        history.forEach((h) => {
-          if (h.status === "completed" && !h.couponCode && brandCoupons.length > 0) {
-            const hTime = new Date(h.date).getTime();
-            let closest = null;
-            let minDiff = Infinity;
-            brandCoupons.forEach((c) => {
-              const diff = Math.abs(new Date(c.createdAt).getTime() - hTime);
-              if (diff < minDiff) {
-                minDiff = diff;
-                closest = c;
-              }
-            });
-            if (closest) {
-              h.couponCode = closest.code;
-            }
           }
         });
       }
@@ -3027,11 +3037,19 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
     for (const [_, items] of userGroups.entries()) {
       items.sort((a, b) => a.date - b.date);
       let cumulative = 0;
+      let hasUnclaimedCoupon = false;
+      let lastCompletedIdx = -1;
+
       items.forEach((item) => {
         if (item.type === "order") {
+          if (hasUnclaimedCoupon) {
+            // Customer already has an unclaimed reward coupon — card is capped, no new stamps earned
+            return;
+          }
           cumulative += item.earnedStamps;
           const isCompleted = cumulative >= requiredStamps;
           const display = Math.min(cumulative, requiredStamps);
+          const actIdx = activity.length;
           activity.push({
             id: item.id,
             date: item.date.toISOString(),
@@ -3046,9 +3064,53 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
             tenantId: item.tenantId,
             customerName: item.customerName,
             customerPhone: item.customerPhone,
+            couponCode: null,
+          });
+          if (isCompleted) {
+            cumulative = requiredStamps;
+            lastCompletedIdx = actIdx;
+          }
+        } else if (item.type === "coupon_gen") {
+          hasUnclaimedCoupon = true;
+          activity.push({
+            id: item.id,
+            date: item.date.toISOString(),
+            status: item.status,
+            reason: item.reason,
+            stampsCount: item.stampsCount,
+            stampsGenerated: item.stampsGenerated,
+            stampsRequired: requiredStamps,
+            generatedBy: item.generatedBy,
+            branchName: item.branchName,
+            brandName: item.brandName,
+            tenantId: item.tenantId,
+            customerName: item.customerName,
+            customerPhone: item.customerPhone,
             couponCode: item.couponCode || null,
           });
-          if (isCompleted) cumulative = 0;
+          if (lastCompletedIdx >= 0 && activity[lastCompletedIdx] && !activity[lastCompletedIdx].couponCode) {
+            activity[lastCompletedIdx].couponCode = item.couponCode;
+          }
+          lastCompletedIdx = -1;
+        } else if (item.type === "coupon_redeem") {
+          hasUnclaimedCoupon = false;
+          cumulative = 0;
+          activity.push({
+            id: item.id,
+            date: item.date.toISOString(),
+            status: item.status,
+            reason: item.reason,
+            stampsCount: item.stampsCount,
+            stampsGenerated: item.stampsGenerated,
+            stampsRequired: requiredStamps,
+            generatedBy: item.generatedBy,
+            branchName: item.branchName,
+            brandName: item.brandName,
+            tenantId: item.tenantId,
+            customerName: item.customerName,
+            customerPhone: item.customerPhone,
+            couponCode: item.couponCode || null,
+          });
         } else {
           activity.push({
             id: item.id,
@@ -3066,9 +3128,6 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
             customerPhone: item.customerPhone,
             couponCode: item.couponCode || null,
           });
-          if (item.type === "coupon_gen") {
-            cumulative = 0;
-          }
         }
       });
     }
