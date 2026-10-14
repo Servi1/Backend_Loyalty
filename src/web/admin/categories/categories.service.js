@@ -5,7 +5,7 @@ const defaultCategories = ["Cafe", "Kitchen", "Spa", "Restaurant", "Saloon"];
 
 const seedDefaultCategoriesIfEmpty = async () => {
   try {
-    const seeded = await mainPrisma.adminSetting.findUnique({
+    const seeded = await mainPrisma.systemSetting.findUnique({
       where: { key: "initialTenantCategoriesSeeded" }
     });
     if (!seeded) {
@@ -21,7 +21,7 @@ const seedDefaultCategoriesIfEmpty = async () => {
           }
         }
       }
-      await mainPrisma.adminSetting.upsert({
+      await mainPrisma.systemSetting.upsert({
         where: { key: "initialTenantCategoriesSeeded" },
         update: { value: "true" },
         create: { key: "initialTenantCategoriesSeeded", value: "true" }
@@ -40,7 +40,7 @@ const getAll = async (options = {}) => {
 
   let disabledList = [];
   try {
-    const disabledSetting = await mainPrisma.adminSetting.findUnique({
+    const disabledSetting = await mainPrisma.systemSetting.findUnique({
       where: { key: "disabledCategories" }
     });
     if (disabledSetting && disabledSetting.value) {
@@ -132,14 +132,14 @@ const update = async (id, data) => {
 
     // Also update disabledCategories setting if the old name was listed
     try {
-      const disabledSetting = await mainPrisma.adminSetting.findUnique({
+      const disabledSetting = await mainPrisma.systemSetting.findUnique({
         where: { key: "disabledCategories" }
       });
       if (disabledSetting && disabledSetting.value) {
         const list = disabledSetting.value.split(",").map(x => x.trim()).filter(Boolean);
         if (list.includes(oldName)) {
           const updatedList = list.map(x => (x === oldName ? cleanName : x)).join(",");
-          await mainPrisma.adminSetting.update({
+          await mainPrisma.systemSetting.update({
             where: { key: "disabledCategories" },
             data: { value: updatedList }
           });
@@ -185,14 +185,14 @@ const remove = async (id) => {
 
   // Clean up disabledCategories setting if it contained this category
   try {
-    const disabledSetting = await mainPrisma.adminSetting.findUnique({
+    const disabledSetting = await mainPrisma.systemSetting.findUnique({
       where: { key: "disabledCategories" }
     });
     if (disabledSetting && disabledSetting.value) {
       const list = disabledSetting.value.split(",").map(x => x.trim()).filter(Boolean);
       if (list.includes(existing.name)) {
         const updated = list.filter(x => x !== existing.name).join(",");
-        await mainPrisma.adminSetting.update({
+        await mainPrisma.systemSetting.update({
           where: { key: "disabledCategories" },
           data: { value: updated }
         });

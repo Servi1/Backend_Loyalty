@@ -73,7 +73,17 @@ const getBrands = async (userId) => {
 
   const favBrands = user.favoriteBrands || [];
 
-  const [tenants, activeTenantCategories] = await Promise.all([
+  let disabledList = [];
+  try {
+    const disabledSetting = await mainPrisma.systemSetting.findUnique({
+      where: { key: "disabledCategories" }
+    });
+    if (disabledSetting && disabledSetting.value) {
+      disabledList = disabledSetting.value.split(",").map(x => x.trim().toLowerCase()).filter(Boolean);
+    }
+  } catch (err) {}
+
+  const [tenants, allCategories] = await Promise.all([
     mainPrisma.tenant.findMany({
       where: {
         isActive: true,
@@ -84,6 +94,8 @@ const getBrands = async (userId) => {
       select: { name: true }
     })
   ]);
+
+  const activeTenantCategories = allCategories.filter(c => !disabledList.includes(c.name.toLowerCase().trim()));
 
   const validCategoryMap = new Map();
   activeTenantCategories.forEach(c => {
