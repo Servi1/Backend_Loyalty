@@ -64,6 +64,16 @@ const create = async (db, data) => {
   if (!Array.isArray(customPaymentTypeIds) || customPaymentTypeIds.length === 0) {
     throw new ApiError(400, "At least one Payment Method must be selected");
   }
+
+  if (!insertData.imageUrl) {
+    const existingBranchWithImage = await db.branch.findFirst({
+      where: { imageUrl: { not: null } },
+      select: { imageUrl: true }
+    });
+    if (existingBranchWithImage?.imageUrl) {
+      insertData.imageUrl = existingBranchWithImage.imageUrl;
+    }
+  }
   
   const initSub = (field, subField) => {
     if (insertData[field] === true) {

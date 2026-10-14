@@ -49,6 +49,15 @@ const getById = async (id) => {
 };
 
 const create = async (data) => {
+  // Brand logo and branch cover image are mandatory at creation time
+  const branchCover = data.branchCoverUrl || data.branchImageUrl || data.imageUrl || data.bannerUrl;
+  if (!data.logoUrl || typeof data.logoUrl !== "string" || !data.logoUrl.trim()) {
+    throw new ApiError(400, "Brand logo is required");
+  }
+  if (!branchCover || typeof branchCover !== "string" || !branchCover.trim()) {
+    throw new ApiError(400, "Branch cover image is required");
+  }
+
   // 0. Pre-check: Ensure slug is unique before doing heavy database creation
   const existingTenant = await mainPrisma.tenant.findUnique({ where: { slug: data.slug } });
   if (existingTenant) {
@@ -91,10 +100,11 @@ const create = async (data) => {
     throw new ApiError(500, `Failed to push schema to tenant DB: ${err.message}`);
   }
 
-  // 3.5. Create initial BRAND_MANAGER and seed default order types
-  if (data.adminEmail && data.adminPassword) {
-    try {
-      const tenantPrisma = getTenantClient(tenantDbUrl);
+  // 3.5. Create initial BRAND_MANAGER, default branch with cover image, and seed default order types
+  try {
+    const tenantPrisma = getTenantClient(tenantDbUrl);
+
+    if (data.adminEmail && data.adminPassword) {
       const hashedPassword = await bcrypt.hash(data.adminPassword, 10);
       const existingUser = await tenantPrisma.user.findUnique({
         where: { email: data.adminEmail }
@@ -114,27 +124,56 @@ const create = async (data) => {
           data: { password: hashedPassword }
         });
       }
-
-      // Seed default order types if empty
-      const existingOrderTypes = await tenantPrisma.customOrderType.findMany();
-      if (existingOrderTypes.length === 0) {
-        await tenantPrisma.customOrderType.createMany({
-          data: [
-            { name: "Dine In", isActive: true },
-            { name: "Takeaway", isActive: true },
-            { name: "Delivery", isActive: true },
-            { name: "Deliver to Car", isActive: true },
-            { name: "Scheduled", isActive: true }
-          ]
-        });
-      }
-    } catch (err) {
-      console.error("Failed to initialize tenant defaults:", err);
     }
+
+    // Seed default order types if empty
+    const existingOrderTypes = await tenantPrisma.customOrderType.findMany();
+    if (existingOrderTypes.length === 0) {
+      await tenantPrisma.customOrderType.createMany({
+        data: [
+          { name: "Dine In", isActive: true },
+          { name: "Takeaway", isActive: true },
+          { name: "Delivery", isActive: true },
+          { name: "Deliver to Car", isActive: true },
+          { name: "Scheduled", isActive: true }
+        ]
+      });
+    }
+
+    // Seed initial default branch with the uploaded Branch Cover Image
+    const existingBranches = await tenantPrisma.branch.findMany();
+    if (existingBranches.length === 0) {
+      await tenantPrisma.branch.create({
+        data: {
+          name: `${data.name} Main Branch`,
+          nameAr: data.nameAr ? `${data.nameAr} - الفرع الرئيسي` : undefined,
+          imageUrl: branchCover,
+          isOpen: true,
+          hours: "10am - 11pm",
+          rating: 4.8,
+          appServiEnabled: Boolean(data.subAppServi),
+          posEnabled: Boolean(data.subPos),
+          qrEnabled: Boolean(data.subQrTable || data.subQrCashier),
+          kdsEnabled: Boolean(data.subKds),
+          cdsEnabled: Boolean(data.subCds),
+          tablesEnabled: Boolean(data.subQrTable),
+        }
+      });
+    } else {
+      await tenantPrisma.branch.updateMany({
+        data: { imageUrl: branchCover }
+      });
+    }
+  } catch (err) {
+    console.error("Failed to initialize tenant defaults:", err);
   }
 
   // 4. Save tenant to main registry
-  const { adminEmail, adminPassword, adminName, ...tenantData } = data;
+  const { adminEmail, adminPassword, adminName, branchCoverUrl, branchImageUrl, ...tenantData } = data;
+  // Ensure Home Banner Carousel 1 (bannerUrl) is not set from branch cover
+  if (!data.bannerUrl || data.bannerUrl === branchCover) {
+    delete tenantData.bannerUrl;
+  }
   const tenant = await mainPrisma.tenant.create({
     data: {
       ...tenantData,

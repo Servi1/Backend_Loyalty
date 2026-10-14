@@ -1,10 +1,14 @@
 const ApiError = require("../../../utils/ApiError");
 const bcrypt = require("bcryptjs");
 
-const getAllStaff = async (db, branchId, startDate, endDate) => {
+const getAllStaff = async (db, branchId, startDate, endDate, shouldIncludeBrandManager = false) => {
+  const allowedRoles = ["BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM", "WAREHOUSE_MANAGER"];
+  if (shouldIncludeBrandManager) {
+    allowedRoles.push("BRAND_MANAGER");
+  }
   const where = {
     role: {
-      in: ["BRANCH_MANAGER", "CASHIER", "WAITER", "KITCHEN", "CUSTOM", "WAREHOUSE_MANAGER"]
+      in: allowedRoles
     },
     OR: [
       { customRole: null },
@@ -105,9 +109,13 @@ const createStaff = async (db, data) => {
   });
 };
 
-const removeStaff = async (db, id) => {
+const removeStaff = async (db, id, currentUser) => {
   const user = await db.user.findUnique({ where: { id } });
   if (!user) throw new ApiError(404, "User not found");
+
+  if (user.role === "BRAND_MANAGER") {
+    throw new ApiError(403, "Brand Admin cannot be deleted");
+  }
 
   // Check if the user is referenced by any orders or cash drawer sessions
   const hasOrders = await db.order.count({ where: { userId: id } }) > 0;
@@ -149,9 +157,18 @@ const removeStaff = async (db, id) => {
   }
 };
 
-const updateStaff = async (db, id, data) => {
+const updateStaff = async (db, id, data, currentUser) => {
   const user = await db.user.findUnique({ where: { id } });
   if (!user) throw new ApiError(404, "User not found");
+
+  const isTargetBrandAdmin = user.role === "BRAND_MANAGER";
+  const isActorSuperAdmin = currentUser?.role?.toLowerCase() === "super_admin" || currentUser?.role === "SUPER_ADMIN" || !!currentUser?.admin;
+
+  if (isTargetBrandAdmin && (data.email !== undefined || data.password)) {
+    if (!isActorSuperAdmin) {
+      throw new ApiError(403, "Only Super Admin can update Brand Admin email or password");
+    }
+  }
 
   if (data.email && data.email !== user.email) {
     const existing = await db.user.findUnique({ where: { email: data.email } });
