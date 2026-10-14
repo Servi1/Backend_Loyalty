@@ -380,6 +380,10 @@ app.use("/api/app/notifications", appNotificationsRoutes);
 app.use("/api/customer/wallets", authenticateAppUser, walletCtrl.getAllWallets);
 app.use("/api/app/support", appSupportRoutes);
 
+// Public categories endpoints for mobile app (/api/categories, /categories)
+const appCategoriesRoutes = require("./src/app/categories/categories.routes");
+app.use(["/api/categories", "/categories"], appCategoriesRoutes);
+
 const { optionalAppTenant } = require("./src/app/middlewares/appTenant.middleware");
 
 // Global app router for tenant-independent requests (e.g. wallet, profile, brands, cart)

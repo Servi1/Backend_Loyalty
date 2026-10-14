@@ -56,11 +56,19 @@ const getAll = async (options = {}) => {
   } catch (e) {}
   const arMap = new Map(rawWithAr.map(r => [r.id, r.nameAr]));
 
-  const enriched = categories.map(c => ({
-    ...c,
-    nameAr: arMap.get(c.id) || null,
-    isActive: !disabledList.includes(c.name)
-  }));
+  const disabledSet = new Set(disabledList.map(x => x.toLowerCase().trim()));
+
+  const enriched = categories.map(c => {
+    const isInactive = disabledSet.has((c.name || "").toLowerCase().trim());
+    return {
+      id: c.id,
+      name: c.name,
+      nameAr: arMap.get(c.id) || c.nameAr || null,
+      isActive: !isInactive,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt
+    };
+  });
 
   if (options.activeOnly) {
     return enriched.filter(c => c.isActive);
@@ -100,19 +108,26 @@ const create = async (data) => {
 };
 
 const update = async (id, data) => {
-  const cleanName = (data.name || "").trim();
-  if (!cleanName) {
-    throw new ApiError(400, "Category name is required");
-  }
-  const existing = await mainPrisma.tenantCategory.findFirst({
-    where: { name: { equals: cleanName, mode: "insensitive" } }
-  });
-  if (existing && existing.id !== id) {
-    throw new ApiError(400, "Category name already exists");
+  const currentCategory = await mainPrisma.tenantCategory.findUnique({ where: { id } });
+  if (!currentCategory) {
+    throw new ApiError(404, "Category not found");
   }
 
-  const currentCategory = await mainPrisma.tenantCategory.findUnique({ where: { id } });
-  const oldName = currentCategory?.name;
+  const oldName = currentCategory.name;
+  let cleanName = oldName;
+
+  if (data.name !== undefined) {
+    cleanName = (data.name || "").trim();
+    if (!cleanName) {
+      throw new ApiError(400, "Category name cannot be empty");
+    }
+    const existing = await mainPrisma.tenantCategory.findFirst({
+      where: { name: { equals: cleanName, mode: "insensitive" } }
+    });
+    if (existing && existing.id !== id) {
+      throw new ApiError(400, "Category name already exists");
+    }
+  }
 
   const updated = await mainPrisma.tenantCategory.update({
     where: { id },
@@ -137,8 +152,8 @@ const update = async (id, data) => {
       });
       if (disabledSetting && disabledSetting.value) {
         const list = disabledSetting.value.split(",").map(x => x.trim()).filter(Boolean);
-        if (list.includes(oldName)) {
-          const updatedList = list.map(x => (x === oldName ? cleanName : x)).join(",");
+        if (list.some(x => x.toLowerCase() === oldName.toLowerCase())) {
+          const updatedList = list.map(x => (x.toLowerCase() === oldName.toLowerCase() ? cleanName : x)).join(",");
           await mainPrisma.systemSetting.update({
             where: { key: "disabledCategories" },
             data: { value: updatedList }
@@ -147,6 +162,37 @@ const update = async (id, data) => {
       }
     } catch (err) {
       console.warn("Failed to update disabledCategories setting on rename:", err.message);
+    }
+  }
+
+  // Handle isActive toggle if provided
+  if (data.isActive !== undefined) {
+    try {
+      const disabledSetting = await mainPrisma.systemSetting.findUnique({
+        where: { key: "disabledCategories" }
+      });
+      const currentList = disabledSetting && disabledSetting.value
+        ? disabledSetting.value.split(",").map(x => x.trim()).filter(Boolean)
+        : [];
+
+      let newList;
+      if (data.isActive === false) {
+        if (!currentList.some(x => x.toLowerCase() === cleanName.toLowerCase())) {
+          newList = [...currentList, cleanName];
+        } else {
+          newList = currentList;
+        }
+      } else {
+        newList = currentList.filter(x => x.toLowerCase() !== cleanName.toLowerCase());
+      }
+
+      await mainPrisma.systemSetting.upsert({
+        where: { key: "disabledCategories" },
+        update: { value: newList.join(",") },
+        create: { key: "disabledCategories", value: newList.join(",") }
+      });
+    } catch (err) {
+      console.warn("Failed to update disabledCategories setting on isActive toggle:", err.message);
     }
   }
 
@@ -163,7 +209,23 @@ const update = async (id, data) => {
       console.warn("Could not update nameAr for category:", e.message);
     }
   }
-  return updated;
+
+  // Return category enriched with isActive
+  let isCategoryActive = true;
+  try {
+    const disabledSetting = await mainPrisma.systemSetting.findUnique({
+      where: { key: "disabledCategories" }
+    });
+    if (disabledSetting && disabledSetting.value) {
+      const list = disabledSetting.value.split(",").map(x => x.trim().toLowerCase()).filter(Boolean);
+      isCategoryActive = !list.includes(cleanName.toLowerCase());
+    }
+  } catch (e) {}
+
+  return {
+    ...updated,
+    isActive: isCategoryActive
+  };
 };
 
 const remove = async (id) => {
@@ -190,8 +252,8 @@ const remove = async (id) => {
     });
     if (disabledSetting && disabledSetting.value) {
       const list = disabledSetting.value.split(",").map(x => x.trim()).filter(Boolean);
-      if (list.includes(existing.name)) {
-        const updated = list.filter(x => x !== existing.name).join(",");
+      if (list.some(x => x.toLowerCase() === existing.name.toLowerCase())) {
+        const updated = list.filter(x => x.toLowerCase() !== existing.name.toLowerCase()).join(",");
         await mainPrisma.systemSetting.update({
           where: { key: "disabledCategories" },
           data: { value: updated }
