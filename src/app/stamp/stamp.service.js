@@ -9,6 +9,8 @@ const config = require("../../config");
 const ApiError = require("../../utils/ApiError");
 const mainPrisma = require("../../config/prisma");
 const { decodeQrToken, encodeQrToken } = require("../../utils/qrToken.utils");
+const { sendOtpSms } = require("../../services/oursms.service");
+const { generateRandomOtp, isDevOtpBypass } = require("../../utils/otp");
 
 const DEV_OTP = "1111";
 
@@ -150,18 +152,25 @@ const checkPhoneAndSendOtp = async (rawPhone) => {
     data: { verified: true },
   });
 
-  const code = process.env.NODE_ENV !== "production" ? DEV_OTP : DEV_OTP;
+  // Generate real numeric 4-digit code
+  const code = generateRandomOtp(4);
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
   await mainPrisma.otp.create({
     data: { phone, code, expiresAt },
   });
 
+  // Dispatch real SMS via OurSMS
+  await sendOtpSms(rawPhone, code);
+
+  const devBypassAllowed = isDevOtpBypass("1111");
+
   return {
     phone,
     exists: Boolean(user && user.name && user.name.trim().length > 0),
     name: user?.name || "",
     message: "OTP sent successfully",
+    devBypass: devBypassAllowed,
   };
 };
 
@@ -402,7 +411,7 @@ const verifyOtpAndGetStampCard = async ({ phone: rawPhone, code, name, token, te
   }
 
   // Verify OTP
-  const isDevBypass = String(code).trim() === DEV_OTP;
+  const isDevBypass = isDevOtpBypass(code);
   const otp = await mainPrisma.otp.findFirst({
     where: {
       phone,

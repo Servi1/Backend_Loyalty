@@ -99,18 +99,10 @@ const getCustomerTierDetails = (customer, wallet, configuredTiers) => {
     ? configuredTiers
     : DEFAULT_LOYALTY_TIERS;
 
-  if (wallet && wallet.tier) {
-    const targetTierName = String(wallet.tier).trim().toLowerCase();
-    const matchedTier = tiers.find(
-      (t) => (t.id || "").toLowerCase() === targetTierName || (t.name || "").toLowerCase() === targetTierName
-    );
-    if (matchedTier) {
-      return matchedTier;
-    }
-  }
-
   const ordersCount = Number(customer?.completedOrdersCount || customer?.ratingCount || 0);
-  const lifetimeSpend = Number(customer?.lifetimeSpend || (wallet ? Math.max(wallet.lifetimeEarn || 0, wallet.points || 0) : 0) || 0);
+  const walletPoints = wallet ? Number(wallet.points || 0) : 0;
+  const walletEarned = wallet ? Number(wallet.lifetimeEarn || 0) : 0;
+  const lifetimeSpend = Number(customer?.lifetimeSpend || Math.max(walletEarned, walletPoints) || 0);
 
   const sortedTiers = [...tiers].sort((a, b) => Number(b.level || 0) - Number(a.level || 0));
 
@@ -708,6 +700,13 @@ const getTiers = async (tenantId) => {
     if (tenant && Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
       tiers = tenant.loyaltyTiers;
     }
+  } else {
+    const sampleTenant = await mainPrisma.tenant.findFirst({
+      where: { NOT: { loyaltyTiers: { equals: [] } } }
+    });
+    if (sampleTenant && Array.isArray(sampleTenant.loyaltyTiers) && sampleTenant.loyaltyTiers.length > 0) {
+      tiers = sampleTenant.loyaltyTiers;
+    }
   }
 
   const allUsers = await mainPrisma.appUser.findMany({
@@ -800,19 +799,23 @@ const getTiers = async (tenantId) => {
   }));
 };
 
-const updateTiers = async (tenantId, tiers) => {
+const updateTiers = async (tenantId, tiers, opts = {}) => {
   if (!Array.isArray(tiers)) throw new ApiError(400, "Tiers must be an array");
 
   const cleanedTiers = tiers.map(({ membersCount, ...tier }) => tier);
 
-  if (tenantId) {
+  if (opts.applyToAll || !tenantId || tenantId === "all") {
+    await mainPrisma.tenant.updateMany({
+      data: { loyaltyTiers: cleanedTiers }
+    });
+  } else {
     await mainPrisma.tenant.update({
       where: { id: tenantId },
       data: { loyaltyTiers: cleanedTiers }
     });
   }
 
-  return getTiers(tenantId);
+  return getTiers(tenantId && tenantId !== "all" ? tenantId : null);
 };
 
 /**

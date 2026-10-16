@@ -11,6 +11,8 @@ const jwt = require("jsonwebtoken");
 const config = require("../../config");
 const ApiError = require("../../utils/ApiError");
 const mainPrisma = require("../../config/prisma");
+const { sendOtpSms } = require("../../services/oursms.service");
+const { generateRandomOtp, isDevOtpBypass } = require("../../utils/otp");
 
 // ─── OTP Constant (dev) ───────────────────────────────────────────────────────
 const DEV_OTP = "1111";
@@ -54,38 +56,48 @@ const sendOtp = async (rawPhone) => {
     data: { verified: true },
   });
 
-  const code = process.env.NODE_ENV !== "production" ? DEV_OTP : _generateSecureOtp();
+  // Generate real numeric 4-digit code
+  const code = generateRandomOtp(4);
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
   await mainPrisma.otp.create({ data: { phone, code, expiresAt } });
 
-  if (process.env.NODE_ENV !== "production") {
-    console.log(`[APP-AUTH] OTP for ${phone}: ${code}  (static dev code)`);
-  }
+  // Dispatch real SMS via OurSMS gateway
+  await sendOtpSms(rawPhone, code);
 
-  return { message: "OTP sent successfully" };
+  const devBypassAllowed = isDevOtpBypass("1111");
+  return {
+    message: "OTP sent successfully",
+    devBypass: devBypassAllowed,
+  };
 };
 
 // ─── verifyOtp ───────────────────────────────────────────────────────────────
 
 const verifyOtp = async (rawPhone, code, tenantId = null) => {
   const phone = normalisePhone(rawPhone);
+  const inputCode = String(code).trim();
+  const isBypass = isDevOtpBypass(inputCode);
 
   // Find the latest unverified, non-expired OTP
   const otp = await mainPrisma.otp.findFirst({
     where: {
       phone,
-      code,
+      code: inputCode,
       verified: false,
       expiresAt: { gte: new Date() },
     },
     orderBy: { createdAt: "desc" },
   });
 
-  if (!otp) throw new ApiError(400, "Invalid or expired OTP");
+  if (!otp && !isBypass) {
+    throw new ApiError(400, "Invalid or expired OTP");
+  }
 
-  // Mark as consumed
-  await mainPrisma.otp.update({ where: { id: otp.id }, data: { verified: true } });
+  // Mark as consumed if found in DB
+  if (otp) {
+    await mainPrisma.otp.update({ where: { id: otp.id }, data: { verified: true } });
+  }
 
   // ── Find or create user globally ──────────────────────────────────────────
   let user = await mainPrisma.appUser.findUnique({

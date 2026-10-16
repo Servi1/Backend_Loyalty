@@ -1,20 +1,29 @@
 /**
  * Generate a numeric OTP code.
- * In non-production environments, always returns "1111" for easy testing.
- * In production, generates a proper random 6-digit code.
  */
-const generateOtp = (length = 6) => {
-  // ─── Dev / Staging shortcut ──────────────────────────────
-  if (process.env.NODE_ENV !== "production") {
-    return "1111";
-  }
-
-  // ─── Production: cryptographically-adequate random code ──
-  let code = "";
-  for (let i = 0; i < length; i++) {
-    code += Math.floor(Math.random() * 10).toString();
-  }
-  return code;
+const generateRandomOtp = (length = 4) => {
+  const min = Math.pow(10, length - 1);
+  const max = Math.pow(10, length) - 1;
+  return String(Math.floor(min + Math.random() * (max - min + 1)));
 };
 
-module.exports = { generateOtp };
+/**
+ * Checks whether the entered code is allowed to bypass verification via the dev bypass flag.
+ * Reads ALLOW_DEV_OTP_BYPASS from .env (e.g. true/false).
+ */
+const isDevOtpBypass = (code) => {
+  if (String(code).trim() !== "1111") return false;
+
+  const flag = process.env.ALLOW_DEV_OTP_BYPASS;
+  if (flag !== undefined) {
+    return flag === "true" || flag === "1";
+  }
+
+  return process.env.NODE_ENV !== "production";
+};
+
+const generateOtp = (length = 4) => {
+  return generateRandomOtp(length);
+};
+
+module.exports = { generateOtp, generateRandomOtp, isDevOtpBypass };
