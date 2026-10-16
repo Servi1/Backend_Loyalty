@@ -1472,11 +1472,13 @@ const syncAllTenantOrders = async () => {
 };
 
 const getCustomerTier = (wallet, tenant = null, customer = null) => {
-  if (wallet && wallet.tier) return wallet.tier.toLowerCase();
   if (tenant && Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
     const loyaltyService = require("../../tenant/loyalty/loyalty.service");
     const tierObj = loyaltyService.getCustomerTierDetails(customer, wallet, tenant.loyaltyTiers);
     if (tierObj && tierObj.name) return tierObj.name.toLowerCase();
+  }
+  if (wallet && wallet.tier && wallet.tier.toLowerCase() !== "bronze") {
+    return wallet.tier.toLowerCase();
   }
   const points = wallet?.points || 0;
   if (points >= 1000) return "platinum";
@@ -1505,7 +1507,7 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
     if (endDate) where.createdAt.lte = new Date(endDate);
   }
 
-  const tenants = await mainPrisma.tenant.findMany({ select: { id: true, name: true } });
+  const tenants = await mainPrisma.tenant.findMany({ select: { id: true, name: true, loyaltyTiers: true } });
 
   const [customers, total] = await Promise.all([
     mainPrisma.appUser.findMany({
@@ -1513,7 +1515,7 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
       include: {
         wallets: {
           include: {
-            tenant: { select: { id: true, name: true } },
+            tenant: { select: { id: true, name: true, loyaltyTiers: true } },
             transactions: {
               orderBy: { createdAt: "asc" }
             }
@@ -1549,6 +1551,7 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
       let tenantId = primaryWallet?.tenantId || null;
       const totalPoints = activeWallets.reduce((acc, w) => acc + (w.points || 0), 0);
       const bName = (c.phone && branchByPhone[c.phone]) ? branchByPhone[c.phone] : "Main Branch";
+      const primaryTenant = primaryWallet?.tenantId ? tenants.find(t => t.id === primaryWallet.tenantId) : null;
 
       return {
         id: c.id,
@@ -1561,13 +1564,16 @@ const getSuperAdminCustomers = async ({ search = "", page = 1, limit = 10, start
         branch: bName,
         branchName: bName,
         points: totalPoints,
-        wallets: activeWallets.map(w => ({
-          tenantId: w.tenantId,
-          tenantName: w.tenant?.name || "Global",
-          points: w.points,
-          tier: getCustomerTier(w)
-        })),
-        tier: getCustomerTier(primaryWallet),
+        wallets: activeWallets.map(w => {
+          const wTenant = w.tenantId ? tenants.find(t => t.id === w.tenantId) : null;
+          return {
+            tenantId: w.tenantId,
+            tenantName: w.tenant?.name || "Global",
+            points: w.points,
+            tier: getCustomerTier(w, wTenant, c)
+          };
+        }),
+        tier: getCustomerTier(primaryWallet, primaryTenant, c),
         joinedAt: c.createdAt,
       };
     }),
@@ -3250,6 +3256,16 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
   return activity;
 };
 
+const getSuperAdminTiers = async () => {
+  const loyaltyService = require("../../tenant/loyalty/loyalty.service");
+  return loyaltyService.getTiers(null);
+};
+
+const updateSuperAdminTiers = async (tiers) => {
+  const loyaltyService = require("../../tenant/loyalty/loyalty.service");
+  return loyaltyService.updateTiers(null, tiers, { applyToAll: true });
+};
+
 module.exports = {
   getAll,
   getById,
@@ -3276,5 +3292,7 @@ module.exports = {
   syncTenantOrders,
   toggleSlot,
   getTenantProducts,
+  getSuperAdminTiers,
+  updateSuperAdminTiers,
 };
 

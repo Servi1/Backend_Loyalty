@@ -180,6 +180,16 @@ const getTenantProducts = catchAsync(async (req, res) => {
   res.json({ success: true, data: products });
 });
 
+const getSuperAdminTiers = catchAsync(async (_req, res) => {
+  const tiers = await tenantsService.getSuperAdminTiers();
+  res.json({ success: true, data: tiers });
+});
+
+const updateSuperAdminTiers = catchAsync(async (req, res) => {
+  const tiers = await tenantsService.updateSuperAdminTiers(req.body.tiers);
+  res.json({ success: true, message: "Global loyalty tiers updated successfully", data: tiers });
+});
+
 module.exports = {
   getAll,
   getById,
@@ -207,4 +217,6 @@ module.exports = {
   syncTenantOrders,
   toggleSlot,
   getTenantProducts,
+  getSuperAdminTiers,
+  updateSuperAdminTiers,
 };

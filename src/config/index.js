@@ -37,6 +37,14 @@ module.exports = {
     phoneNumberId: process.env.META_WHATSAPP_PHONE_NUMBER_ID,
     templateName: process.env.META_WHATSAPP_REMINDER_TEMPLATE || "appointment_reminder",
   },
+  oursms: {
+    token: process.env.OURSMS_API_TOKEN,
+    senderName: process.env.OURSMS_SENDER_NAME || "oursms",
+    enabled: process.env.OURSMS_ENABLED !== "false",
+    allowDevBypass: process.env.ALLOW_DEV_OTP_BYPASS !== undefined
+      ? process.env.ALLOW_DEV_OTP_BYPASS === "true" || process.env.ALLOW_DEV_OTP_BYPASS === "1"
+      : process.env.NODE_ENV !== "production",
+  },
   cors: {
     origin: "*",
   },

@@ -60,7 +60,9 @@ const getTiers = catchAsync(async (req, res) => {
 });
 
 const updateTiers = catchAsync(async (req, res) => {
-  const tiers = await loyaltyService.updateTiers(req.tenantId, req.body.tiers);
+  const isSuperAdmin = req.user?.role === "SUPER_ADMIN" || req.user?.role === "super_admin";
+  const applyToAll = Boolean(req.body.applyToAll || (isSuperAdmin && req.body.applyToAll !== false));
+  const tiers = await loyaltyService.updateTiers(req.tenantId, req.body.tiers, { applyToAll });
   res.json({ success: true, data: tiers });
 });
 

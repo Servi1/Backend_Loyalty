@@ -3,7 +3,8 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const config = require("../../config");
 const ApiError = require("../../utils/ApiError");
-const { generateOtp } = require("../../utils/otp");
+const { generateOtp, generateRandomOtp, isDevOtpBypass } = require("../../utils/otp");
+const { sendOtpSms } = require("../../services/oursms.service");
 const twilio = require("twilio");
 
 let twilioClient = null;
@@ -25,13 +26,15 @@ const signToken = (userId, type = "user") =>
  * Send OTP to a phone number (Consumer App flow).
  */
 const sendOtp = async (db, phone) => {
-  const code = generateOtp();
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 min
+  const code = generateRandomOtp(4);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
 
   await db.otp.create({ data: { phone, code, expiresAt } });
 
-  // Send via Twilio (skip in development if not configured)
-  if (twilioClient && config.twilio.phoneNumber) {
+  // Send via OurSMS first, or fallback to Twilio if configured
+  if (config.oursms?.token) {
+    await sendOtpSms(phone, code);
+  } else if (twilioClient && config.twilio.phoneNumber) {
     await twilioClient.messages.create({
       body: `Your Servi verification code is: ${code}`,
       from: config.twilio.phoneNumber,
@@ -41,23 +44,27 @@ const sendOtp = async (db, phone) => {
     console.log(`[DEV] OTP for ${phone}: ${code}`);
   }
 
-  return { message: "OTP sent" };
+  const devBypassAllowed = isDevOtpBypass("1111");
+  return { message: "OTP sent", devBypass: devBypassAllowed };
 };
-
-
 
 /**
  * Verify OTP and return a token + user (creates user if first login).
  */
 const verifyOtp = async (db, phone, code, tenantId) => {
+  const inputCode = String(code).trim();
+  const isBypass = isDevOtpBypass(inputCode);
+
   const otp = await db.otp.findFirst({
-    where: { phone, code, verified: false, expiresAt: { gte: new Date() } },
+    where: { phone, code: inputCode, verified: false, expiresAt: { gte: new Date() } },
     orderBy: { createdAt: "desc" },
   });
 
-  if (!otp) throw new ApiError(400, "Invalid or expired OTP");
+  if (!otp && !isBypass) throw new ApiError(400, "Invalid or expired OTP");
 
-  await db.otp.update({ where: { id: otp.id }, data: { verified: true } });
+  if (otp) {
+    await db.otp.update({ where: { id: otp.id }, data: { verified: true } });
+  }
 
   let customer = await mainPrisma.appUser.findUnique({ where: { phone } });
   const isNewUser = !customer;

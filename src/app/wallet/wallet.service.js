@@ -71,7 +71,9 @@ const getCustomerTierDetails = (customer, wallet, configuredTiers) => {
     : DEFAULT_LOYALTY_TIERS;
 
   const ordersCount = Number(customer?.completedOrdersCount || customer?.ratingCount || 0);
-  const lifetimeSpend = Number(customer?.lifetimeSpend || (wallet ? Math.max(wallet.lifetimeEarn || 0, wallet.points || 0) : 0) || 0);
+  const walletPoints = wallet ? Number(wallet.points || 0) : 0;
+  const walletEarned = wallet ? Number(wallet.lifetimeEarn || 0) : 0;
+  const lifetimeSpend = Number(customer?.lifetimeSpend || Math.max(walletEarned, walletPoints) || 0);
 
   const sortedTiers = [...tiers].sort((a, b) => Number(b.level || 0) - Number(a.level || 0));
 
@@ -80,25 +82,12 @@ const getCustomerTierDetails = (customer, wallet, configuredTiers) => {
       const minOrders = Number(tier.minOrders || 0);
       const minSpend = Number(tier.minPurchaseValue || 0);
 
-      const spendMet = minSpend > 0 ? lifetimeSpend >= minSpend : false;
-      const ordersMet = minOrders > 0 ? ordersCount >= minOrders : false;
+      const satisfiesOrders = minOrders === 0 || ordersCount >= minOrders;
+      const satisfiesSpend = minSpend === 0 || lifetimeSpend >= minSpend;
 
-      if (spendMet || ordersMet) {
+      if (satisfiesOrders && satisfiesSpend) {
         return tier;
       }
-      if (minSpend === 0 && minOrders === 0) {
-        return tier;
-      }
-    }
-  }
-
-  if (wallet && wallet.tier && wallet.tier.toLowerCase() !== "starter") {
-    const targetTierName = String(wallet.tier).trim().toLowerCase();
-    const matchedTier = tiers.find(
-      (t) => (t.id || "").toLowerCase() === targetTierName || (t.name || "").toLowerCase() === targetTierName
-    );
-    if (matchedTier) {
-      return matchedTier;
     }
   }
 
@@ -1492,7 +1481,8 @@ const lookupWalletByPhone = async (db, tenantId, phone) => {
   if (!phone) throw new ApiError(400, "Phone number is required");
   const cleanedPhone = normalisePhone(phone);
 
-  const tenant = tenantId ? await mainPrisma.tenant.findUnique({ where: { id: tenantId } }) : null;
+  const tenant = tenantId ? await resolveTenant(tenantId) : null;
+  const targetTenantId = tenant?.id || tenantId;
   const redeemRate = Number(tenant?.loyaltyRedeemRate || 100.0);
   const loyaltyEnabled = tenant ? (Boolean(tenant.subLoyalty) && tenant.loyaltyEnabled !== false) : true;
 
@@ -1517,7 +1507,7 @@ const lookupWalletByPhone = async (db, tenantId, phone) => {
   }
 
   let wallet = await mainPrisma.wallet.findFirst({
-    where: { appUserId: appUser.id, tenantId: tenantId || null },
+    where: { appUserId: appUser.id, tenantId: targetTenantId || null },
   });
 
   if (!wallet) {
@@ -1526,6 +1516,14 @@ const lookupWalletByPhone = async (db, tenantId, phone) => {
 
   const configuredTiers = tenant?.loyaltyTiers || [];
   const customerTier = getCustomerTierDetails(appUser, wallet, configuredTiers);
+
+  // Keep wallet.tier in DB synchronized with evaluated tier
+  if (wallet.id && customerTier.name && wallet.tier !== customerTier.name.toLowerCase()) {
+    mainPrisma.wallet.update({
+      where: { id: wallet.id },
+      data: { tier: customerTier.name.toLowerCase() }
+    }).catch(e => console.error("Auto-sync wallet tier failed:", e.message));
+  }
 
   let redeemedToday = 0;
   if (wallet.id) {
