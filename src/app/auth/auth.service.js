@@ -15,7 +15,7 @@ const { sendOtpSms } = require("../../services/oursms.service");
 const { generateRandomOtp, isDevOtpBypass } = require("../../utils/otp");
 
 // ─── OTP Constant (dev) ───────────────────────────────────────────────────────
-const DEV_OTP = "1111";
+const DEV_OTP = "111111";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -56,8 +56,8 @@ const sendOtp = async (rawPhone) => {
     data: { verified: true },
   });
 
-  // Generate real numeric 4-digit code
-  const code = generateRandomOtp(4);
+  // Generate real numeric 6-digit code
+  const code = generateRandomOtp(6);
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
   await mainPrisma.otp.create({ data: { phone, code, expiresAt } });
@@ -65,7 +65,7 @@ const sendOtp = async (rawPhone) => {
   // Dispatch real SMS via OurSMS gateway
   await sendOtpSms(rawPhone, code);
 
-  const devBypassAllowed = isDevOtpBypass("1111");
+  const devBypassAllowed = isDevOtpBypass("111111");
   return {
     message: "OTP sent successfully",
     devBypass: devBypassAllowed,
