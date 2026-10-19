@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const config = require("../../config");
 const ApiError = require("../../utils/ApiError");
-const { generateOtp, generateRandomOtp, isDevOtpBypass } = require("../../utils/otp");
+const { generateOtp, generateRandomOtp, isDevOtpBypass, isDevBypassEnabled } = require("../../utils/otp");
 const { sendOtpSms } = require("../../services/oursms.service");
 const twilio = require("twilio");
 
@@ -44,7 +44,7 @@ const sendOtp = async (db, phone) => {
     console.log(`[DEV] OTP for ${phone}: ${code}`);
   }
 
-  const devBypassAllowed = isDevOtpBypass("1111");
+  const devBypassAllowed = isDevBypassEnabled();
   return { message: "OTP sent", devBypass: devBypassAllowed };
 };
 

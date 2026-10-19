@@ -197,6 +197,7 @@ model Table {
   seats    Int     @default(4)
   qrCode   String? @unique
   isActive Boolean @default(true)
+  status   String  @default("free") // "free" | "busy" | "closed"
   zone     String? @default("Main")
   zoneAr   String?
  

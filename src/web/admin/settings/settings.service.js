@@ -1,4 +1,5 @@
 const mainPrisma = require("../../../config/prisma");
+const { invalidateCache } = require("../../../config/systemSettings");
 
 const defaults = {
   marketEnabled: "true",
@@ -10,6 +11,9 @@ const defaults = {
   refund_enabled: "true",
   push_notifications: "true",
   email_marketing: "false",
+  sms_live_enabled: "false",
+  otp_bypass_enabled: "true",
+  otp_bypass_code: "9473",
   disabledCategories: "",
   platform_vat: "15.0"
 };
@@ -215,6 +219,7 @@ const updateSettings = async (configs) => {
     });
     updated.push(record);
   }
+  await invalidateCache();
   return updated;
 };
 

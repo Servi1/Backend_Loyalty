@@ -12,10 +12,7 @@ const config = require("../../config");
 const ApiError = require("../../utils/ApiError");
 const mainPrisma = require("../../config/prisma");
 const { sendOtpSms } = require("../../services/oursms.service");
-const { generateRandomOtp, isDevOtpBypass } = require("../../utils/otp");
-
-// ─── OTP Constant (dev) ───────────────────────────────────────────────────────
-const DEV_OTP = "1111";
+const { generateRandomOtp, isDevOtpBypass, isDevBypassEnabled, getDevOtpBypassCode } = require("../../utils/otp");
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -65,7 +62,7 @@ const sendOtp = async (rawPhone) => {
   // Dispatch real SMS via OurSMS gateway
   await sendOtpSms(rawPhone, code);
 
-  const devBypassAllowed = isDevOtpBypass("1111");
+  const devBypassAllowed = isDevBypassEnabled();
   return {
     message: "OTP sent successfully",
     devBypass: devBypassAllowed,
