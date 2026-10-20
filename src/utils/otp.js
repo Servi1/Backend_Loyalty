@@ -1,4 +1,10 @@
-const { getSetting } = require("../config/systemSettings");
+let getSetting = null;
+try {
+  const ss = require("../config/systemSettings");
+  getSetting = ss.getSetting;
+} catch (err) {
+  getSetting = (key, fallback) => fallback;
+}
 
 const DEFAULT_BYPASS_CODE = "9473";
 
@@ -15,15 +21,21 @@ const generateRandomOtp = (length = 6) => {
  * Returns the currently active OTP bypass code from system settings.
  */
 const getDevOtpBypassCode = () => {
-  return String(getSetting("otp_bypass_code", DEFAULT_BYPASS_CODE)).trim();
+  if (typeof getSetting === "function") {
+    return String(getSetting("otp_bypass_code", DEFAULT_BYPASS_CODE)).trim();
+  }
+  return DEFAULT_BYPASS_CODE;
 };
 
 /**
  * Checks whether OTP bypass is enabled in system settings.
  */
 const isDevBypassEnabled = () => {
-  const flag = getSetting("otp_bypass_enabled", "true");
-  return flag === "true" || flag === true || flag === "1";
+  if (typeof getSetting === "function") {
+    const flag = getSetting("otp_bypass_enabled", "true");
+    return flag === "true" || flag === true || flag === "1";
+  }
+  return true;
 };
 
 /**
