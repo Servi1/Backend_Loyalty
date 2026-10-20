@@ -1,4 +1,5 @@
 const axios = require("axios");
+const { getSettingAsync } = require("../config/systemSettings");
 
 /**
  * Normalizes any phone number into the standard Saudi format required by OurSMS:
@@ -36,20 +37,31 @@ function formatForOurSms(phone) {
 
 /**
  * Sends an OTP SMS via OurSMS API (https://api.oursms.com/msgs/sms).
+ * Live delivery vs mock simulation is controlled by Super Admin Settings (sms_live_enabled).
+ * API Token and Sender Name are loaded securely from .env.
  *
  * @param {string} phone - Recipient phone number
  * @param {string} otpCode - Generated OTP code
  * @returns {Promise<{ success: boolean, data?: any, error?: any, mocked?: boolean }>}
  */
 async function sendOtpSms(phone, otpCode) {
+  // Read real vs mock toggle from Super Admin SystemSettings (db-driven, not .env)
+  const smsLiveSetting = await getSettingAsync("sms_live_enabled", "false");
+  const isLiveEnabled = smsLiveSetting === "true" || smsLiveSetting === true || smsLiveSetting === "1";
+
   const token = process.env.OURSMS_API_TOKEN;
-  const isEnabled = process.env.OURSMS_ENABLED !== "false" && process.env.OURSMS_ENABLED !== false;
   const senderName = process.env.OURSMS_SENDER_NAME || "oursms";
 
-  // If disabled, token is missing, or placeholder token remains, mock gracefully in console
-  if (!isEnabled || !token || token.trim() === "" || token.includes("XXXXX") || token.includes("your_oursms")) {
-    console.log(`[OURSMS-MOCK] SMS simulated (token not configured or disabled). Phone: ${phone}, OTP: ${otpCode}`);
-    return { success: true, mocked: true };
+  // If live SMS is turned OFF in Super Admin Settings, simulate mock SMS
+  if (!isLiveEnabled) {
+    console.log(`[OURSMS-MOCK] SMS simulated (Mock mode enabled in Super Admin Settings). Phone: ${phone}, OTP: ${otpCode}`);
+    return { success: true, mocked: true, message: "Mock SMS simulated" };
+  }
+
+  // If live SMS is enabled in Super Admin Settings but token is not set in .env
+  if (!token || token.trim() === "" || token.includes("XXXXX") || token.includes("your_oursms")) {
+    console.warn(`[OURSMS-WARN] Live SMS enabled in Settings but OURSMS_API_TOKEN is missing/placeholder in .env. Simulating SMS. Phone: ${phone}, OTP: ${otpCode}`);
+    return { success: true, mocked: true, warning: "Missing OURSMS_API_TOKEN" };
   }
 
   const destPhone = formatForOurSms(phone);
@@ -75,7 +87,7 @@ async function sendOtpSms(phone, otpCode) {
       timeout: 10000,
     });
 
-    console.log(`[OURSMS] SMS dispatched to ${destPhone}, jobId: ${res.data?.jobId || "N/A"}`);
+    console.log(`[OURSMS] Live SMS dispatched to ${destPhone}, jobId: ${res.data?.jobId || "N/A"}`);
     return { success: true, data: res.data };
   } catch (error) {
     const errMsg = error.response?.data?.message || error.message;

@@ -10,9 +10,7 @@ const ApiError = require("../../utils/ApiError");
 const mainPrisma = require("../../config/prisma");
 const { decodeQrToken, encodeQrToken } = require("../../utils/qrToken.utils");
 const { sendOtpSms } = require("../../services/oursms.service");
-const { generateRandomOtp, isDevOtpBypass } = require("../../utils/otp");
-
-const DEV_OTP = "1111";
+const { generateRandomOtp, isDevOtpBypass, isDevBypassEnabled, getDevOtpBypassCode } = require("../../utils/otp");
 
 const getPhoneCandidates = (raw) => {
   if (!raw) return [];
@@ -163,7 +161,7 @@ const checkPhoneAndSendOtp = async (rawPhone) => {
   // Dispatch real SMS via OurSMS
   await sendOtpSms(rawPhone, code);
 
-  const devBypassAllowed = isDevOtpBypass("1111");
+  const devBypassAllowed = isDevBypassEnabled();
 
   return {
     phone,
