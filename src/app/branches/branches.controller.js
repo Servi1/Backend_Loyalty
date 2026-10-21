@@ -80,8 +80,14 @@ const getStaff = catchAsync(async (req, res) => {
 });
 
 const getStaffSlots = catchAsync(async (req, res) => {
-  const { date, duration } = req.query;
-  const slots = await branchesService.getStaffSlots(req.tenantDb, req.params.staffId, date, duration);
+  const { date, duration, includePast } = req.query;
+  const slots = await branchesService.getStaffSlots(
+    req.tenantDb,
+    req.params.staffId,
+    date,
+    duration,
+    includePast === 'true'
+  );
   res.json({ success: true, data: slots });
 });
 

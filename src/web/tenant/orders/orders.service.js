@@ -720,6 +720,14 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
   const order = await db.order.findUnique({ where: { id } });
   if (!order) throw new ApiError(404, "Order not found");
 
+  // Disallow cancelling/rejecting an order that has already been accepted or is in progress
+  if (status === "CANCELLED" || status === "REJECTED") {
+    const currentStatus = (order.status || "").toUpperCase();
+    if (currentStatus !== "PENDING" && currentStatus !== "HALTED") {
+      throw new ApiError(400, "Cannot cancel an order that has already been accepted or is in progress.");
+    }
+  }
+
   const updateData = { status };
   if (notes !== undefined) {
     updateData.notes = notes;
