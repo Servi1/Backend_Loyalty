@@ -59,6 +59,12 @@ const syncGlobalSpinItem = async (tenantId, item) => {
 
 const createItem = async (db, data, tenantId) => {
   const { specialistIds, ...rest } = data;
+  if (rest.nameAr === "" || (typeof rest.nameAr === "string" && !rest.nameAr.trim())) {
+    rest.nameAr = null;
+  }
+  if (rest.descriptionAr === "" || (typeof rest.descriptionAr === "string" && !rest.descriptionAr.trim())) {
+    rest.descriptionAr = null;
+  }
   const specialistsConnect = specialistIds ? specialistIds.map(id => ({ id })) : [];
   
   const item = await db.menuItem.create({ 
@@ -81,6 +87,12 @@ const updateItem = async (db, id, data, tenantId) => {
   if (!item) throw new ApiError(404, "Menu item not found");
   
   const { specialistIds, ...rest } = data;
+  if (rest.nameAr === "" || (typeof rest.nameAr === "string" && !rest.nameAr.trim())) {
+    rest.nameAr = null;
+  }
+  if (rest.descriptionAr === "" || (typeof rest.descriptionAr === "string" && !rest.descriptionAr.trim())) {
+    rest.descriptionAr = null;
+  }
   const updatePayload = { ...rest };
   if (specialistIds !== undefined) {
     updatePayload.specialists = {

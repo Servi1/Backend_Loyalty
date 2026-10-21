@@ -834,7 +834,7 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null }
       db.order.findMany({
         where: userMatchCondition,
         include: {
-          items: { include: { menuItem: { select: { name: true, price: true } } } },
+          items: { include: { menuItem: { select: { id: true, name: true, nameAr: true, price: true } } } },
           branch: { select: { id: true, name: true, nameAr: true, address: true, lat: true, lng: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -906,8 +906,8 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null }
         const detailedOrder = await tenantDb.order.findUnique({
           where: { id: mainOrder.id },
           include: {
-            items: { include: { menuItem: { select: { name: true, price: true } } } },
-            branch: { select: { id: true, name: true, address: true, lat: true, lng: true } },
+            items: { include: { menuItem: { select: { id: true, name: true, nameAr: true, price: true } } } },
+            branch: { select: { id: true, name: true, nameAr: true, address: true, lat: true, lng: true } },
           },
         });
         if (detailedOrder) {

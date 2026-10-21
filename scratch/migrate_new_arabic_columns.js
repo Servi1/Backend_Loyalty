@@ -13,7 +13,8 @@ async function run() {
       `ALTER TABLE "Tenant" ADD COLUMN IF NOT EXISTS "feeStamps" DOUBLE PRECISION DEFAULT 0.0;`,
       `ALTER TABLE "GlobalOrderType" ADD COLUMN IF NOT EXISTS "nameAr" TEXT;`,
       `ALTER TABLE "GlobalOrderType" ADD COLUMN IF NOT EXISTS "descriptionAr" TEXT;`,
-      `ALTER TABLE "TenantCategory" ADD COLUMN IF NOT EXISTS "nameAr" TEXT;`
+      `ALTER TABLE "TenantCategory" ADD COLUMN IF NOT EXISTS "nameAr" TEXT;`,
+      `ALTER TABLE "CartItem" ADD COLUMN IF NOT EXISTS "nameAr" TEXT;`
     ];
 
     for (const sql of mainSqls) {
@@ -27,7 +28,9 @@ async function run() {
       `ALTER TABLE "MenuCategory" ADD COLUMN IF NOT EXISTS "imageUrl" TEXT;`,
       `ALTER TABLE "MenuCategory" ADD COLUMN IF NOT EXISTS "iconUrl" TEXT;`,
       `ALTER TABLE "CustomOrderType" ADD COLUMN IF NOT EXISTS "nameAr" TEXT;`,
-      `ALTER TABLE "CustomOrderType" ADD COLUMN IF NOT EXISTS "descriptionAr" TEXT;`
+      `ALTER TABLE "CustomOrderType" ADD COLUMN IF NOT EXISTS "descriptionAr" TEXT;`,
+      `ALTER TABLE "MenuItem" ADD COLUMN IF NOT EXISTS "nameAr" TEXT;`,
+      `ALTER TABLE "MenuItem" ADD COLUMN IF NOT EXISTS "descriptionAr" TEXT;`
     ];
 
     const tenants = await mainPrisma.tenant.findMany();

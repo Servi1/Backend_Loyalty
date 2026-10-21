@@ -225,7 +225,9 @@ model MenuCategory {
 model MenuItem {
   id          String  @id @default(uuid())
   name        String
+  nameAr      String?
   description String?
+  descriptionAr String?
   price       Float
   imageUrl    String?
   isAvailable Boolean @default(true)

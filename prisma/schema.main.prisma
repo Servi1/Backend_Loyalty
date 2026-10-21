@@ -272,6 +272,7 @@ model CartItem {
   brandId     String
   itemId      String
   name        String
+  nameAr      String?
   price       Float
   qty         Int      @default(1)
   image       String?

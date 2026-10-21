@@ -20,7 +20,7 @@ const getCart = async (appUserId) => {
  * @returns {Promise<object>}
  */
 const addToCart = async (appUserId, itemData) => {
-  const { cartLineId, brandId, itemId, name, price, qty, image, size, flavor } = itemData;
+  const { cartLineId, brandId, itemId, name, nameAr, price, qty, image, size, flavor } = itemData;
 
   if (!cartLineId || !brandId || !itemId || !name || price === undefined) {
     throw new ApiError(400, "Missing required cart item fields");
@@ -39,7 +39,10 @@ const addToCart = async (appUserId, itemData) => {
   if (existing) {
     return await mainPrisma.cartItem.update({
       where: { id: existing.id },
-      data: { qty: existing.qty + (qty || 1) }
+      data: {
+        qty: existing.qty + (qty || 1),
+        ...(nameAr ? { nameAr } : {})
+      }
     });
   }
 
@@ -50,6 +53,7 @@ const addToCart = async (appUserId, itemData) => {
       brandId,
       itemId,
       name,
+      nameAr: nameAr || null,
       price: parseFloat(price),
       qty: qty || 1,
       image,

@@ -47,6 +47,7 @@ const mapDbOrderToKds = (order) => {
     items: (order.items || []).map(item => ({
       id: item.id,
       name: item.menuItem?.name || "Unknown Item",
+      nameAr: item.menuItem?.nameAr || null,
       quantity: item.quantity,
       details: item.notes || ""
     }))
