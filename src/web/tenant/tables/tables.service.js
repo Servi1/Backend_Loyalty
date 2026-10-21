@@ -72,6 +72,7 @@ const create = async (db, data, cycle) => {
       labelAr: data.labelAr || null,
       seats: Number(data.seats) || 4,
       isActive: data.isActive !== undefined ? data.isActive : true,
+      status: data.status || "free",
       zone: data.zone || "Main Hall",
       zoneAr: data.zoneAr || null,
       qrCode,

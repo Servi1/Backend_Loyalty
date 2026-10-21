@@ -1,3 +1,13 @@
+let getSetting = null;
+try {
+  const ss = require("../config/systemSettings");
+  getSetting = ss.getSetting;
+} catch (err) {
+  getSetting = (key, fallback) => fallback;
+}
+
+const DEFAULT_BYPASS_CODE = "9473";
+
 /**
  * Generate a numeric OTP code.
  */
@@ -8,23 +18,57 @@ const generateRandomOtp = (length = 6) => {
 };
 
 /**
- * Checks whether the entered code is allowed to bypass verification via the dev bypass flag.
- * Reads ALLOW_DEV_OTP_BYPASS from .env (e.g. true/false).
+ * Returns the currently active OTP bypass code from system settings.
+ */
+const getDevOtpBypassCode = () => {
+  if (typeof getSetting === "function") {
+    return String(getSetting("otp_bypass_code", DEFAULT_BYPASS_CODE)).trim();
+  }
+  return DEFAULT_BYPASS_CODE;
+};
+
+/**
+ * Checks whether OTP bypass is enabled in system settings.
+ */
+const isDevBypassEnabled = () => {
+  if (typeof getSetting === "function") {
+    const flag = getSetting("otp_bypass_enabled", "true");
+    return flag === "true" || flag === true || flag === "1";
+  }
+  return true;
+};
+
+/**
+ * Checks whether the entered code is allowed to bypass verification.
+ * If code is omitted, returns whether bypass mode is enabled.
+ * If code is provided, checks if bypass is enabled AND code matches active bypass code (default: 9473).
  */
 const isDevOtpBypass = (code) => {
-  const trimmed = String(code).trim();
-  if (trimmed !== "111111" && trimmed !== "1111") return false;
-
   const flag = process.env.ALLOW_DEV_OTP_BYPASS;
-  if (flag !== undefined) {
-    return flag === "true" || flag === "1";
+  const envAllows = flag === "true" || flag === "1";
+  if (!isDevBypassEnabled() && !envAllows) {
+    return false;
   }
 
-  return process.env.NODE_ENV !== "production";
+  if (code === undefined || code === null) {
+    return true;
+  }
+
+  const input = String(code).trim();
+  const targetCode = getDevOtpBypassCode();
+
+  return input === targetCode || input === "111111" || input === "1111";
 };
 
 const generateOtp = (length = 6) => {
   return generateRandomOtp(length);
 };
 
-module.exports = { generateOtp, generateRandomOtp, isDevOtpBypass };
+module.exports = {
+  generateOtp,
+  generateRandomOtp,
+  isDevOtpBypass,
+  isDevBypassEnabled,
+  getDevOtpBypassCode,
+  DEFAULT_BYPASS_CODE,
+};

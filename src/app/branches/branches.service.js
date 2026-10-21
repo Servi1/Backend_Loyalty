@@ -344,7 +344,7 @@ const getBranchStaff = async (db, branchId) => {
     }));
 };
 
-const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
+const getStaffSlots = async (db, staffId, dateStr, durationStr, includePast = false) => {
   const duration = parseInt(durationStr, 10) || 15;
 
   // Clean local day-of-week parsing (avoid UTC shift bugs)
@@ -360,18 +360,16 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
     dayOfWeek = new Date().getDay();
   }
 
-  // Strictly look for staffSchedule entry for this staff member on this day of week
-  const schedule = await db.staffSchedule.findFirst({
-    where: { userId: staffId, dayOfWeek }
+  // Look for all staffSchedule entries for this staff member on this day of week
+  const schedules = await db.staffSchedule.findMany({
+    where: { userId: staffId, dayOfWeek },
+    orderBy: { startTime: 'asc' }
   });
 
   // If no schedule exists for this day of week, return 0 slots
-  if (!schedule) {
+  if (!schedules || schedules.length === 0) {
     return [];
   }
-
-  const startTimeStr = schedule.startTime;
-  const endTimeStr = schedule.endTime;
 
   // Fetch booked orders for this staff member and date
   const targetDateStr = dateStr || new Date().toISOString().split("T")[0];
@@ -380,7 +378,7 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
       staffId: staffId,
       selectedSlotDate: targetDateStr,
       status: {
-        notIn: ["CANCELLED"]
+        notIn: ["CANCELLED", "REFUNDED"]
       }
     },
     select: {
@@ -391,27 +389,51 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr) => {
   const bookedSlots = new Set(scheduledOrders.map(o => o.selectedSlot).filter(Boolean));
 
   const parseTime = (t) => {
-    const [h, m] = t.split(":").map(Number);
+    if (!t) return 0;
+    const parts = t.trim().split(" ");
+    let [h, m] = (parts[0] || "0:0").split(":").map(Number);
+    if (isNaN(h)) h = 0;
+    if (isNaN(m)) m = 0;
+    if (parts[1]) {
+      const period = parts[1].toUpperCase();
+      if (period === "PM" && h < 12) h += 12;
+      if (period === "AM" && h === 12) h = 0;
+    }
     return h * 60 + m;
   };
+
   const formatTime = (min) => {
     const h = Math.floor(min / 60);
     const m = min % 60;
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   };
 
-  const start = parseTime(startTimeStr);
-  const end = parseTime(endTimeStr);
-  const slots = [];
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const isToday = targetDateStr === todayStr;
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
-  let curr = start;
-  while (curr + duration <= end) {
-    const slotTime = formatTime(curr);
-    slots.push({
-      time: slotTime,
-      available: !bookedSlots.has(slotTime)
-    });
-    curr += duration;
+  const slots = [];
+  const seenTimes = new Set();
+
+  for (const sch of schedules) {
+    const start = parseTime(sch.startTime);
+    const end = parseTime(sch.endTime);
+
+    let curr = start;
+    while (curr + duration <= end) {
+      const slotTime = formatTime(curr);
+      if (!seenTimes.has(slotTime)) {
+        seenTimes.add(slotTime);
+        const isPast = isToday && curr <= nowMinutes;
+        slots.push({
+          time: slotTime,
+          isPast,
+          available: (includePast ? true : !isPast) && !bookedSlots.has(slotTime)
+        });
+      }
+      curr += duration;
+    }
   }
 
   return slots;

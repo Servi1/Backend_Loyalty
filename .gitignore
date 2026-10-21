@@ -5,6 +5,6 @@ dist/
 prisma/*.db
 prisma/migrations/
 .DS_Store
-config/
+/config/
 *firebase*.json
 *service-account*.json

@@ -197,6 +197,7 @@ model Table {
   seats    Int     @default(4)
   qrCode   String? @unique
   isActive Boolean @default(true)
+  status   String  @default("free") // "free" | "busy" | "closed"
   zone     String? @default("Main")
   zoneAr   String?
  
@@ -224,11 +225,11 @@ model MenuCategory {
  
 model MenuItem {
   id          String  @id @default(uuid())
-  name        String
-  nameAr      String?
-  description String?
+  name          String
+  nameAr        String?
+  description   String?
   descriptionAr String?
-  price       Float
+  price         Float
   imageUrl    String?
   isAvailable Boolean @default(true)
   isChefPick  Boolean @default(false)
