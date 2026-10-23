@@ -73,6 +73,17 @@ const getBrandStampActivity = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+const lookupCustomerByPhone = catchAsync(async (req, res) => {
+  const { phone } = req.query;
+  const result = await loyaltyService.lookupCustomerByPhone(req.tenantDb, req.tenantId, phone);
+  res.json({ success: true, data: result });
+});
+
+const adjustCustomerLoyalty = catchAsync(async (req, res) => {
+  const result = await loyaltyService.adjustCustomerLoyalty(req.tenantDb, req.tenantId, req.body, req.user);
+  res.json({ success: true, data: result });
+});
+
 module.exports = { 
   getWallet, 
   earn, 
@@ -84,4 +95,6 @@ module.exports = {
   createCustomer,
   getTiers,
   updateTiers,
+  lookupCustomerByPhone,
+  adjustCustomerLoyalty,
 };

@@ -632,7 +632,7 @@ const getAllTransactionsForReport = async (db, tenantId) => {
     customerName: t.wallet.appUser?.name || "Unnamed",
     customerPhone: t.wallet.appUser?.phone || "",
     points: t.points,
-    description: t.description,
+    description: t.description ? t.description.replace(/\[STAMP_ADJUST:[^\]]+\]\s*/, "") : t.description,
     createdAt: t.createdAt,
   }));
 };
@@ -915,6 +915,292 @@ const reverseOrderPoints = async (db, customerId, orderNumber, pointsRedeemed, t
   }
 };
 
+const lookupCustomerByPhone = async (db, tenantId, rawPhone) => {
+  if (!rawPhone) throw new ApiError(400, "Phone number is required");
+  const cleaned = rawPhone.replace(/\D/g, "");
+  const normalized = normalizePhone(rawPhone);
+
+  const phoneCandidates = [normalized, cleaned];
+  if (cleaned.startsWith("966")) {
+    phoneCandidates.push(cleaned.slice(3));
+    phoneCandidates.push("0" + cleaned.slice(3));
+  } else if (cleaned.startsWith("05")) {
+    phoneCandidates.push("+966" + cleaned.slice(1));
+    phoneCandidates.push("966" + cleaned.slice(1));
+    phoneCandidates.push(cleaned.slice(1));
+  } else if (cleaned.startsWith("5")) {
+    phoneCandidates.push("+966" + cleaned);
+    phoneCandidates.push("966" + cleaned);
+    phoneCandidates.push("0" + cleaned);
+  }
+
+  const tenant = tenantId ? await mainPrisma.tenant.findFirst({
+    where: { OR: [{ id: tenantId }, { slug: tenantId }] }
+  }) : null;
+  const resolvedTenantId = tenant ? tenant.id : tenantId;
+
+  const customer = await mainPrisma.appUser.findFirst({
+    where: {
+      OR: [
+        ...phoneCandidates.map(p => ({ phone: p })),
+        ...(cleaned.length >= 7 ? [{ phone: { contains: cleaned } }] : [])
+      ],
+    },
+    include: {
+      wallets: resolvedTenantId ? { where: { tenantId: resolvedTenantId } } : true,
+    },
+  });
+
+  if (!customer) {
+    return { exists: false, phone: rawPhone };
+  }
+
+  const configuredTiers = tenant?.loyaltyTiers || DEFAULT_LOYALTY_TIERS;
+  const wallet = resolvedTenantId ? customer.wallets.find(w => w.tenantId === resolvedTenantId) : customer.wallets[0];
+  const tier = getCustomerTierDetails(customer, wallet, configuredTiers);
+
+  // Check stamp program
+  const stampProg = Array.isArray(tenant?.stampPrograms) ? tenant.stampPrograms[0] : null;
+  const requiredStamps = Number(stampProg?.requiredStamps || 10);
+  const stampRewardTitle = stampProg?.rewardTitle || stampProg?.name || "Free Reward";
+
+  // Live-sync stamps from completed orders just like the web customer stamp card does
+  let stamps = wallet?.stamps || 0;
+  if (tenant && stampProg) {
+    try {
+      const { syncCustomerStamps } = require("../../../app/stamp/stamp.service");
+      const syncResult = await syncCustomerStamps(customer, tenant, stampProg);
+      if (syncResult && typeof syncResult.stamps === "number") {
+        stamps = syncResult.stamps;
+      }
+    } catch (syncErr) {
+      console.error("[LOYALTY] syncCustomerStamps error in lookupCustomerByPhone:", syncErr.message);
+    }
+  }
+
+  const hasEarnedCoupons = resolvedTenantId ? await mainPrisma.earnedCoupon.count({
+    where: { appUserId: customer.id, tenantId: resolvedTenantId }
+  }) : 0;
+
+  const points = wallet?.points || 0;
+  const lifetimeEarn = wallet?.lifetimeEarn || 0;
+
+  const isPointsProgramEnabled = Boolean(
+    tenant && tenant.subLoyalty && tenant.loyaltyEnabled && tenant.loyaltyAddPoints !== false
+  );
+  const isStampsProgramEnabled = Boolean(
+    tenant && tenant.subStamps && stampProg && stampProg.enabled !== false
+  );
+
+  // Has points if current points > 0, has earned points in the past, or points program is enabled
+  const hasPoints = points > 0 || lifetimeEarn > 0 || isPointsProgramEnabled;
+  // Has stamps if current stamps > 0, has earned coupons in the past, or stamps program is enabled (even at 0 stamps)
+  const hasStamps = stamps > 0 || hasEarnedCoupons > 0 || isStampsProgramEnabled || (wallet && wallet.stamps !== undefined);
+
+  return {
+    exists: true,
+    customerId: customer.id,
+    name: customer.name || "Valued Customer",
+    phone: customer.phone,
+    email: customer.email,
+    points,
+    lifetimeEarn,
+    hasPoints,
+    stamps,
+    hasStamps,
+    requiredStamps,
+    stampRewardTitle,
+    isPointsProgramEnabled,
+    isStampsProgramEnabled,
+    tier: tier.name,
+    tierIcon: tier.icon,
+    tierLevel: tier.level,
+  };
+};
+
+const adjustCustomerLoyalty = async (db, tenantId, data, currentUser) => {
+  const { customerId, phone, actionType = "points", mode = "add", amount = 0, note = "" } = data;
+  let customer = null;
+  if (customerId) {
+    customer = await mainPrisma.appUser.findUnique({ where: { id: customerId } });
+  } else if (phone) {
+    const normalized = normalizePhone(phone);
+    customer = await mainPrisma.appUser.findFirst({
+      where: {
+        OR: [
+          { phone: normalized },
+          { phone: phone.replace(/\D/g, "") },
+        ],
+      },
+    });
+  }
+
+  if (!customer) throw new ApiError(404, "Customer not found");
+  if (!tenantId) throw new ApiError(400, "Tenant ID is required");
+
+  let resolvedTenantId = tenantId;
+  const tenantObj = await mainPrisma.tenant.findFirst({
+    where: { OR: [{ id: tenantId }, { slug: tenantId }] }
+  });
+  if (tenantObj) resolvedTenantId = tenantObj.id;
+
+  let wallet = await mainPrisma.wallet.findFirst({
+    where: { appUserId: customer.id, tenantId: resolvedTenantId },
+  });
+  if (!wallet) {
+    wallet = await mainPrisma.wallet.create({
+      data: {
+        appUserId: customer.id,
+        tenantId: resolvedTenantId,
+        points: 0,
+        lifetimeEarn: 0,
+        tier: "bronze",
+        stamps: 0,
+      },
+    });
+  }
+
+  const staffName = currentUser?.name || "Brand Staff";
+  const numAmount = Number(amount) || 0;
+
+  if (actionType === "points") {
+    if (mode === "add") {
+      const isPointsEnabled = Boolean(
+        tenantObj && tenantObj.subLoyalty && tenantObj.loyaltyEnabled && tenantObj.loyaltyAddPoints !== false
+      );
+      if (!isPointsEnabled) {
+        throw new ApiError(
+          400,
+          "Loyalty points program is currently disabled in the brand settings. Adding points is not allowed."
+        );
+      }
+    }
+
+    let delta = 0;
+    let newTotal = wallet.points;
+    if (mode === "set") {
+      newTotal = Math.max(0, numAmount);
+      delta = newTotal - wallet.points;
+    } else if (mode === "deduct") {
+      delta = -Math.abs(numAmount);
+      newTotal = wallet.points + delta;
+    } else {
+      delta = Math.abs(numAmount);
+      newTotal = wallet.points + delta;
+    }
+
+    if (newTotal < 0) {
+      throw new ApiError(400, `Insufficient points balance. Customer currently has ${wallet.points} points.`);
+    }
+
+    const updateData = { points: newTotal };
+    if (delta > 0) {
+      updateData.lifetimeEarn = { increment: delta };
+    }
+
+    wallet = await mainPrisma.wallet.update({
+      where: { id: wallet.id },
+      data: updateData,
+    });
+
+    if (delta !== 0) {
+      await mainPrisma.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          points: delta,
+          description: note?.trim() || `Points adjusted by ${staffName}`,
+          tenantId: resolvedTenantId,
+        },
+      });
+    }
+  } else if (actionType === "stamps") {
+    const stampProg = Array.isArray(tenantObj?.stampPrograms) ? tenantObj.stampPrograms[0] : null;
+    const requiredStamps = Number(stampProg?.requiredStamps || 6);
+
+    if (mode === "set") {
+      throw new ApiError(400, "Direct set mode is not supported for stamps. Please use add (+) or deduct (-).");
+    }
+
+    if (mode !== "add" && mode !== "deduct") {
+      throw new ApiError(400, `Invalid stamps mode "${mode}". Only "add" and "deduct" are supported.`);
+    }
+
+    const currentStamps = wallet.stamps || 0;
+    const num = Math.abs(numAmount);
+
+    if (num <= 0) {
+      throw new ApiError(400, "Stamp adjustment amount must be greater than 0.");
+    }
+
+    if (mode === "add") {
+      const isStampsEnabled = Boolean(
+        tenantObj && tenantObj.subStamps && stampProg && stampProg.enabled !== false
+      );
+      if (!isStampsEnabled) {
+        throw new ApiError(
+          400,
+          "Digital stamps program is currently disabled in the brand settings. Adding stamps is not allowed."
+        );
+      }
+
+      if (currentStamps >= requiredStamps) {
+        throw new ApiError(
+          400,
+          `Card is already complete (${currentStamps}/${requiredStamps} stamps). Customer cannot exceed the brand program limit of ${requiredStamps} stamps.`
+        );
+      }
+
+      if (currentStamps + num > requiredStamps) {
+        throw new ApiError(
+          400,
+          `Cannot add ${num} stamp(s). Adding would exceed the brand program limit of ${requiredStamps} stamps (Customer currently has ${currentStamps}/${requiredStamps}).`
+        );
+      }
+    }
+
+    if (mode === "deduct") {
+      if (currentStamps <= 0) {
+        throw new ApiError(400, `Cannot deduct stamps. Customer currently has 0 stamps.`);
+      }
+
+      if (currentStamps - num < 0) {
+        throw new ApiError(
+          400,
+          `Cannot deduct ${num} stamp(s). Customer only has ${currentStamps} stamp(s).`
+        );
+      }
+    }
+
+    const delta = mode === "add" ? num : -num;
+    const newTotal = currentStamps + delta;
+
+    wallet = await mainPrisma.wallet.update({
+      where: { id: wallet.id },
+      data: { stamps: newTotal },
+    });
+
+    // Record note in walletTransaction with points: 0 so it appears in the audit history
+    if (delta !== 0 || note) {
+      const stampSign = delta > 0 ? `+${delta}` : `${delta}`;
+      const userNote = note?.trim();
+      const displayDesc = userNote
+        ? `${userNote} (${stampSign} stamps by ${staffName})`
+        : `Stamps adjusted (${stampSign} stamps) by ${staffName}`;
+      await mainPrisma.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          points: 0,
+          description: `[STAMP_ADJUST:mode=${mode}:delta=${delta}:total=${newTotal}] ${displayDesc}`,
+          tenantId: resolvedTenantId,
+        },
+      });
+    }
+  }
+
+  // Return fresh summary
+  return lookupCustomerByPhone(db, tenantId, customer.phone);
+};
+
 module.exports = {
   DEFAULT_LOYALTY_TIERS,
   getCustomerTierDetails,
@@ -928,4 +1214,6 @@ module.exports = {
   createCustomer,
   getTiers,
   updateTiers,
+  lookupCustomerByPhone,
+  adjustCustomerLoyalty,
 };

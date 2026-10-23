@@ -1719,13 +1719,19 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
   }));
 
   // Collect transactions from ALL customer wallets to support per-brand filtering in frontend
-  let allTransactions = [];
-  customerWallets.forEach((w) => {
-    if (Array.isArray(w.transactions)) {
-      allTransactions.push(...w.transactions);
-    }
+  const allTransactions = await mainPrisma.walletTransaction.findMany({
+    where: {
+      wallet: { appUserId: customerId },
+    },
+    include: {
+      wallet: {
+        include: {
+          tenant: { select: { id: true, name: true } },
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
   });
-  allTransactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   const ordersMap = new Map();
   orders.forEach((o) => {
@@ -1943,8 +1949,64 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
           });
         }
 
-        // 3. Chronological timeline to track stamp card cycle (0 -> 1/N -> 2/N -> N/N -> Generated)
-        const combined = [...couponEvents, ...orderEvents];
+        // 3. Manual stamp adjustments from wallet transactions for this brand
+        const adjustEvents = [];
+        const walletTxs = allTransactions.filter(
+          (tx) => tx.tenantId === tObj.id || tx.wallet?.tenantId === tObj.id
+        );
+
+        walletTxs.forEach((tx) => {
+          const desc = tx.description || "";
+          const isStampAdjust =
+            tx.points === 0 &&
+            (desc.includes("[STAMP_ADJUST:") ||
+              desc.toLowerCase().includes("stamps adjusted") ||
+              desc.toLowerCase().includes("stamp(s)"));
+
+          if (!isStampAdjust) return;
+
+          const matchMeta = desc.match(
+            /\[STAMP_ADJUST:(?:mode=([^:]+):)?delta=([-\d]+)(?::total=([-\d]+))?\]/
+          );
+          let adjMode = "adjust";
+          let delta = 0;
+          let total = null;
+
+          if (matchMeta) {
+            adjMode = matchMeta[1] || "";
+            delta = parseInt(matchMeta[2], 10) || 0;
+            total = matchMeta[3] !== undefined ? parseInt(matchMeta[3], 10) : null;
+          } else {
+            const legacyMatch = desc.match(/Stamps adjusted \(([+-]?\d+)\s*stamps?\)/i);
+            if (legacyMatch) {
+              delta = parseInt(legacyMatch[1], 10) || 0;
+              adjMode = delta < 0 ? "deduct" : "add";
+            }
+          }
+
+          const cleanReason =
+            desc.replace(/\[STAMP_ADJUST:[^\]]+\]\s*/, "") || "Stamps adjusted";
+
+          adjustEvents.push({
+            id: `adjust_${tx.id}`,
+            date: new Date(tx.createdAt),
+            status: "adjusted",
+            reason: cleanReason,
+            stampsGenerated: delta,
+            stampsRequired: requiredStamps,
+            branchName: "—",
+            brandName: tObj.name || "Brand",
+            tenantId: tObj.id,
+            couponCode: null,
+            type: "stamp_adjust",
+            mode: adjMode,
+            delta,
+            total,
+          });
+        });
+
+        // 4. Chronological timeline to track stamp card cycle (0 -> 1/N -> 2/N -> N/N -> Generated)
+        const combined = [...couponEvents, ...orderEvents, ...adjustEvents];
         combined.sort((a, b) => a.date - b.date);
 
         let cumulative = 0;
@@ -1967,6 +2029,32 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
               status: isCompleted ? "completed" : "earned",
               reason: ev.reason,
               stampsCount: `${display}/${requiredStamps}`,
+              branchName: ev.branchName,
+              brandName: ev.brandName,
+              tenantId: ev.tenantId,
+              couponCode: null,
+            });
+            if (isCompleted) {
+              cumulative = requiredStamps;
+              lastCompletedOrderIdx = historyIdx;
+            }
+          } else if (ev.type === "stamp_adjust") {
+            if (typeof ev.total === "number" && !isNaN(ev.total)) {
+              cumulative = Math.min(requiredStamps, Math.max(0, ev.total));
+            } else {
+              cumulative = Math.min(requiredStamps, Math.max(0, cumulative + (ev.delta || 0)));
+            }
+            if (cumulative < requiredStamps) {
+              hasUnclaimedCoupon = false;
+            }
+            const isCompleted = cumulative >= requiredStamps;
+            const historyIdx = history.length;
+            history.push({
+              id: ev.id,
+              date: ev.date.toISOString(),
+              status: "adjusted",
+              reason: ev.reason,
+              stampsCount: `${cumulative}/${requiredStamps}`,
               branchName: ev.branchName,
               brandName: ev.brandName,
               tenantId: ev.tenantId,
@@ -3071,9 +3159,92 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
       }
     }
 
+    // Fetch manual stamp adjustments for this tenant
+    const adjustEvents = [];
+    try {
+      const stampTxWhere = {
+        tenantId: t.id,
+        points: 0,
+        OR: [
+          { description: { contains: "STAMP" } },
+          { description: { contains: "stamp", mode: "insensitive" } },
+        ],
+      };
+      if (dateParams?.startDate || dateParams?.endDate) {
+        stampTxWhere.createdAt = {};
+        if (dateParams.startDate) stampTxWhere.createdAt.gte = new Date(dateParams.startDate);
+        if (dateParams.endDate) {
+          const end = new Date(dateParams.endDate);
+          end.setHours(23, 59, 59, 999);
+          stampTxWhere.createdAt.lte = end;
+        }
+      }
+
+      const stampAdjustTxs = await mainPrisma.walletTransaction.findMany({
+        where: stampTxWhere,
+        include: {
+          wallet: {
+            include: {
+              appUser: { select: { id: true, name: true, phone: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: "asc" },
+      });
+
+      stampAdjustTxs.forEach((tx) => {
+        const user = tx.wallet?.appUser;
+        const cName = user?.name || "Valued Customer";
+        const cPhone = user?.phone || "—";
+        const cUserKey = cPhone !== "—" ? cPhone : (user?.id || `wallet_${tx.walletId}`);
+        const desc = tx.description || "";
+        const matchMeta = desc.match(/\[STAMP_ADJUST:(?:mode=([^:]+):)?delta=([-\d]+)(?::total=([-\d]+))?\]/);
+        let adjMode = "adjust";
+        let delta = 0;
+        let total = null;
+
+        if (matchMeta) {
+          adjMode = matchMeta[1] || "";
+          delta = parseInt(matchMeta[2], 10) || 0;
+          total = matchMeta[3] !== undefined ? parseInt(matchMeta[3], 10) : null;
+        } else {
+          const legacyMatch = desc.match(/Stamps adjusted \(([+-]?\d+)\s*stamps?\)/i);
+          if (legacyMatch) {
+            delta = parseInt(legacyMatch[1], 10) || 0;
+            adjMode = delta < 0 ? "deduct" : "add";
+          }
+        }
+
+        const cleanReason = desc.replace(/\[STAMP_ADJUST:[^\]]+\]\s*/, "") || "Stamps adjusted";
+
+        adjustEvents.push({
+          id: `adjust_${tx.id}`,
+          date: new Date(tx.createdAt),
+          status: "adjusted",
+          reason: cleanReason,
+          stampsGenerated: delta,
+          stampsRequired: requiredStamps,
+          generatedBy: "Staff (Manual Stamp Adjustment)",
+          branchName: "—",
+          brandName: t.name || "Brand",
+          tenantId: t.id,
+          customerName: cName,
+          customerPhone: cPhone,
+          userKey: cUserKey,
+          couponCode: null,
+          type: "stamp_adjust",
+          mode: adjMode,
+          delta,
+          total,
+        });
+      });
+    } catch (err) {
+      console.error(`Failed to fetch stamp adjustments for tenant ${t.name}:`, err.message);
+    }
+
     // Combine and group by userKey to calculate stamp progress per customer
     const userGroups = new Map();
-    [...couponEvents, ...orderEvents].forEach((item) => {
+    [...couponEvents, ...orderEvents, ...adjustEvents].forEach((item) => {
       const k = item.userKey || "unknown";
       if (!userGroups.has(k)) userGroups.set(k, []);
       userGroups.get(k).push(item);
@@ -3101,6 +3272,37 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
             status: isCompleted ? "completed" : "earned",
             reason: item.reason,
             stampsCount: `${display}/${requiredStamps}`,
+            stampsGenerated: item.stampsGenerated,
+            stampsRequired: requiredStamps,
+            generatedBy: item.generatedBy,
+            branchName: item.branchName,
+            brandName: item.brandName,
+            tenantId: item.tenantId,
+            customerName: item.customerName,
+            customerPhone: item.customerPhone,
+            couponCode: null,
+          });
+          if (isCompleted) {
+            cumulative = requiredStamps;
+            lastCompletedIdx = actIdx;
+          }
+        } else if (item.type === "stamp_adjust") {
+          if (item.mode === "set" && typeof item.total === "number" && !isNaN(item.total)) {
+            cumulative = Math.min(requiredStamps, Math.max(0, item.total));
+          } else {
+            cumulative = Math.min(requiredStamps, Math.max(0, cumulative + (item.delta || 0)));
+          }
+          if (cumulative < requiredStamps) {
+            hasUnclaimedCoupon = false;
+          }
+          const isCompleted = cumulative >= requiredStamps;
+          const actIdx = activity.length;
+          activity.push({
+            id: item.id,
+            date: item.date.toISOString(),
+            status: "adjusted",
+            reason: item.reason,
+            stampsCount: `${cumulative}/${requiredStamps}`,
             stampsGenerated: item.stampsGenerated,
             stampsRequired: requiredStamps,
             generatedBy: item.generatedBy,
@@ -3222,7 +3424,7 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
       if (ref && seenOrderNumbers.has(ref)) return;
       if (tx.orderId && seenOrderIds.has(`order_${tx.orderId}`)) return;
       const desc = (tx.description || "").toLowerCase();
-      if (desc.includes("generated") || desc.includes("claimed") || desc.includes("redeem")) return;
+      if (desc.includes("generated") || desc.includes("claimed") || desc.includes("redeem") || desc.includes("stamp_adjust") || desc.includes("stamps adjusted")) return;
 
       const tId = tx.tenantId || tx.wallet?.tenantId;
       const stampProg = Array.isArray(tx.wallet?.tenant?.stampPrograms) ? tx.wallet.tenant.stampPrograms[0] : null;

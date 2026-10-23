@@ -193,8 +193,67 @@ const syncCustomerStamps = async (user, tenant, stampProg) => {
     ? stampProg.eligibleItemNames.map((n) => String(n).toLowerCase().trim()).filter(Boolean)
     : [];
 
-  let earnedStampsTotal = 0;
+  // Get current wallet if it exists
+  let wallet = await mainPrisma.wallet.findFirst({
+    where: {
+      appUserId: user.id,
+      tenantId: tenant.id,
+    },
+  });
 
+  // Timeline of events (manual adjustments, orders, coupons)
+  const events = [];
+
+  // 1. Load manual stamp adjustments from main DB
+  if (wallet) {
+    try {
+      const stampTransactions = await mainPrisma.walletTransaction.findMany({
+        where: {
+          walletId: wallet.id,
+          points: 0,
+          OR: [
+            { description: { contains: "STAMP" } },
+            { description: { contains: "stamp", mode: "insensitive" } },
+          ],
+        },
+        orderBy: { createdAt: "asc" },
+      });
+
+      stampTransactions.forEach((tx) => {
+        const desc = tx.description || "";
+        const matchMeta = desc.match(/\[STAMP_ADJUST:(?:mode=([^:]+):)?delta=([-\d]+)(?::total=([-\d]+))?\]/);
+        if (matchMeta) {
+          const adjMode = matchMeta[1] || "";
+          const delta = parseInt(matchMeta[2], 10) || 0;
+          const total = matchMeta[3] !== undefined ? parseInt(matchMeta[3], 10) : null;
+          events.push({
+            type: "stamp_adjust",
+            date: new Date(tx.createdAt),
+            mode: adjMode,
+            delta,
+            total,
+          });
+        } else {
+          // Fallback regex for legacy transactions: "Stamps adjusted (+X stamps)" or "(-X stamps)"
+          const legacyMatch = desc.match(/Stamps adjusted \(([+-]?\d+)\s*stamps?\)/i);
+          if (legacyMatch) {
+            const delta = parseInt(legacyMatch[1], 10) || 0;
+            events.push({
+              type: "stamp_adjust",
+              date: new Date(tx.createdAt),
+              mode: delta < 0 ? "deduct" : "add",
+              delta,
+              total: null,
+            });
+          }
+        }
+      });
+    } catch (txErr) {
+      console.error("[STAMPS] Error loading stamp adjustments:", txErr.message);
+    }
+  }
+
+  // 2. Load completed orders from tenant DB
   if (tenant.dbUrl) {
     try {
       const { getTenantClient } = require("../../config/tenantManager");
@@ -241,8 +300,6 @@ const syncCustomerStamps = async (user, tenant, stampProg) => {
         orderBy: { createdAt: "asc" },
       });
 
-      // Timeline of order events
-      const events = [];
       completedOrders.forEach((o) => {
         let orderStamps = 0;
         if (Array.isArray(o.items)) {
@@ -265,69 +322,77 @@ const syncCustomerStamps = async (user, tenant, stampProg) => {
           });
         }
       });
-
-      // Count generated coupons for this brand & customer
-      const customerCoupons = await mainPrisma.earnedCoupon.findMany({
-        where: {
-          appUserId: user.id,
-          tenantId: tenant.id,
-        },
-        select: { id: true, createdAt: true, isUsed: true, usedAt: true, expiresAt: true },
-      });
-
-      customerCoupons.forEach((c) => {
-        events.push({
-          type: "coupon_gen",
-          date: new Date(c.createdAt),
-          stamps: 0,
-        });
-        if (c.isUsed && c.usedAt) {
-          events.push({
-            type: "coupon_redeem",
-            date: new Date(c.usedAt),
-            stamps: 0,
-          });
-        }
-      });
-
-      events.sort((a, b) => a.date - b.date);
-
-      let cumulative = 0;
-      let hasUnclaimedCoupon = false;
-
-      events.forEach((ev) => {
-        if (ev.type === "order") {
-          // If customer already has an unclaimed reward coupon, they do not earn new stamps until redeemed
-          if (!hasUnclaimedCoupon) {
-            cumulative += ev.stamps;
-            if (cumulative >= requiredStamps) {
-              cumulative = requiredStamps;
-            }
-          }
-        } else if (ev.type === "coupon_gen") {
-          hasUnclaimedCoupon = true;
-          cumulative = requiredStamps;
-        } else if (ev.type === "coupon_redeem") {
-          hasUnclaimedCoupon = false;
-          cumulative = 0;
-        }
-      });
-
-      earnedStampsTotal = Math.min(requiredStamps, Math.max(0, cumulative));
     } catch (err) {
       console.error(`Failed to calculate stamps from tenant DB for user ${user.id}:`, err.message);
     }
   }
 
-  const finalStamps = Math.min(requiredStamps, Math.max(0, earnedStampsTotal));
+  // 3. Count generated coupons for this brand & customer
+  try {
+    const customerCoupons = await mainPrisma.earnedCoupon.findMany({
+      where: {
+        appUserId: user.id,
+        tenantId: tenant.id,
+      },
+      select: { id: true, createdAt: true, isUsed: true, usedAt: true, expiresAt: true },
+    });
 
-  // Get current wallet
-  let wallet = await mainPrisma.wallet.findFirst({
-    where: {
-      appUserId: user.id,
-      tenantId: tenant.id,
-    },
-  });
+    customerCoupons.forEach((c) => {
+      events.push({
+        type: "coupon_gen",
+        date: new Date(c.createdAt),
+        stamps: 0,
+      });
+      if (c.isUsed && c.usedAt) {
+        events.push({
+          type: "coupon_redeem",
+          date: new Date(c.usedAt),
+          stamps: 0,
+        });
+      }
+    });
+  } catch (couponErr) {
+    console.error("[STAMPS] Error loading customer coupons:", couponErr.message);
+  }
+
+  // 4. Sort all events chronologically
+  events.sort((a, b) => a.date - b.date);
+
+  let cumulative = 0;
+  let hasUnclaimedCoupon = false;
+
+  if (events.length === 0 && wallet && typeof wallet.stamps === "number") {
+    cumulative = wallet.stamps;
+  } else {
+    events.forEach((ev) => {
+      if (ev.type === "order") {
+        // If customer already has an unclaimed reward coupon, they do not earn new stamps until redeemed
+        if (!hasUnclaimedCoupon) {
+          cumulative += ev.stamps;
+          if (cumulative >= requiredStamps) {
+            cumulative = requiredStamps;
+          }
+        }
+      } else if (ev.type === "coupon_gen") {
+        hasUnclaimedCoupon = true;
+        cumulative = requiredStamps;
+      } else if (ev.type === "coupon_redeem") {
+        hasUnclaimedCoupon = false;
+        cumulative = 0;
+      } else if (ev.type === "stamp_adjust") {
+        if (ev.mode === "set" && typeof ev.total === "number" && !isNaN(ev.total)) {
+          cumulative = Math.min(requiredStamps, Math.max(0, ev.total));
+        } else {
+          cumulative = Math.min(requiredStamps, Math.max(0, cumulative + (ev.delta || 0)));
+        }
+        if (cumulative < requiredStamps) {
+          hasUnclaimedCoupon = false;
+        }
+      }
+    });
+  }
+
+  const finalStamps = Math.min(requiredStamps, Math.max(0, cumulative));
 
   if (!wallet) {
     try {
@@ -521,8 +586,8 @@ const verifyOtpAndGetStampCard = async ({ phone: rawPhone, code, name, token, te
       logoUrl: tenant.logoUrl,
     },
     stampCard: {
-      stamps: activeCouponData
-        ? Math.max(currentStamps, Number(stampProg?.requiredStamps || 6))
+      stamps: (activeCouponData && currentStamps >= Number(stampProg?.requiredStamps || 6))
+        ? Number(stampProg?.requiredStamps || 6)
         : currentStamps,
       requiredStamps: Number(stampProg?.requiredStamps || 6),
       nameEn: stampProg?.nameEn || "Drinks",
@@ -649,8 +714,8 @@ const getCustomerStampCard = async ({ customerId, tenantId, token }) => {
       logoUrl: tenant.logoUrl,
     },
     stampCard: {
-      stamps: activeCouponData
-        ? Math.max(currentStamps, Number(stampProg?.requiredStamps || 6))
+      stamps: (activeCouponData && currentStamps >= Number(stampProg?.requiredStamps || 6))
+        ? Number(stampProg?.requiredStamps || 6)
         : currentStamps,
       requiredStamps: Number(stampProg?.requiredStamps || 6),
       nameEn: stampProg?.nameEn || "Drinks",

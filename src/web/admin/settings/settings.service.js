@@ -485,6 +485,83 @@ const updateAppContent = async ({ privacyPolicy, policyPoints, faqList }, hostUr
   return getAppContent(hostUrl);
 };
 
+const normalizeBannerList = (arr, defaultTitlePrefix = "Global Banner", defaultTitleArPrefix = "إعلان عام") => {
+  const safeArr = Array.isArray(arr) ? arr : [];
+  return [1, 2, 3].map((num) => {
+    const found = safeArr.find((b) => Number(b.id) === num) || safeArr[num - 1] || {};
+    return {
+      id: num,
+      imageUrl: found.imageUrl || "",
+      title: found.title || "",
+      titleAr: found.titleAr || "",
+      actionType: found.actionType || "none",
+      appRoute: found.appRoute || "",
+      brandId: found.brandId || "",
+      externalUrl: found.externalUrl || "",
+      isActive: found.isActive !== false,
+    };
+  });
+};
+
+const getGlobalBanners = async () => {
+  const record = await mainPrisma.systemSetting.findUnique({
+    where: { key: "global_banners" },
+  });
+  if (!record || !record.value) {
+    return {
+      topBanners: normalizeBannerList([], "Top Banner", "إعلان علوي"),
+      bottomBanners: normalizeBannerList([], "Middle Banner", "إعلان أوسط"),
+    };
+  }
+  try {
+    const parsed = JSON.parse(record.value);
+    if (Array.isArray(parsed)) {
+      return {
+        topBanners: normalizeBannerList(parsed, "Top Banner", "إعلان علوي"),
+        bottomBanners: normalizeBannerList([], "Middle Banner", "إعلان أوسط"),
+      };
+    }
+    return {
+      topBanners: normalizeBannerList(parsed?.topBanners, "Top Banner", "إعلان علوي"),
+      bottomBanners: normalizeBannerList(parsed?.bottomBanners, "Middle Banner", "إعلان أوسط"),
+    };
+  } catch (err) {
+    return {
+      topBanners: normalizeBannerList([], "Top Banner", "إعلان علوي"),
+      bottomBanners: normalizeBannerList([], "Middle Banner", "إعلان أوسط"),
+    };
+  }
+};
+
+const updateGlobalBanners = async (payload) => {
+  let topRaw = [];
+  let bottomRaw = [];
+
+  if (Array.isArray(payload)) {
+    topRaw = payload;
+  } else if (payload && typeof payload === "object") {
+    topRaw = payload.topBanners || payload.banners || [];
+    bottomRaw = payload.bottomBanners || [];
+  }
+
+  const cleanTop = normalizeBannerList(topRaw, "Top Banner", "إعلان علوي");
+  const cleanBottom = normalizeBannerList(bottomRaw, "Middle Banner", "إعلان أوسط");
+
+  const dataToStore = {
+    topBanners: cleanTop,
+    bottomBanners: cleanBottom,
+  };
+
+  const jsonStr = JSON.stringify(dataToStore);
+  await mainPrisma.systemSetting.upsert({
+    where: { key: "global_banners" },
+    update: { value: jsonStr },
+    create: { key: "global_banners", value: jsonStr },
+  });
+  await invalidateCache();
+  return dataToStore;
+};
+
 module.exports = {
   getSettings,
   updateSettings,
@@ -495,5 +572,7 @@ module.exports = {
   generatePrivacyPolicyPDF,
   generateFaqPDF,
   convertToHtml,
-  stripHtml
+  stripHtml,
+  getGlobalBanners,
+  updateGlobalBanners
 };

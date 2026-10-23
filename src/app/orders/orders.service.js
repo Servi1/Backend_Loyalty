@@ -266,21 +266,37 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     throw new ApiError(400, openCheck.reason);
   }
 
+  // Validate branch online ordering master switch
+  if (branch.ordersEnabled === false) {
+    throw new ApiError(403, "Online ordering is currently disabled for this branch.");
+  }
+
   // Validate branch features are enabled for app ordering
   const isDineIn = (type && type.toUpperCase() === "DINE_IN") || !!tableId;
+  const isQrCashier = !isDineIn && !!qrCashierId;
+  const isNativeApp = !isDineIn && !isQrCashier && !body.posUnit;
 
   // Verify tenant subscription active feature flags
   if (tenant) {
     if (isDineIn && tenant.subQrTable === false) {
       throw new ApiError(403, "QR Table Dining ordering is currently deactivated for this brand. Please contact restaurant staff.");
     }
-    if (!isDineIn && tenant.subQrCashier === false) {
+    if (isQrCashier && tenant.subQrCashier === false) {
       throw new ApiError(403, "QR Cashier takeaway ordering is currently deactivated for this brand. Please contact restaurant staff.");
+    }
+    if (isNativeApp && tenant.subAppServi === false) {
+      throw new ApiError(403, "Native app ordering is currently deactivated for this brand.");
     }
   }
 
   if (isDineIn && branch.tablesEnabled === false) {
     throw new ApiError(403, "Table ordering is currently disabled for this branch.");
+  }
+  if (isQrCashier && branch.qrEnabled === false) {
+    throw new ApiError(403, "QR Cashier ordering is currently disabled for this branch.");
+  }
+  if (isNativeApp && branch.appServiEnabled === false) {
+    throw new ApiError(403, "App ordering is currently disabled for this branch.");
   }
   if (tableId) {
     const table = await db.table.findUnique({ where: { id: tableId } });

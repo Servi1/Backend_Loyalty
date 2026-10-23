@@ -14,6 +14,9 @@ router.put("/", ctrl.updateSettings);
 router.get("/app-content", ctrl.getAppContent);
 router.put("/app-content", ctrl.updateAppContent);
 
+router.get("/global-banners", ctrl.getGlobalBanners);
+router.put("/global-banners", ctrl.updateGlobalBanners);
+
 router.post("/upload-privacy-pdf", upload.pdfUpload.single("file"), ctrl.uploadPrivacyPdf);
 router.delete("/remove-privacy-pdf", ctrl.removePrivacyPdf);
 
