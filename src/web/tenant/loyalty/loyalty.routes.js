@@ -18,6 +18,12 @@ router.post("/earn", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASH
 // Staff searches customers
 router.get("/customers", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"), ctrl.searchCustomers);
 
+// Staff looks up customer by phone (loyalty points & stamps for brand)
+router.get("/lookup-phone", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"), ctrl.lookupCustomerByPhone);
+
+// Staff adjusts customer points or stamps with a note (reason)
+router.post("/adjust", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"), ctrl.adjustCustomerLoyalty);
+
 // Staff registers a new customer
 router.post("/customers", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"), ctrl.createCustomer);
 

@@ -44,11 +44,23 @@ const removePrivacyPdf = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+const getGlobalBanners = catchAsync(async (req, res) => {
+  const result = await settingsService.getGlobalBanners();
+  res.json({ success: true, data: result });
+});
+
+const updateGlobalBanners = catchAsync(async (req, res) => {
+  const result = await settingsService.updateGlobalBanners(req.body);
+  res.json({ success: true, data: result });
+});
+
 module.exports = {
   getSettings,
   updateSettings,
   getAppContent,
   updateAppContent,
   uploadPrivacyPdf,
-  removePrivacyPdf
+  removePrivacyPdf,
+  getGlobalBanners,
+  updateGlobalBanners
 };

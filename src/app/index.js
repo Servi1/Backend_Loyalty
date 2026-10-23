@@ -46,6 +46,27 @@ const { requireAppTenant } = require("./middlewares/appTenant.middleware");
 const router = Router({ mergeParams: true });
 
 const branchCtrl = require("./branches/branches.controller");
+const settingsService = require("../web/admin/settings/settings.service");
+
+router.get("/global-banners", async (req, res, next) => {
+  try {
+    const bannersData = await settingsService.getGlobalBanners();
+    const top = Array.isArray(bannersData?.topBanners) ? bannersData.topBanners : [];
+    const bottom = Array.isArray(bannersData?.bottomBanners) ? bannersData.bottomBanners : [];
+    const activeTop = top.filter((b) => b.isActive && b.imageUrl);
+    const activeBottom = bottom.filter((b) => b.isActive && b.imageUrl);
+    res.json({
+      success: true,
+      data: {
+        topBanners: activeTop,
+        bottomBanners: activeBottom,
+      },
+      banners: activeTop,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.get("/qr/resolve", branchCtrl.resolveQrToken);
 router.post("/qr/resolve", branchCtrl.resolveQrToken);
