@@ -107,7 +107,7 @@ const getBranch = async (db, branchId) => {
     include: {
       tables: {
         where: { isActive: true },
-        select: { id: true, label: true, labelAr: true, seats: true, zone: true, zoneAr: true, qrCode: true, isActive: true, expiresAt: true },
+        select: { id: true, label: true, labelAr: true, seats: true, zone: true, zoneAr: true, qrCode: true, isActive: true, status: true, expiresAt: true },
       },
       customOrderTypes: {
         where: { isActive: true },

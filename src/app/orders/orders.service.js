@@ -307,6 +307,10 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     if (table.expiresAt && new Date(table.expiresAt) < new Date()) {
       throw new ApiError(403, "Table ordering subscription is expired. Please contact restaurant staff.");
     }
+    const tableStatus = (table.status || "").toLowerCase();
+    if (tableStatus === "busy" || tableStatus === "occupied" || tableStatus === "closed") {
+      throw new ApiError(409, `Table ${table.label || ""} is already occupied. Please select another table.`);
+    }
 
     // Prevent double booking: check if this table is already booked for this slot
     if (selectedSlot && selectedSlotDate) {
@@ -671,6 +675,18 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     },
   });
 
+  // Change selected table status to busy for dine-in orders
+  if (order.tableId) {
+    try {
+      await db.table.update({
+        where: { id: order.tableId },
+        data: { status: "busy" }
+      });
+    } catch (tblErr) {
+      console.error("[APP ORDER] Failed to update table status to busy:", tblErr.message);
+    }
+  }
+
   // Mark redeemed coupon unusable and deduct stamps if coupon was supplied
   if (discountId) {
     try {
@@ -818,6 +834,86 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   return order;
 };
 
+// ─── enrichOrdersWithPointsEarned ───────────────────────────────────────────
+
+const enrichOrdersWithPointsEarned = async (ordersList, tenantMap = {}) => {
+  if (!Array.isArray(ordersList) || ordersList.length === 0) return [];
+
+  const orderIds = ordersList.map((o) => o.id).filter(Boolean);
+  const orderNumbers = ordersList.map((o) => o.orderNumber).filter(Boolean);
+
+  let earnTxs = [];
+  if (orderIds.length > 0 || orderNumbers.length > 0) {
+    try {
+      earnTxs = await mainPrisma.walletTransaction.findMany({
+        where: {
+          points: { gt: 0 },
+          OR: [
+            ...(orderIds.length > 0 ? [{ orderId: { in: orderIds } }] : []),
+            ...(orderNumbers.length > 0 ? [{ orderNumber: { in: orderNumbers } }] : []),
+          ],
+        },
+      });
+    } catch (e) {
+      console.error("[enrichOrdersWithPointsEarned] Failed to query wallet transactions:", e.message);
+    }
+  }
+
+  return ordersList.map((o) => {
+    const earnTx = earnTxs.find(
+      (tx) =>
+        (tx.orderId && tx.orderId === o.id) ||
+        (tx.orderNumber && tx.orderNumber === o.orderNumber)
+    );
+
+    let pointsEarned = 0;
+    const pm = (o.paymentMethod || "").toLowerCase();
+    const isPointsPayment =
+      pm === "points" ||
+      (o.pointsRedeemed && o.pointsRedeemed > 0) ||
+      (o.notes &&
+        (o.notes.includes("Paid by Loyalty Points") ||
+          o.notes.includes("Points Payment")));
+    const isHaltedOrCancelled =
+      o.status === "HALTED" || o.status === "CANCELLED";
+
+    if (isPointsPayment || isHaltedOrCancelled) {
+      pointsEarned = 0;
+    } else if (earnTx) {
+      pointsEarned = Math.abs(earnTx.points);
+    } else if (
+      o.loyaltyEarnRate !== undefined &&
+      o.loyaltyEarnRate !== null &&
+      Number(o.loyaltyEarnRate) > 0
+    ) {
+      pointsEarned = Math.floor(Number(o.total || 0) * Number(o.loyaltyEarnRate));
+    } else {
+      const tenant = o.tenantId ? tenantMap[o.tenantId] : null;
+      if (
+        tenant &&
+        tenant.subLoyalty &&
+        tenant.loyaltyEnabled &&
+        tenant.loyaltyAddPoints !== false
+      ) {
+        const rate = Number(
+          tenant.loyaltyEarnRate !== undefined &&
+            tenant.loyaltyEarnRate !== null
+            ? tenant.loyaltyEarnRate
+            : 1.0
+        );
+        pointsEarned = Math.floor(Number(o.total || 0) * rate);
+      } else {
+        pointsEarned = 0;
+      }
+    }
+
+    return {
+      ...o,
+      pointsEarned,
+    };
+  });
+};
+
 // ─── getMyOrders ──────────────────────────────────────────────────────────────
 
 const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null } = {}) => {
@@ -866,7 +962,7 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null }
       db.order.count({ where: userMatchCondition }),
     ]);
 
-    const formattedOrders = orders.map((o) => ({
+    const baseFormatted = orders.map((o) => ({
       ...o,
       branch: o.branch ? { ...o.branch, addressAr: o.branch.addressAr || null } : null,
       items: (o.items || []).map((it) => ({
@@ -874,6 +970,8 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null }
         menuItem: it.menuItem ? { ...it.menuItem, nameAr: it.menuItem.nameAr || null } : null,
       })),
     }));
+
+    const formattedOrders = await enrichOrdersWithPointsEarned(baseFormatted);
 
     return {
       orders: formattedOrders,
@@ -919,10 +1017,15 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null }
 
   const { getTenantClient } = require("../../config/tenantManager");
   const enrichedOrders = [];
+  const tenantMap = {};
 
   for (const mainOrder of mainOrders) {
     try {
-      const tenant = await mainPrisma.tenant.findUnique({ where: { id: mainOrder.tenantId } });
+      let tenant = tenantMap[mainOrder.tenantId];
+      if (!tenant) {
+        tenant = await mainPrisma.tenant.findUnique({ where: { id: mainOrder.tenantId } });
+        if (tenant) tenantMap[mainOrder.tenantId] = tenant;
+      }
       if (tenant) {
         const tenantDb = getTenantClient(tenant.dbUrl);
         const detailedOrder = await tenantDb.order.findUnique({
@@ -953,8 +1056,10 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null }
     });
   }
 
+  const finalEnrichedOrders = await enrichOrdersWithPointsEarned(enrichedOrders, tenantMap);
+
   return {
-    orders: enrichedOrders,
+    orders: finalEnrichedOrders,
     pagination: {
       total,
       page,
@@ -968,8 +1073,11 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null }
 // ─── getOrder ─────────────────────────────────────────────────────────────────
 
 const getOrder = async (db, orderId, userId) => {
+  let detailedOrder = null;
+  let tenant = null;
+
   if (db) {
-    const order = await db.order.findFirst({
+    detailedOrder = await db.order.findFirst({
       where: { id: orderId, customerId: userId }, // ensure customer can only see their own orders
       include: {
         items: { include: { menuItem: true } },
@@ -977,31 +1085,35 @@ const getOrder = async (db, orderId, userId) => {
         table: true,
       },
     });
-    if (!order) throw new ApiError(404, "Order not found");
-    return order;
+    if (!detailedOrder) throw new ApiError(404, "Order not found");
+  } else {
+    const mainOrder = await mainPrisma.order.findFirst({
+      where: { id: orderId, appUserId: userId }
+    });
+    if (!mainOrder) throw new ApiError(404, "Order not found");
+
+    tenant = await mainPrisma.tenant.findUnique({ where: { id: mainOrder.tenantId } });
+    if (!tenant) throw new ApiError(404, "Brand not found");
+
+    const { getTenantClient } = require("../../config/tenantManager");
+    const tenantDb = getTenantClient(tenant.dbUrl);
+    detailedOrder = await tenantDb.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: { include: { menuItem: true } },
+        branch: true,
+        table: true,
+      },
+    });
+
+    if (!detailedOrder) throw new ApiError(404, "Order not found in tenant database");
   }
 
-  const mainOrder = await mainPrisma.order.findFirst({
-    where: { id: orderId, appUserId: userId }
-  });
-  if (!mainOrder) throw new ApiError(404, "Order not found");
-
-  const tenant = await mainPrisma.tenant.findUnique({ where: { id: mainOrder.tenantId } });
-  if (!tenant) throw new ApiError(404, "Brand not found");
-
-  const { getTenantClient } = require("../../config/tenantManager");
-  const tenantDb = getTenantClient(tenant.dbUrl);
-  const detailedOrder = await tenantDb.order.findUnique({
-    where: { id: orderId },
-    include: {
-      items: { include: { menuItem: true } },
-      branch: true,
-      table: true,
-    },
-  });
-
-  if (!detailedOrder) throw new ApiError(404, "Order not found in tenant database");
-  return detailedOrder;
+  const [enrichedOrder] = await enrichOrdersWithPointsEarned(
+    [detailedOrder],
+    tenant ? { [tenant.id]: tenant } : {}
+  );
+  return enrichedOrder || detailedOrder;
 };
 
 const payHaltedOrder = async (orderId, userId) => {

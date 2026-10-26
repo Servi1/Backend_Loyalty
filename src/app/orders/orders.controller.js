@@ -23,6 +23,22 @@ const place = catchAsync(async (req, res) => {
     const io = req.app.get("io");
     if (io) {
       io.to(`branch:${order.branchId}`).emit("order:new", order);
+      if (order.tableId) {
+        const payload = {
+          tableId: order.tableId,
+          id: order.tableId,
+          status: "busy",
+          branchId: order.branchId,
+          tenantId: req.tenantId,
+          orderId: order.id,
+        };
+        io.to(`branch:${order.branchId}`).emit("table:status_changed", payload);
+        io.to(`branch:${order.branchId}`).emit("table:updated", payload);
+        if (req.tenantId) {
+          io.to(`tenant:${req.tenantId}`).emit("table:status_changed", payload);
+          io.to(`tenant:${req.tenantId}`).emit("table:updated", payload);
+        }
+      }
     }
   } catch (err) {
     console.error("[APP ORDER] Socket emit failed:", err.message);
@@ -43,6 +59,22 @@ const placePublic = catchAsync(async (req, res) => {
     const io = req.app.get("io");
     if (io) {
       io.to(`branch:${order.branchId}`).emit("order:new", order);
+      if (order.tableId) {
+        const payload = {
+          tableId: order.tableId,
+          id: order.tableId,
+          status: "busy",
+          branchId: order.branchId,
+          tenantId: req.tenantId,
+          orderId: order.id,
+        };
+        io.to(`branch:${order.branchId}`).emit("table:status_changed", payload);
+        io.to(`branch:${order.branchId}`).emit("table:updated", payload);
+        if (req.tenantId) {
+          io.to(`tenant:${req.tenantId}`).emit("table:status_changed", payload);
+          io.to(`tenant:${req.tenantId}`).emit("table:updated", payload);
+        }
+      }
     }
   } catch (err) {
     console.error("[PUBLIC ORDER] Socket emit failed:", err.message);

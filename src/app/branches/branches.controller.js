@@ -175,7 +175,9 @@ const resolveQrToken = catchAsync(async (req, res) => {
                   seats: tableDoc.seats,
                   zone: tableDoc.zone,
                   zoneAr: tableDoc.zoneAr,
-                  branchId: tableDoc.branchId
+                  branchId: tableDoc.branchId,
+                  status: tableDoc.status || "free",
+                  isActive: tableDoc.isActive !== false
                 };
               }
             }
