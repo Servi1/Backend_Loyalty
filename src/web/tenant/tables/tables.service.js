@@ -122,8 +122,18 @@ const remove = async (db, id) => {
   return db.table.delete({ where: { id } });
 };
 
+const getOne = async (db, id) => {
+  const table = await db.table.findUnique({
+    where: { id },
+    include: { branch: true },
+  });
+  if (!table) throw new ApiError(404, "Table not found");
+  return table;
+};
+
 module.exports = {
   getAll,
+  getOne,
   create,
   renew,
   update,
