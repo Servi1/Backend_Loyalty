@@ -343,10 +343,10 @@ const syncCustomerStamps = async (user, tenant, stampProg) => {
         date: new Date(c.createdAt),
         stamps: 0,
       });
-      if (c.isUsed && c.usedAt) {
+      if (c.isUsed) {
         events.push({
           type: "coupon_redeem",
-          date: new Date(c.usedAt),
+          date: new Date(c.usedAt || c.updatedAt || c.createdAt),
           stamps: 0,
         });
       }
@@ -1008,13 +1008,10 @@ const redeemRewardCoupon = async ({ code, customerId, tenantId }) => {
 
   let remainingStamps = 0;
   if (wallet) {
-    remainingStamps = Math.max(0, (wallet.stamps || 0) - requiredStamps);
     await mainPrisma.wallet.update({
       where: { id: wallet.id },
-      data: { stamps: remainingStamps },
+      data: { stamps: 0 },
     });
-
-
   }
 
   return {

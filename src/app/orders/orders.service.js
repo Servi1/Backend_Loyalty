@@ -729,10 +729,9 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
             where: { appUserId, tenantId }
           });
           if (wallet) {
-            const remainingStamps = Math.max(0, (wallet.stamps || 0) - requiredStamps);
             await mainPrisma.wallet.update({
               where: { id: wallet.id },
-              data: { stamps: remainingStamps }
+              data: { stamps: 0 }
             });
             await mainPrisma.walletTransaction.create({
               data: {
