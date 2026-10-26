@@ -565,7 +565,11 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     if (!targetUserId) {
       throw new ApiError(400, "Customer phone number is required to pay with loyalty points.");
     }
-    const redeemRate = Number(tenant?.loyaltyRedeemRate || 100.0);
+    const tenantObj = tenant || (await mainPrisma.tenant.findUnique({ where: { id: tenantId } }));
+    if (!tenantObj?.subLoyalty || !tenantObj?.loyaltyEnabled || tenantObj?.loyaltyRedeemPoints === false) {
+      throw new ApiError(400, "Loyalty points redemption is currently disabled for this brand.");
+    }
+    const redeemRate = Number(tenantObj?.loyaltyRedeemRate || 100.0);
     const pointsCost = Math.round(subtotal * redeemRate);
     const wallet = await loyaltyService.getWallet(db, targetUserId, tenantId);
     if (!wallet || wallet.points < pointsCost) {
@@ -613,7 +617,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       const tenantObj = tenant || (await mainPrisma.tenant.findUnique({ where: { id: tenantId } }));
       if (tenantObj) {
         feeRate = resolveTenantFeeRate(tenantObj, orderSource);
-        if (tenantObj.subLoyalty && tenantObj.loyaltyEnabled !== false) {
+        if (tenantObj.subLoyalty && tenantObj.loyaltyEnabled && tenantObj.loyaltyAddPoints !== false) {
           orderLoyaltyEarnRate = Number(tenantObj.loyaltyEarnRate !== undefined && tenantObj.loyaltyEarnRate !== null ? tenantObj.loyaltyEarnRate : 1.0);
         } else {
           orderLoyaltyEarnRate = 0.0;
@@ -733,21 +737,23 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   const initialStatus = order.status;
 
   // Award points & stamps if order is COMPLETED upon creation (except if paid by points or free reward)
-  const isPointsActive = Boolean(tenant?.subLoyalty && tenant?.loyaltyEnabled !== false);
+  const isPointsActive = Boolean(tenant?.subLoyalty && tenant?.loyaltyEnabled && tenant?.loyaltyAddPoints !== false);
   const effectiveEarnRate = isPointsActive ? (earnRate !== undefined && earnRate !== null ? parseFloat(earnRate) : Number(tenant?.loyaltyEarnRate || 1.0)) : 0.0;
   if (order.status === "COMPLETED" && (userId || finalCustomerId) && paymentMethod !== "points" && paymentMethod !== "free_reward") {
     const pointsEarned = effectiveEarnRate > 0 ? Math.floor(order.total * effectiveEarnRate) : 0;
-    try {
-      await loyaltyService.earnPoints(
-        db,
-        finalCustomerId || userId,
-        pointsEarned,
-        `Earned on Order #${orderNumber}`,
-        tenantId,
-        { source: "app", orderId: order.id, orderNumber: orderNumber, items: order.items || orderItems }
-      );
-    } catch (err) {
-      console.error("[APP ORDER] Failed to award loyalty points/stamps:", err.message);
+    if (pointsEarned > 0) {
+      try {
+        await loyaltyService.earnPoints(
+          db,
+          finalCustomerId || userId,
+          pointsEarned,
+          `Earned on Order #${orderNumber}`,
+          tenantId,
+          { source: "app", orderId: order.id, orderNumber: orderNumber, items: order.items || orderItems }
+        );
+      } catch (err) {
+        console.error("[APP ORDER] Failed to award loyalty points/stamps:", err.message);
+      }
     }
   }
 

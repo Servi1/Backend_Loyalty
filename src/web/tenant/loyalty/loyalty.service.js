@@ -172,14 +172,9 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
       if (Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
         tenantTiers = tenant.loyaltyTiers;
       }
-      // Main active toggle affects ALL channels for points
-      if (!tenant.subLoyalty || tenant.loyaltyEnabled === false) {
-        console.log(`[LOYALTY] Earning points disabled globally/by subscription for tenant ${tenant.name}`);
-      }
-      // Add Points toggle affects POS Cashier channel only
-      const source = (opts.source || "").toLowerCase();
-      if (source === "pos" && tenant.loyaltyAddPoints === false) {
-        console.log(`[LOYALTY] Earning points disabled for POS on tenant ${tenant.name}`);
+      // Loyalty active and add points toggle affects all channels
+      if (!tenant.subLoyalty || !tenant.loyaltyEnabled || tenant.loyaltyAddPoints === false) {
+        console.log(`[LOYALTY] Earning points disabled for tenant ${tenant.name}`);
       }
     }
   }
@@ -276,15 +271,10 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
 
   // ─── POINTS CALCULATION (Must be subscribed & enabled) ─────────
   const isPointsSubscribed = Boolean(tenantObj?.subLoyalty);
-  const isPointsEnabled = isPointsSubscribed && tenantObj?.loyaltyEnabled !== false;
-  const isPosAddPointsEnabled = isPointsEnabled && tenantObj?.loyaltyAddPoints !== false;
+  const isPointsEnabled = isPointsSubscribed && Boolean(tenantObj?.loyaltyEnabled) && tenantObj?.loyaltyAddPoints !== false;
 
   let finalPointsToEarn = points;
   if (!isPointsEnabled) {
-    finalPointsToEarn = 0;
-  }
-  const source = (opts.source || "").toLowerCase();
-  if (source === "pos" && !isPosAddPointsEnabled) {
     finalPointsToEarn = 0;
   }
 
@@ -336,14 +326,9 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
       if (Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
         tenantTiers = tenant.loyaltyTiers;
       }
-      // Main active toggle affects ALL channels
-      if (!tenant.subLoyalty || tenant.loyaltyEnabled === false) {
-        throw new ApiError(400, "Loyalty points program is currently disabled or not subscribed for this brand.");
-      }
-      // Redeem Points toggle affects POS Cashier channel only
-      const source = (opts.source || "").toLowerCase();
-      if (source === "pos" && tenant.loyaltyRedeemPoints === false) {
-        throw new ApiError(400, "Redeeming loyalty points is currently disabled for POS Cashier.");
+      // Main active and redeem points toggle affects all channels
+      if (!tenant.subLoyalty || !tenant.loyaltyEnabled || tenant.loyaltyRedeemPoints === false) {
+        throw new ApiError(400, "Loyalty points redemption is currently disabled or not subscribed for this brand.");
       }
     }
   }

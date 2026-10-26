@@ -7,8 +7,20 @@ const { getTenantClient } = require("../../config/tenantManager");
 
 const getAll = catchAsync(async (req, res) => {
   const branches = await branchesService.getBranches(req.tenantDb);
+  const isLoyaltySubscribed = Boolean(req.tenant?.subLoyalty);
+  const isLoyaltyEnabled = isLoyaltySubscribed && Boolean(req.tenant?.loyaltyEnabled);
+  const isLoyaltyAddPoints = isLoyaltyEnabled && (req.tenant?.loyaltyAddPoints !== false);
+  const isLoyaltyRedeemPoints = isLoyaltyEnabled && (req.tenant?.loyaltyRedeemPoints !== false);
+  const earnRate = isLoyaltyAddPoints ? Number(req.tenant?.loyaltyEarnRate !== undefined && req.tenant?.loyaltyEarnRate !== null ? req.tenant.loyaltyEarnRate : 1.0) : 0.0;
+  const redeemRate = Number(req.tenant?.loyaltyRedeemRate || 100.0);
+
   const data = branches.map(branch => ({
     ...branch,
+    loyaltyEnabled: isLoyaltyEnabled,
+    loyaltyAddPoints: isLoyaltyAddPoints,
+    loyaltyRedeemPoints: isLoyaltyRedeemPoints,
+    loyaltyEarnRate: earnRate,
+    loyaltyRedeemRate: redeemRate,
     imageUrl: getAppImageURL(branch.imageUrl),
     menuBannerUrl: getAppImageURL(branch.menuBannerUrl),
     receiptLogoUrl: getAppImageURL(branch.receiptLogoUrl),
@@ -40,10 +52,22 @@ const getAll = catchAsync(async (req, res) => {
 
 const getOne = catchAsync(async (req, res) => {
   const branch = await branchesService.getBranch(req.tenantDb, req.params.branchId);
+  const isLoyaltySubscribed = Boolean(req.tenant?.subLoyalty);
+  const isLoyaltyEnabled = isLoyaltySubscribed && Boolean(req.tenant?.loyaltyEnabled);
+  const isLoyaltyAddPoints = isLoyaltyEnabled && (req.tenant?.loyaltyAddPoints !== false);
+  const isLoyaltyRedeemPoints = isLoyaltyEnabled && (req.tenant?.loyaltyRedeemPoints !== false);
+  const earnRate = isLoyaltyAddPoints ? Number(req.tenant?.loyaltyEarnRate !== undefined && req.tenant?.loyaltyEarnRate !== null ? req.tenant.loyaltyEarnRate : 1.0) : 0.0;
+  const redeemRate = Number(req.tenant?.loyaltyRedeemRate || 100.0);
+
   res.json({ 
     success: true, 
     data: {
       ...branch,
+      loyaltyEnabled: isLoyaltyEnabled,
+      loyaltyAddPoints: isLoyaltyAddPoints,
+      loyaltyRedeemPoints: isLoyaltyRedeemPoints,
+      loyaltyEarnRate: earnRate,
+      loyaltyRedeemRate: redeemRate,
       imageUrl: getAppImageURL(branch.imageUrl),
       menuBannerUrl: getAppImageURL(branch.menuBannerUrl),
       receiptLogoUrl: getAppImageURL(branch.receiptLogoUrl),

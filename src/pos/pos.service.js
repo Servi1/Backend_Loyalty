@@ -139,8 +139,10 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
         if (tenant.feePos !== undefined && tenant.feePos !== null) {
           feeRate = Number(tenant.feePos);
         }
-        if (tenant.subLoyalty && tenant.loyaltyEnabled !== false && tenant.loyaltyAddPoints !== false) {
+        if (tenant.subLoyalty && Boolean(tenant.loyaltyEnabled) && tenant.loyaltyAddPoints !== false) {
           loyaltyEarnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+        } else {
+          loyaltyEarnRate = 0.0;
         }
       }
     } catch (e) {
@@ -205,7 +207,7 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
     try {
       const mainPrisma = require("../config/prisma");
       const isPointsSubscribed = Boolean(tenant?.subLoyalty);
-      const isPointsEnabled = isPointsSubscribed && tenant?.loyaltyEnabled !== false && tenant?.loyaltyAddPoints !== false;
+      const isPointsEnabled = isPointsSubscribed && Boolean(tenant?.loyaltyEnabled) && tenant?.loyaltyAddPoints !== false;
       const isStampsSubscribed = Boolean(tenant?.subStamps);
 
       if (!tenant || (!isPointsEnabled && !isStampsSubscribed)) {
@@ -401,7 +403,7 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
         if (!tx) {
           const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
           const isPointsSubscribed = Boolean(tenant?.subLoyalty);
-          const isPointsEnabled = isPointsSubscribed && tenant?.loyaltyEnabled !== false && tenant?.loyaltyAddPoints !== false;
+          const isPointsEnabled = isPointsSubscribed && Boolean(tenant?.loyaltyEnabled) && tenant?.loyaltyAddPoints !== false;
           const isStampsSubscribed = Boolean(tenant?.subStamps);
 
           if (!tenant || (!isPointsEnabled && !isStampsSubscribed)) {
@@ -472,7 +474,7 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
           if (!tx) {
             const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
             const isPointsSubscribed = Boolean(tenant?.subLoyalty);
-            const isPointsEnabled = isPointsSubscribed && tenant?.loyaltyEnabled !== false && tenant?.loyaltyAddPoints !== false;
+            const isPointsEnabled = isPointsSubscribed && Boolean(tenant?.loyaltyEnabled) && tenant?.loyaltyAddPoints !== false;
             const isStampsSubscribed = Boolean(tenant?.subStamps);
 
             if (!tenant || (!isPointsEnabled && !isStampsSubscribed)) {

@@ -115,13 +115,8 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
       if (Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
         tenantTiers = tenant.loyaltyTiers;
       }
-      if (!tenant.subLoyalty || tenant.loyaltyEnabled === false) {
-        console.log(`[LOYALTY] Earning points blocked: Loyalty program is globally disabled or not subscribed for tenant ${tenant.name}`);
-        return null;
-      }
-      const source = (opts.source || "").toLowerCase();
-      if (source === "pos" && tenant.loyaltyAddPoints === false) {
-        console.log(`[LOYALTY] Earning points blocked: Add Points toggle disabled for POS on tenant ${tenant.name}`);
+      if (!tenant.subLoyalty || !tenant.loyaltyEnabled || tenant.loyaltyAddPoints === false) {
+        console.log(`[LOYALTY] Earning points blocked: Loyalty program or Add Points toggle disabled for tenant ${tenant.name}`);
         return null;
       }
     }
@@ -231,12 +226,8 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
       if (Array.isArray(tenant.loyaltyTiers) && tenant.loyaltyTiers.length > 0) {
         tenantTiers = tenant.loyaltyTiers;
       }
-      if (!tenant.subLoyalty || tenant.loyaltyEnabled === false) {
-        throw new ApiError(400, "Loyalty points program is currently disabled or not subscribed for this brand.");
-      }
-      const source = (opts.source || "").toLowerCase();
-      if (source === "pos" && tenant.loyaltyRedeemPoints === false) {
-        throw new ApiError(400, "Redeeming loyalty points is currently disabled for POS Cashier.");
+      if (!tenant.subLoyalty || !tenant.loyaltyEnabled || tenant.loyaltyRedeemPoints === false) {
+        throw new ApiError(400, "Loyalty points redemption is currently disabled or not subscribed for this brand.");
       }
     }
   }

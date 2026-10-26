@@ -364,21 +364,16 @@ const normalizePhone = (rawPhone) => {
       const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
       if (tenant) {
         if (paymentMethod === "points" || (notes && (notes.includes("Paid by Loyalty Points") || notes.includes("Points Payment")))) {
-          if (!tenant.subLoyalty || tenant.loyaltyEnabled === false) {
+          if (!tenant.subLoyalty || !tenant.loyaltyEnabled || tenant.loyaltyRedeemPoints === false) {
             throw new ApiError(400, "Loyalty points program is currently disabled or not subscribed for this brand.");
-          }
-          const src = (orderSource || "").toLowerCase();
-          if (src === "pos" && tenant.loyaltyRedeemPoints === false) {
-            throw new ApiError(400, "Redeeming loyalty points is currently disabled for POS Cashier.");
           }
         }
 
         feeRate = resolveTenantFeeRate(tenant, orderSource);
-        if (tenant.subLoyalty && tenant.loyaltyEnabled !== false) {
-          const src = (orderSource || "").toLowerCase();
-          if (src !== "pos" || tenant.loyaltyAddPoints !== false) {
-            loyaltyEarnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
-          }
+        if (tenant.subLoyalty && tenant.loyaltyEnabled && tenant.loyaltyAddPoints !== false) {
+          loyaltyEarnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+        } else {
+          loyaltyEarnRate = 0.0;
         }
       }
     } catch (e) {
@@ -676,7 +671,7 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
         if (!tx) {
           const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
           const isPointsSubscribed = Boolean(tenant?.subLoyalty);
-          const isPointsEnabled = isPointsSubscribed && tenant?.loyaltyEnabled !== false;
+          const isPointsEnabled = isPointsSubscribed && Boolean(tenant?.loyaltyEnabled) && tenant?.loyaltyAddPoints !== false;
           const isStampsSubscribed = Boolean(tenant?.subStamps);
 
           if (!tenant || (!isPointsEnabled && !isStampsSubscribed)) {
