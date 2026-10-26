@@ -6,6 +6,7 @@ const router = Router();
 
 // Public — customer app can look up table details if they scan a QR
 router.get("/", ctrl.getAll);
+router.get("/:id", ctrl.getOne);
 
 // Protected — only brand/branch managers or admins can manage tables
 router.post("/", authenticate, authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.create);

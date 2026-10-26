@@ -7,6 +7,11 @@ const getAll = catchAsync(async (req, res) => {
   res.json({ success: true, data: tables });
 });
 
+const getOne = catchAsync(async (req, res) => {
+  const table = await tablesService.getOne(req.tenantDb, req.params.id);
+  res.json({ success: true, data: table });
+});
+
 const create = catchAsync(async (req, res) => {
   const table = await tablesService.create(req.tenantDb, req.body, req.tenant.cycleQrTable);
   
@@ -92,6 +97,7 @@ const update = catchAsync(async (req, res) => {
 
 module.exports = {
   getAll,
+  getOne,
   create,
   renewTable,
   remove,
