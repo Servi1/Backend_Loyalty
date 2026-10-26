@@ -173,11 +173,32 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
     }
   }
 
+  // Check if customer already has an active, unredeemed reward coupon
+  let hasActiveUnclaimedCoupon = false;
+  if (stampProg && stampProg.enabled !== false && wallet.appUserId) {
+    const existingActive = await mainPrisma.earnedCoupon.findFirst({
+      where: {
+        appUserId: wallet.appUserId,
+        tenantId: targetTenantId,
+        isUsed: false,
+        expiresAt: { gt: new Date() },
+      },
+    });
+    if (existingActive) {
+      hasActiveUnclaimedCoupon = true;
+    }
+  }
+
   let finalStamps = wallet.stamps || 0;
-  if (earnedStampsCount > 0 && stampProg && stampProg.enabled !== false) {
-    // Option B: Accumulate and keep stamps filled so the customer can view their completed card
-    // and choose when to generate/claim their reward coupon.
-    finalStamps = (wallet.stamps || 0) + earnedStampsCount;
+  if (hasActiveUnclaimedCoupon) {
+    // If an unclaimed reward coupon exists, card stays capped at requiredStamps and cannot earn new stamps until redeemed
+    const requiredStamps = Number(stampProg?.requiredStamps || 6);
+    finalStamps = requiredStamps;
+    earnedStampsCount = 0;
+  } else if (earnedStampsCount > 0 && stampProg && stampProg.enabled !== false) {
+    const requiredStamps = Number(stampProg.requiredStamps || 6);
+    // Stay capped at requiredStamps so card shows completed (e.g. 3/3) and never overflows to 4/3
+    finalStamps = Math.min(requiredStamps, (wallet.stamps || 0) + earnedStampsCount);
   }
 
   const finalPointsToEarn = points;

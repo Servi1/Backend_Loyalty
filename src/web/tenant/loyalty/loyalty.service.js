@@ -262,10 +262,7 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
     earnedStampsCount = 0;
   } else if (earnedStampsCount > 0 && stampProg && stampProg.enabled !== false) {
     const requiredStamps = Number(stampProg.requiredStamps || 6);
-    if (finalStamps >= requiredStamps) {
-      // Previous card was already completed, start new card with current order's stamps
-      finalStamps = 0;
-    }
+    // Stay capped at requiredStamps so completed card stays intact and never overflows to 4/3
     finalStamps = Math.min(requiredStamps, finalStamps + earnedStampsCount);
   }
 
