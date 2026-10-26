@@ -18,6 +18,8 @@ router.post("/verify-otp", ctrl.verifyOtpAndGetCard);
 router.get("/eligible-items", ctrl.getEligibleItems);
 router.post("/generate-coupon", ctrl.claimReward);
 router.post("/claim-coupon", ctrl.claimReward);
+router.get("/coupon-details", ctrl.getCouponDetails);
+router.post("/coupon-details", ctrl.getCouponDetails);
 router.post("/redeem-coupon", ctrl.redeemCoupon);
 router.post("/update-name", ctrl.updateCustomerName);
 
