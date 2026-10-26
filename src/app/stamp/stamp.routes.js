@@ -21,6 +21,7 @@ router.post("/claim-coupon", ctrl.claimReward);
 router.get("/coupon-details", ctrl.getCouponDetails);
 router.post("/coupon-details", ctrl.getCouponDetails);
 router.post("/redeem-coupon", ctrl.redeemCoupon);
+router.post("/redeem", ctrl.redeemCoupon);
 router.post("/update-name", ctrl.updateCustomerName);
 
 module.exports = router;
