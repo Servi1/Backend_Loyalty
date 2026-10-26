@@ -1030,6 +1030,52 @@ const redeemRewardCoupon = async ({ code, customerId, tenantId }) => {
   };
 };
 
+const getCouponDetails = async ({ code, tenantId }) => {
+  if (!code) {
+    throw new ApiError(400, "Coupon code is required");
+  }
+
+  const cleanCode = code.trim().toUpperCase();
+
+  const coupon = await mainPrisma.earnedCoupon.findFirst({
+    where: {
+      code: cleanCode,
+      ...(tenantId ? { tenantId } : {}),
+    },
+    include: {
+      appUser: {
+        select: { id: true, name: true, phone: true, email: true },
+      },
+      tenant: {
+        select: { id: true, name: true, slug: true },
+      },
+    },
+  });
+
+  if (!coupon) {
+    throw new ApiError(404, `Coupon code "${cleanCode}" not found`);
+  }
+
+  const isExpired = Boolean(coupon.expiresAt && new Date(coupon.expiresAt) < new Date());
+
+  return {
+    coupon: {
+      id: coupon.id,
+      code: coupon.code,
+      prizeLabel: coupon.prizeLabel,
+      prizeImageUrl: coupon.prizeImageUrl,
+      menuItemId: coupon.menuItemId,
+      isUsed: coupon.isUsed,
+      usedAt: coupon.usedAt,
+      expiresAt: coupon.expiresAt,
+      isExpired,
+      customer: coupon.appUser,
+      tenantId: coupon.tenantId,
+      tenantName: coupon.tenant?.name,
+    },
+  };
+};
+
 const updateCustomerName = async ({ customerId, name }) => {
   if (!customerId || !name || !name.trim()) {
     throw new ApiError(400, "customerId and name are required");
@@ -1058,5 +1104,6 @@ module.exports = {
   claimRewardCoupon,
   generateRewardCoupon: claimRewardCoupon,
   redeemRewardCoupon,
+  getCouponDetails,
   updateCustomerName,
 };
