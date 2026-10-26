@@ -1453,21 +1453,56 @@ const getCoupons = async (db, userId, tenantId) => {
 
   const coupons = await mainPrisma.earnedCoupon.findMany({
     where,
+    include: {
+      tenant: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          logoUrl: true,
+        },
+      },
+    },
     orderBy: { winDate: "desc" },
   });
 
-  return coupons.map(c => ({
-    id: c.id,
-    couponCode: c.code,
-    tenantId: c.tenantId || null,
-    item: {
-      label: c.prizeLabel,
-      imageUrl: c.prizeImageUrl || null,
-    },
-    winDate: c.winDate,
-    expiryDate: c.expiresAt,
-    isUsed: c.isUsed,
-  }));
+  return coupons.map(c => {
+    const couponQrPayload = JSON.stringify({
+      code: c.code,
+      tenantId: c.tenantId,
+      customerId: c.appUserId,
+      menuItemId: c.menuItemId || null,
+      type: "COUPON",
+    });
+
+    const isExpired = c.expiresAt ? new Date(c.expiresAt) < new Date() : false;
+    const isUsed = Boolean(c.isUsed);
+
+    return {
+      id: c.id,
+      code: c.code,
+      couponCode: c.code,
+      tenantId: c.tenantId || null,
+      brandName: c.tenant?.name || null,
+      brandLogo: c.tenant?.logoUrl || null,
+      item: {
+        id: c.menuItemId || null,
+        label: c.prizeLabel,
+        imageUrl: c.prizeImageUrl || c.tenant?.logoUrl || null,
+      },
+      prizeLabel: c.prizeLabel,
+      prizeImageUrl: c.prizeImageUrl || null,
+      menuItemId: c.menuItemId || null,
+      winDate: c.winDate || c.createdAt,
+      expiryDate: c.expiresAt,
+      expiresAt: c.expiresAt,
+      isUsed,
+      status: isUsed ? "USED" : (isExpired ? "EXPIRED" : "ACTIVE"),
+      type: "STAMP",
+      isStampCoupon: true,
+      qrPayload: couponQrPayload,
+    };
+  });
 };
 
 // ─── addCoupon ────────────────────────────────────────────────────────────────
