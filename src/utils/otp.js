@@ -11,7 +11,7 @@ const DEFAULT_BYPASS_CODE = "9473";
 /**
  * Generate a numeric OTP code.
  */
-const generateRandomOtp = (length = 6) => {
+const generateRandomOtp = (length = 4) => {
   const min = Math.pow(10, length - 1);
   const max = Math.pow(10, length) - 1;
   return String(Math.floor(min + Math.random() * (max - min + 1)));
@@ -60,7 +60,7 @@ const isDevOtpBypass = (code) => {
   return input === targetCode || input === "111111" || input === "1111";
 };
 
-const generateOtp = (length = 6) => {
+const generateOtp = (length = 4) => {
   return generateRandomOtp(length);
 };
 

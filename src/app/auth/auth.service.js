@@ -53,8 +53,8 @@ const sendOtp = async (rawPhone) => {
     data: { verified: true },
   });
 
-  // Generate real numeric 6-digit code
-  const code = generateRandomOtp(6);
+  // Generate real numeric 4-digit code
+  const code = generateRandomOtp(4);
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
   await mainPrisma.otp.create({ data: { phone, code, expiresAt } });
