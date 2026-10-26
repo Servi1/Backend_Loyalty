@@ -67,6 +67,13 @@ const getCustomerCard = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data });
 });
 
+const getCouponDetails = catchAsync(async (req, res) => {
+  const code = req.query.code || req.body.code;
+  const tenantId = req.query.tenantId || req.body.tenantId;
+  const data = await stampService.getCouponDetails({ code, tenantId });
+  res.status(200).json({ success: true, data });
+});
+
 module.exports = {
   getStampProgramInfo,
   checkCustomerPhone,
@@ -75,5 +82,6 @@ module.exports = {
   getEligibleItems,
   claimReward,
   redeemCoupon,
+  getCouponDetails,
   updateCustomerName,
 };

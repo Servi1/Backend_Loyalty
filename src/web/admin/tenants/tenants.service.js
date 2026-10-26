@@ -2913,11 +2913,12 @@ const getTenantProducts = async (tenantId) => {
       select: {
         id: true,
         name: true,
+        nameAr: true,
         price: true,
         imageUrl: true,
         categoryId: true,
         category: {
-          select: { name: true }
+          select: { name: true, nameAr: true }
         }
       },
       orderBy: { name: "asc" }

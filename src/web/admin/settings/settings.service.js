@@ -497,6 +497,7 @@ const normalizeBannerList = (arr, defaultTitlePrefix = "Global Banner", defaultT
       actionType: found.actionType || "none",
       appRoute: found.appRoute || "",
       brandId: found.brandId || "",
+      menuItemId: found.menuItemId || "",
       externalUrl: found.externalUrl || "",
       isActive: found.isActive !== false,
     };

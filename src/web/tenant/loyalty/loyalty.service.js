@@ -924,12 +924,18 @@ const lookupCustomerByPhone = async (db, tenantId, rawPhone) => {
   }) : null;
   const resolvedTenantId = tenant ? tenant.id : tenantId;
 
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(rawPhone).trim());
+  const orConditions = [
+    ...phoneCandidates.map(p => ({ phone: p })),
+    ...(cleaned.length >= 7 ? [{ phone: { contains: cleaned } }] : [])
+  ];
+  if (isUuid) {
+    orConditions.push({ id: String(rawPhone).trim() });
+  }
+
   const customer = await mainPrisma.appUser.findFirst({
     where: {
-      OR: [
-        ...phoneCandidates.map(p => ({ phone: p })),
-        ...(cleaned.length >= 7 ? [{ phone: { contains: cleaned } }] : [])
-      ],
+      OR: orConditions,
     },
     include: {
       wallets: resolvedTenantId ? { where: { tenantId: resolvedTenantId } } : true,
