@@ -7,6 +7,7 @@ const execPromise = util.promisify(exec);
 const config = require("../../../config");
 const bcrypt = require("bcryptjs");
 const { getTenantClient } = require("../../../config/tenantManager");
+const { isOrderEligibleForLoyalty } = require("../../../shared/loyalty/loyaltyEligibility");
 
 
 const getAll = async (filters = {}) => {
@@ -2065,13 +2066,13 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     tier: getCustomerTier(wallet, tenant, customer),
     joinedAt: customer.createdAt,
     pointsHistory,
-    stampHistory: (() => {
+    stampHistory: await (async () => {
       const history = [];
 
       for (const tObj of targetTenants) {
         const stampProg = Array.isArray(tObj?.stampPrograms) ? tObj.stampPrograms[0] : null;
         const requiredStamps = Number(stampProg?.requiredStamps || 4);
-        const isStampActive = stampProg && (tObj.subStamps === true || stampProg.enabled !== false);
+        const isStampActive = Boolean(tObj.subStamps === true && stampProg && stampProg.enabled !== false);
         const eligibleIds = Array.isArray(stampProg?.eligibleItemIds) ? stampProg.eligibleItemIds.map(String).filter(Boolean) : [];
         const eligibleNames = Array.isArray(stampProg?.eligibleItemNames) ? stampProg.eligibleItemNames.map(n => String(n).toLowerCase().trim()).filter(Boolean) : [];
 
@@ -2127,7 +2128,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
         const brandOrders = orderHistory.filter(o => o.tenantId === tObj.id && (o.status || "").toUpperCase() === "COMPLETED");
         const orderEvents = [];
         if (isStampActive) {
-          brandOrders.forEach((o) => {
+          for (const o of brandOrders) {
             // Skip coupon claim orders or free reward orders from generating stamp activity
             const pm = (o.paymentMethod || "").toLowerCase();
             const notes = o.notes || "";
@@ -2138,7 +2139,13 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
               notes.includes("Stamp Reward Coupon") ||
               notes.includes("[STAMPS_ELIGIBLE:false]")
             ) {
-              return;
+              continue;
+            }
+
+            // Real-time check: was stamps enabled at the exact moment this order was placed?
+            const isEligible = await isOrderEligibleForLoyalty(o, tObj.id, "STAMPS", tObj);
+            if (!isEligible) {
+              continue;
             }
 
             let earnedStamps = 0;
@@ -2169,7 +2176,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
                 type: "order",
               });
             }
-          });
+          }
         }
 
         // 3. Manual stamp adjustments from wallet transactions for this brand
@@ -3231,7 +3238,7 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
   for (const t of tenants) {
     const stampProg = Array.isArray(t.stampPrograms) ? t.stampPrograms[0] : null;
     const requiredStamps = Number(stampProg?.requiredStamps || 4);
-    const isStampActive = stampProg && (t.subStamps === true || stampProg.enabled !== false);
+    const isStampActive = Boolean(t.subStamps === true && stampProg && stampProg.enabled !== false);
     const eligibleIds = Array.isArray(stampProg?.eligibleItemIds) ? stampProg.eligibleItemIds.map(String).filter(Boolean) : [];
     const eligibleNames = Array.isArray(stampProg?.eligibleItemNames) ? stampProg.eligibleItemNames.map((n) => String(n).toLowerCase().trim()).filter(Boolean) : [];
 
@@ -3323,7 +3330,7 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
           take: 500,
         });
 
-        orders.forEach((o) => {
+        for (const o of orders) {
           // Skip coupon claim orders or free reward orders from generating stamp activity
           const pm = (o.paymentMethod || "").toLowerCase();
           const notes = o.notes || "";
@@ -3334,7 +3341,13 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
             notes.includes("Stamp Reward Coupon") ||
             notes.includes("[STAMPS_ELIGIBLE:false]")
           ) {
-            return;
+            continue;
+          }
+
+          // Real-time check: was stamps enabled at the exact moment this order was placed?
+          const isEligible = await isOrderEligibleForLoyalty(o, t.id, "STAMPS", t);
+          if (!isEligible) {
+            continue;
           }
 
           let earnedStamps = 0;
@@ -3399,7 +3412,7 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
               type: "order",
             });
           }
-        });
+        }
       } catch (err) {
         console.error(`Failed to fetch orders for stamp activity from tenant ${t.name}:`, err.message);
       }

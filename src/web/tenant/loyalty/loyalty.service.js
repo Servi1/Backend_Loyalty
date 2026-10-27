@@ -242,9 +242,16 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
     console.log(`[LOYALTY] Points program was NOT active when order was placed. Zeroing out points.`);
     points = 0;
   }
+  if (!canAwardStamps && earnedStampsCount > 0) {
+    console.log(`[LOYALTY] Stamp program was NOT active when order was placed. Zeroing out stamps.`);
+    earnedStampsCount = 0;
+  }
 
   // ─── STAMP CARD CALCULATION (Independent of Points) ─────────────
   let earnedStampsCount = Number(opts.earnedStamps || 0);
+  if (!canAwardStamps) {
+    earnedStampsCount = 0;
+  }
   const isStampSubscribed = Boolean(tenantObj?.subStamps);
   const stampProg = (isStampSubscribed && Array.isArray(tenantObj?.stampPrograms) && tenantObj.stampPrograms.length > 0)
     ? tenantObj.stampPrograms[0]
@@ -289,7 +296,9 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
   }
 
   let finalStamps = wallet.stamps || 0;
-  if (hasActiveUnclaimedCoupon) {
+  if (!canAwardStamps) {
+    earnedStampsCount = 0;
+  } else if (hasActiveUnclaimedCoupon) {
     // If an unclaimed reward coupon exists, card stays capped at requiredStamps and cannot earn new stamps until redeemed
     const requiredStamps = Number(stampProg?.requiredStamps || 6);
     finalStamps = requiredStamps;

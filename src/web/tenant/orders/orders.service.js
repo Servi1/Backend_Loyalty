@@ -738,7 +738,14 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
 
   const updateData = { status };
   if (notes !== undefined) {
-    updateData.notes = notes;
+    const existingTags = (order.notes || "").match(/\[[A-Z0-9_]+:[^\]]+\]/g) || [];
+    let mergedNotes = notes;
+    for (const tag of existingTags) {
+      if (!mergedNotes.includes(tag)) {
+        mergedNotes = mergedNotes ? `${mergedNotes} ${tag}` : tag;
+      }
+    }
+    updateData.notes = mergedNotes;
   }
 
   const updated = await db.order.update({
@@ -755,7 +762,7 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
         where: { id },
         data: {
           status,
-          ...(notes !== undefined && { notes }),
+          ...(updateData.notes !== undefined && { notes: updateData.notes }),
           updatedAt: updated.updatedAt,
         }
       });
