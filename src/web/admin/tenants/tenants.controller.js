@@ -25,7 +25,7 @@ const update = catchAsync(async (req, res) => {
       return res.status(403).json({ success: false, message: "Forbidden: Cannot edit another brand's settings" });
     }
   }
-  const tenant = await tenantsService.update(req.params.id, req.body);
+  const tenant = await tenantsService.update(req.params.id, req.body, req.user);
   res.json({ success: true, data: tenant });
 });
 
@@ -186,8 +186,23 @@ const getSuperAdminTiers = catchAsync(async (_req, res) => {
 });
 
 const updateSuperAdminTiers = catchAsync(async (req, res) => {
-  const tiers = await tenantsService.updateSuperAdminTiers(req.body.tiers);
+  const tiers = await tenantsService.updateSuperAdminTiers(req.body.tiers, req.user);
   res.json({ success: true, message: "Global loyalty tiers updated successfully", data: tiers });
+});
+
+const getLoyaltyAuditLogs = catchAsync(async (req, res) => {
+  let tenantId = req.query.tenantId;
+  if (!tenantId || tenantId === "all") {
+    if (req.tenant && req.tenant.id) {
+      tenantId = req.tenant.id;
+    } else if (req.headers["x-tenant-id"]) {
+      tenantId = req.headers["x-tenant-id"];
+    } else if (req.user && req.user.role !== "SUPER_ADMIN" && req.user.tenantId) {
+      tenantId = req.user.tenantId;
+    }
+  }
+  const result = await tenantsService.getLoyaltyAuditLogs(tenantId, req.query);
+  res.json({ success: true, data: result });
 });
 
 module.exports = {
@@ -219,4 +234,5 @@ module.exports = {
   getTenantProducts,
   getSuperAdminTiers,
   updateSuperAdminTiers,
+  getLoyaltyAuditLogs,
 };

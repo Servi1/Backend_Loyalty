@@ -216,16 +216,56 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
     tenantObj = await mainPrisma.tenant.findUnique({ where: { id: targetTenantId } });
   }
 
+  // ─── HISTORICAL ELIGIBILITY CHECK AT ORDER PLACEMENT TIME ────────
+  const { isOrderEligibleForLoyalty } = require("../../../shared/loyalty/loyaltyEligibility");
+  let canAwardPoints = opts.pointsEligible !== undefined ? Boolean(opts.pointsEligible) : true;
+  let canAwardStamps = opts.stampsEligible !== undefined ? Boolean(opts.stampsEligible) : true;
+
+  const orderRef = {
+    id: opts.orderId,
+    orderNumber: opts.orderNumber,
+    createdAt: opts.orderCreatedAt || opts.createdAt || null,
+    notes: opts.notes || null,
+    loyaltyEarnRate: opts.loyaltyEarnRate,
+  };
+
+  if (opts.orderId || opts.orderNumber || opts.orderCreatedAt) {
+    if (opts.pointsEligible === undefined) {
+      canAwardPoints = await isOrderEligibleForLoyalty(orderRef, targetTenantId, "POINTS", tenantObj);
+    }
+    if (opts.stampsEligible === undefined) {
+      canAwardStamps = await isOrderEligibleForLoyalty(orderRef, targetTenantId, "STAMPS", tenantObj);
+    }
+  }
+
+  if (!canAwardPoints && points > 0) {
+    console.log(`[LOYALTY] Points program was NOT active when order was placed. Zeroing out points.`);
+    points = 0;
+  }
+
   // ─── STAMP CARD CALCULATION (Independent of Points) ─────────────
   let earnedStampsCount = Number(opts.earnedStamps || 0);
+  if (!canAwardStamps) {
+    if (earnedStampsCount > 0) {
+      console.log(`[LOYALTY] Stamp program was NOT active when order was placed. Zeroing out stamps.`);
+    }
+    earnedStampsCount = 0;
+  }
   const isStampSubscribed = Boolean(tenantObj?.subStamps);
   const stampProg = (isStampSubscribed && Array.isArray(tenantObj?.stampPrograms) && tenantObj.stampPrograms.length > 0)
     ? tenantObj.stampPrograms[0]
     : null;
 
-  const isFreeReward = opts.paymentMethod === "free_reward" || Boolean(opts.isFreeRewardOrder);
+  const isFreeReward =
+    opts.paymentMethod === "free_reward" ||
+    opts.paymentMethod === "coupon" ||
+    Boolean(opts.isFreeRewardOrder) ||
+    (opts.notes &&
+      (opts.notes.includes("Free Stamp Reward") ||
+        opts.notes.includes("Stamp Reward Coupon") ||
+        opts.notes.includes("[STAMPS_ELIGIBLE:false]")));
 
-  if (!isFreeReward && earnedStampsCount === 0 && stampProg && stampProg.enabled !== false && Array.isArray(opts.items || opts.orderItems)) {
+  if (!isFreeReward && canAwardStamps && earnedStampsCount === 0 && stampProg && stampProg.enabled !== false && Array.isArray(opts.items || opts.orderItems)) {
     const eligibleIds = Array.isArray(stampProg.eligibleItemIds) ? stampProg.eligibleItemIds.map(String).filter(Boolean) : [];
     const orderItems = opts.items || opts.orderItems;
     for (const item of orderItems) {
@@ -255,7 +295,9 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
   }
 
   let finalStamps = wallet.stamps || 0;
-  if (hasActiveUnclaimedCoupon) {
+  if (!canAwardStamps) {
+    earnedStampsCount = 0;
+  } else if (hasActiveUnclaimedCoupon) {
     // If an unclaimed reward coupon exists, card stays capped at requiredStamps and cannot earn new stamps until redeemed
     const requiredStamps = Number(stampProg?.requiredStamps || 6);
     finalStamps = requiredStamps;
@@ -781,10 +823,15 @@ const getTiers = async (tenantId) => {
   }));
 };
 
-const updateTiers = async (tenantId, tiers, opts = {}) => {
+const updateTiers = async (tenantId, tiers, opts = {}, user = null) => {
   if (!Array.isArray(tiers)) throw new ApiError(400, "Tiers must be an array");
 
   const cleanedTiers = tiers.map(({ membersCount, ...tier }) => tier);
+
+  let targetTenant = null;
+  if (tenantId && tenantId !== "all") {
+    targetTenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+  }
 
   if (opts.applyToAll || !tenantId || tenantId === "all") {
     await mainPrisma.tenant.updateMany({
@@ -795,6 +842,34 @@ const updateTiers = async (tenantId, tiers, opts = {}) => {
       where: { id: tenantId },
       data: { loyaltyTiers: cleanedTiers }
     });
+  }
+
+  // Record Loyalty Audit Log for tiers
+  try {
+    const tierSummaries = cleanedTiers.map(t => `${t.name}: min spend ${t.minSpend || 0}, mult ${t.multiplier || 1}x`).join("; ");
+    await mainPrisma.loyaltyAuditLog.create({
+      data: {
+        tenantId: targetTenant ? targetTenant.id : null,
+        tenantName: targetTenant ? targetTenant.name : (opts.applyToAll ? "All Brands (Global)" : null),
+        userId: user?.id || null,
+        userName: user?.name || user?.email?.split('@')[0] || "System Admin",
+        userEmail: user?.email || null,
+        userRole: user?.roleName || user?.role || "ADMIN",
+        programType: "TIERS",
+        action: "UPDATE_TIERS",
+        summary: `Updated ${cleanedTiers.length} loyalty tier(s): ${tierSummaries}`,
+        summaryAr: `تحديث ${cleanedTiers.length} مستويات ولاء`,
+        details: cleanedTiers.map(t => ({
+          field: t.name,
+          label: `Tier: ${t.name}`,
+          labelAr: `مستوى: ${t.name}`,
+          oldValue: "Configured",
+          newValue: `Min Spend: ${t.minSpend || 0}, Multiplier: ${t.multiplier || 1}x`
+        }))
+      }
+    });
+  } catch (err) {
+    console.error("Failed to log tier update audit:", err.message);
   }
 
   return getTiers(tenantId && tenantId !== "all" ? tenantId : null);

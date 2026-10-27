@@ -7,6 +7,7 @@ const execPromise = util.promisify(exec);
 const config = require("../../../config");
 const bcrypt = require("bcryptjs");
 const { getTenantClient } = require("../../../config/tenantManager");
+const { isOrderEligibleForLoyalty } = require("../../../shared/loyalty/loyaltyEligibility");
 
 
 const getAll = async (filters = {}) => {
@@ -214,7 +215,7 @@ const create = async (data) => {
   return tenant;
 };
 
-const update = async (id, data) => {
+const update = async (id, data, user = null) => {
   const existingTenant = await getById(id);
 
   // Track mid-month slot additions
@@ -300,6 +301,214 @@ const update = async (id, data) => {
     if (data.loyaltyEnabled) data.loyaltyEnabled = false;
     if (data.loyaltyAddPoints) data.loyaltyAddPoints = false;
     if (data.loyaltyRedeemPoints) data.loyaltyRedeemPoints = false;
+  }
+
+  // ─── Loyalty & Stamps Configuration Audit Log ─────────────
+  try {
+    const auditEntries = [];
+
+    // 1. Points configuration diffs
+    const pointsDiffs = [];
+    if (data.loyaltyEnabled !== undefined && Boolean(data.loyaltyEnabled) !== Boolean(existingTenant.loyaltyEnabled)) {
+      pointsDiffs.push({
+        field: "loyaltyEnabled",
+        label: "Points Program Status",
+        labelAr: "حالة برنامج النقاط",
+        oldValue: existingTenant.loyaltyEnabled ? "Active" : "Inactive",
+        newValue: data.loyaltyEnabled ? "Active" : "Inactive"
+      });
+    }
+    if (data.loyaltyAddPoints !== undefined && Boolean(data.loyaltyAddPoints) !== Boolean(existingTenant.loyaltyAddPoints)) {
+      pointsDiffs.push({
+        field: "loyaltyAddPoints",
+        label: "Award Points at POS",
+        labelAr: "منح النقاط في الكاشير",
+        oldValue: existingTenant.loyaltyAddPoints ? "Enabled" : "Disabled",
+        newValue: data.loyaltyAddPoints ? "Enabled" : "Disabled"
+      });
+    }
+    if (data.loyaltyRedeemPoints !== undefined && Boolean(data.loyaltyRedeemPoints) !== Boolean(existingTenant.loyaltyRedeemPoints)) {
+      pointsDiffs.push({
+        field: "loyaltyRedeemPoints",
+        label: "Redeem Points at POS",
+        labelAr: "استبدال النقاط في الكاشير",
+        oldValue: existingTenant.loyaltyRedeemPoints ? "Enabled" : "Disabled",
+        newValue: data.loyaltyRedeemPoints ? "Enabled" : "Disabled"
+      });
+    }
+    if (data.loyaltyEarnRate !== undefined && Number(data.loyaltyEarnRate) !== Number(existingTenant.loyaltyEarnRate)) {
+      pointsDiffs.push({
+        field: "loyaltyEarnRate",
+        label: "Earn Rate",
+        labelAr: "معدل كسب النقاط",
+        oldValue: `${Number(existingTenant.loyaltyEarnRate)} SAR = 1 pt`,
+        newValue: `${Number(data.loyaltyEarnRate)} SAR = 1 pt`
+      });
+    }
+    if (data.loyaltyRedeemRate !== undefined && Number(data.loyaltyRedeemRate) !== Number(existingTenant.loyaltyRedeemRate)) {
+      pointsDiffs.push({
+        field: "loyaltyRedeemRate",
+        label: "Redeem Rate",
+        labelAr: "معدل استبدال النقاط",
+        oldValue: `${Number(existingTenant.loyaltyRedeemRate)} pts = 1 SAR`,
+        newValue: `${Number(data.loyaltyRedeemRate)} pts = 1 SAR`
+      });
+    }
+
+    if (pointsDiffs.length > 0) {
+      const summaryEn = pointsDiffs.map(d => `${d.label}: ${d.oldValue} → ${d.newValue}`).join(" • ");
+      const summaryAr = pointsDiffs.map(d => `${d.labelAr}: ${d.oldValue} ← ${d.newValue}`).join(" • ");
+      auditEntries.push({
+        tenantId: id,
+        tenantName: existingTenant.name,
+        userId: user?.id || null,
+        userName: user?.name || user?.email?.split('@')[0] || "System Admin",
+        userEmail: user?.email || null,
+        userRole: user?.roleName || user?.role || "ADMIN",
+        programType: "POINTS",
+        action: "UPDATE_POINTS",
+        summary: summaryEn,
+        summaryAr: summaryAr,
+        details: pointsDiffs,
+      });
+    }
+
+    // 2. Stamp Cards diffs
+    if (data.stampPrograms !== undefined) {
+      const oldList = Array.isArray(existingTenant.stampPrograms) ? existingTenant.stampPrograms : [];
+      const newList = Array.isArray(data.stampPrograms) ? data.stampPrograms : [];
+      const oldProg = oldList[0] || null;
+      const newProg = newList[0] || null;
+      const stampDiffs = [];
+
+      if (!oldProg && newProg) {
+        stampDiffs.push({
+          field: "stampCardCreated",
+          label: "Stamp Card Program",
+          labelAr: "برنامج بطاقة الأختام",
+          oldValue: "None",
+          newValue: `Created (${newProg.nameEn || "Stamp Card"})`
+        });
+        if (newProg.requiredStamps) {
+          stampDiffs.push({
+            field: "requiredStamps",
+            label: "Target Required Stamps",
+            labelAr: "الأختام المطلوبة للمكافأة",
+            oldValue: "—",
+            newValue: `${newProg.requiredStamps} stamps`
+          });
+        }
+      } else if (oldProg && !newProg) {
+        stampDiffs.push({
+          field: "stampCardDeleted",
+          label: "Stamp Card Program",
+          labelAr: "برنامج بطاقة الأختام",
+          oldValue: oldProg.nameEn || "Stamp Card",
+          newValue: "Deleted"
+        });
+      } else if (oldProg && newProg) {
+        if (Boolean(oldProg.enabled) !== Boolean(newProg.enabled)) {
+          stampDiffs.push({
+            field: "stampEnabled",
+            label: "Stamp Card Status",
+            labelAr: "حالة بطاقة الأختام",
+            oldValue: oldProg.enabled ? "Active" : "Inactive",
+            newValue: newProg.enabled ? "Active" : "Inactive"
+          });
+        }
+        if (Number(oldProg.requiredStamps) !== Number(newProg.requiredStamps)) {
+          stampDiffs.push({
+            field: "requiredStamps",
+            label: "Target Required Stamps",
+            labelAr: "الأختام المطلوبة للمكافأة",
+            oldValue: `${oldProg.requiredStamps} stamps`,
+            newValue: `${newProg.requiredStamps} stamps`
+          });
+        }
+        if ((oldProg.nameEn || "") !== (newProg.nameEn || "")) {
+          stampDiffs.push({
+            field: "nameEn",
+            label: "Card Name (EN)",
+            labelAr: "اسم البطاقة (إنجليزي)",
+            oldValue: oldProg.nameEn || "—",
+            newValue: newProg.nameEn || "—"
+          });
+        }
+        if ((oldProg.nameAr || "") !== (newProg.nameAr || "")) {
+          stampDiffs.push({
+            field: "nameAr",
+            label: "Card Name (AR)",
+            labelAr: "اسم البطاقة (عربي)",
+            oldValue: oldProg.nameAr || "—",
+            newValue: newProg.nameAr || "—"
+          });
+        }
+        if ((oldProg.rewardTextEn || "") !== (newProg.rewardTextEn || "")) {
+          stampDiffs.push({
+            field: "rewardTextEn",
+            label: "Reward Text (EN)",
+            labelAr: "نص المكافأة (إنجليزي)",
+            oldValue: oldProg.rewardTextEn || "—",
+            newValue: newProg.rewardTextEn || "—"
+          });
+        }
+        if ((oldProg.rewardTextAr || "") !== (newProg.rewardTextAr || "")) {
+          stampDiffs.push({
+            field: "rewardTextAr",
+            label: "Reward Text (AR)",
+            labelAr: "نص المكافأة (عربي)",
+            oldValue: oldProg.rewardTextAr || "—",
+            newValue: newProg.rewardTextAr || "—"
+          });
+        }
+        if ((oldProg.cardBgColor || "") !== (newProg.cardBgColor || "")) {
+          stampDiffs.push({
+            field: "cardBgColor",
+            label: "Card Background Color",
+            labelAr: "لون خلفية البطاقة",
+            oldValue: oldProg.cardBgColor || "Default",
+            newValue: newProg.cardBgColor || "Default"
+          });
+        }
+        const oldEligibleNames = Array.isArray(oldProg.eligibleItemNames) && oldProg.eligibleItemNames.length > 0 ? oldProg.eligibleItemNames.join(", ") : "All Menu Items";
+        const newEligibleNames = Array.isArray(newProg.eligibleItemNames) && newProg.eligibleItemNames.length > 0 ? newProg.eligibleItemNames.join(", ") : "All Menu Items";
+        if (oldEligibleNames !== newEligibleNames) {
+          stampDiffs.push({
+            field: "eligibleItemNames",
+            label: "Eligible Reward Items",
+            labelAr: "الأصناف المؤهلة للمكافأة",
+            oldValue: oldEligibleNames,
+            newValue: newEligibleNames
+          });
+        }
+      }
+
+      if (stampDiffs.length > 0) {
+        const summaryEn = stampDiffs.map(d => `${d.label}: ${d.oldValue} → ${d.newValue}`).join(" • ");
+        const summaryAr = stampDiffs.map(d => `${d.labelAr}: ${d.oldValue} ← ${d.newValue}`).join(" • ");
+        auditEntries.push({
+          tenantId: id,
+          tenantName: existingTenant.name,
+          userId: user?.id || null,
+          userName: user?.name || user?.email?.split('@')[0] || "System Admin",
+          userEmail: user?.email || null,
+          userRole: user?.roleName || user?.role || "ADMIN",
+          programType: "STAMPS",
+          action: "UPDATE_STAMPS",
+          summary: summaryEn,
+          summaryAr: summaryAr,
+          details: stampDiffs,
+        });
+      }
+    }
+
+    if (auditEntries.length > 0) {
+      await mainPrisma.loyaltyAuditLog.createMany({
+        data: auditEntries
+      });
+    }
+  } catch (auditErr) {
+    console.error("Failed to record loyalty audit log:", auditErr.message);
   }
 
   return mainPrisma.tenant.update({ where: { id }, data });
@@ -1857,13 +2066,13 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
     tier: getCustomerTier(wallet, tenant, customer),
     joinedAt: customer.createdAt,
     pointsHistory,
-    stampHistory: (() => {
+    stampHistory: await (async () => {
       const history = [];
 
       for (const tObj of targetTenants) {
         const stampProg = Array.isArray(tObj?.stampPrograms) ? tObj.stampPrograms[0] : null;
         const requiredStamps = Number(stampProg?.requiredStamps || 4);
-        const isStampActive = stampProg && (tObj.subStamps === true || stampProg.enabled !== false);
+        const isStampActive = Boolean(tObj.subStamps === true && stampProg && stampProg.enabled !== false);
         const eligibleIds = Array.isArray(stampProg?.eligibleItemIds) ? stampProg.eligibleItemIds.map(String).filter(Boolean) : [];
         const eligibleNames = Array.isArray(stampProg?.eligibleItemNames) ? stampProg.eligibleItemNames.map(n => String(n).toLowerCase().trim()).filter(Boolean) : [];
 
@@ -1918,11 +2127,32 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
         // 2. Completed orders for this brand that earned stamps
         const brandOrders = orderHistory.filter(o => o.tenantId === tObj.id && (o.status || "").toUpperCase() === "COMPLETED");
         const orderEvents = [];
-        if (isStampActive) {
-          brandOrders.forEach((o) => {
+        if (stampProg) {
+          for (const o of brandOrders) {
+            // Skip coupon claim orders or free reward orders from generating stamp activity
+            const pm = (o.paymentMethod || "").toLowerCase();
+            const notes = o.notes || "";
+            if (
+              pm === "coupon" ||
+              pm === "free_reward" ||
+              notes.includes("Free Stamp Reward") ||
+              notes.includes("Stamp Reward Coupon") ||
+              notes.includes("[STAMPS_ELIGIBLE:false]")
+            ) {
+              continue;
+            }
+
+            // Real-time check: was stamps enabled at the exact moment this order was placed?
+            const isEligible = await isOrderEligibleForLoyalty(o, tObj.id, "STAMPS", tObj);
+            if (!isEligible) {
+              continue;
+            }
+
             let earnedStamps = 0;
             if (Array.isArray(o.itemsList)) {
               o.itemsList.forEach((it) => {
+                // Free reward items (price 0) do not earn stamps
+                if (Number(it.price || 0) === 0) return;
                 const mId = String(it.menuItemId || it.itemId || it.id || "");
                 const itName = String(it.name || "").toLowerCase().trim();
                 const matchesId = eligibleIds.length === 0 || (mId && eligibleIds.includes(mId));
@@ -1946,7 +2176,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
                 type: "order",
               });
             }
-          });
+          }
         }
 
         // 3. Manual stamp adjustments from wallet transactions for this brand
@@ -2610,9 +2840,16 @@ const getSuperAdminOrderDetail = async (tenantId, orderId) => {
   // Calculate points earned for this order if COMPLETED and paid via Cash, Card, Apple Pay, etc.
   let pointsEarned = 0;
   const pm = (order.paymentMethod || "").toLowerCase();
+  const isCouponReward =
+    pm === "coupon" ||
+    pm === "free_reward" ||
+    (order.notes &&
+      (order.notes.includes("Free Stamp Reward") ||
+        order.notes.includes("Stamp Reward Coupon") ||
+        order.notes.includes("[POINTS_ELIGIBLE:false]")));
   const isPointsPayment = pm === "points" || (order.notes && (order.notes.includes("Paid by Loyalty Points") || order.notes.includes("Points Payment")));
 
-  if (!isPointsPayment && (order.status || "").toUpperCase() === "COMPLETED") {
+  if (!isCouponReward && !isPointsPayment && (order.status || "").toUpperCase() === "COMPLETED") {
     const earnTx = await mainPrisma.walletTransaction.findFirst({
       where: {
         points: { gt: 0 },
@@ -3001,7 +3238,7 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
   for (const t of tenants) {
     const stampProg = Array.isArray(t.stampPrograms) ? t.stampPrograms[0] : null;
     const requiredStamps = Number(stampProg?.requiredStamps || 4);
-    const isStampActive = stampProg && (t.subStamps === true || stampProg.enabled !== false);
+    const isStampActive = Boolean(t.subStamps === true && stampProg && stampProg.enabled !== false);
     const eligibleIds = Array.isArray(stampProg?.eligibleItemIds) ? stampProg.eligibleItemIds.map(String).filter(Boolean) : [];
     const eligibleNames = Array.isArray(stampProg?.eligibleItemNames) ? stampProg.eligibleItemNames.map((n) => String(n).toLowerCase().trim()).filter(Boolean) : [];
 
@@ -3070,9 +3307,9 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
       });
     });
 
-    // Orders for this tenant if stamps are active
+    // Orders for this tenant that earned stamps
     const orderEvents = [];
-    if (isStampActive && t.dbUrl) {
+    if (t.dbUrl && stampProg) {
       try {
         const tenantDb = getTenantClient(t.dbUrl);
         const orderWhere = { status: "COMPLETED" };
@@ -3093,10 +3330,31 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
           take: 500,
         });
 
-        orders.forEach((o) => {
+        for (const o of orders) {
+          // Skip coupon claim orders or free reward orders from generating stamp activity
+          const pm = (o.paymentMethod || "").toLowerCase();
+          const notes = o.notes || "";
+          if (
+            pm === "coupon" ||
+            pm === "free_reward" ||
+            notes.includes("Free Stamp Reward") ||
+            notes.includes("Stamp Reward Coupon") ||
+            notes.includes("[STAMPS_ELIGIBLE:false]")
+          ) {
+            continue;
+          }
+
+          // Real-time check: was stamps enabled at the exact moment this order was placed?
+          const isEligible = await isOrderEligibleForLoyalty(o, t.id, "STAMPS", t);
+          if (!isEligible) {
+            continue;
+          }
+
           let earnedStamps = 0;
           if (Array.isArray(o.items)) {
             o.items.forEach((it) => {
+              // Free reward items (price 0) do not earn stamps
+              if (Number(it.price || 0) === 0) return;
               const mId = String(it.menuItemId || it.itemId || it.id || "");
               const itName = String(it.name || it.menuItem?.name || "").toLowerCase().trim();
               const matchesId = eligibleIds.length === 0 || (mId && eligibleIds.includes(mId));
@@ -3154,7 +3412,7 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
               type: "order",
             });
           }
-        });
+        }
       } catch (err) {
         console.error(`Failed to fetch orders for stamp activity from tenant ${t.name}:`, err.message);
       }
@@ -3464,9 +3722,53 @@ const getSuperAdminTiers = async () => {
   return loyaltyService.getTiers(null);
 };
 
-const updateSuperAdminTiers = async (tiers) => {
+const updateSuperAdminTiers = async (tiers, user = null) => {
   const loyaltyService = require("../../tenant/loyalty/loyalty.service");
-  return loyaltyService.updateTiers(null, tiers, { applyToAll: true });
+  return loyaltyService.updateTiers(null, tiers, { applyToAll: true }, user);
+};
+
+const getLoyaltyAuditLogs = async (tenantId = null, queryParams = {}) => {
+  const { programType, search, limit = 50, page = 1 } = queryParams;
+  const where = {};
+
+  if (tenantId && tenantId !== "all") {
+    where.tenantId = tenantId;
+  }
+
+  if (programType && programType !== "ALL") {
+    where.programType = programType.toUpperCase();
+  }
+
+  if (search && search.trim()) {
+    const q = search.trim();
+    where.OR = [
+      { userName: { contains: q, mode: "insensitive" } },
+      { userEmail: { contains: q, mode: "insensitive" } },
+      { tenantName: { contains: q, mode: "insensitive" } },
+      { summary: { contains: q, mode: "insensitive" } },
+      { summaryAr: { contains: q, mode: "insensitive" } }
+    ];
+  }
+
+  const take = Math.min(Math.max(1, Number(limit) || 50), 100);
+  const skip = (Math.max(1, Number(page) || 1) - 1) * take;
+
+  const [total, logs] = await Promise.all([
+    mainPrisma.loyaltyAuditLog.count({ where }),
+    mainPrisma.loyaltyAuditLog.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take,
+      skip,
+      include: {
+        tenant: {
+          select: { id: true, name: true, nameAr: true, logoUrl: true }
+        }
+      }
+    })
+  ]);
+
+  return { total, page: Number(page) || 1, limit: take, logs };
 };
 
 module.exports = {
@@ -3497,5 +3799,7 @@ module.exports = {
   getTenantProducts,
   getSuperAdminTiers,
   updateSuperAdminTiers,
+  getLoyaltyAuditLogs,
 };
+
 

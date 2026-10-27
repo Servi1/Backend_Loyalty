@@ -117,7 +117,7 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
       }
       if (!tenant.subLoyalty || !tenant.loyaltyEnabled || tenant.loyaltyAddPoints === false) {
         console.log(`[LOYALTY] Earning points blocked: Loyalty program or Add Points toggle disabled for tenant ${tenant.name}`);
-        return null;
+        points = 0;
       }
     }
   }
@@ -153,14 +153,56 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
     }
   }
 
+  // ─── HISTORICAL ELIGIBILITY CHECK AT ORDER PLACEMENT TIME ────────
+  const { isOrderEligibleForLoyalty } = require("../../shared/loyalty/loyaltyEligibility");
+  let canAwardPoints = opts.pointsEligible !== undefined ? Boolean(opts.pointsEligible) : true;
+  let canAwardStamps = opts.stampsEligible !== undefined ? Boolean(opts.stampsEligible) : true;
+
+  const orderRef = {
+    id: opts.orderId,
+    orderNumber: opts.orderNumber,
+    createdAt: opts.orderCreatedAt || opts.createdAt || null,
+    notes: opts.notes || null,
+    loyaltyEarnRate: opts.loyaltyEarnRate,
+  };
+
+  const tenantObj = targetTenantId ? await mainPrisma.tenant.findUnique({ where: { id: targetTenantId } }) : null;
+
+  if (opts.orderId || opts.orderNumber || opts.orderCreatedAt) {
+    if (opts.pointsEligible === undefined) {
+      canAwardPoints = await isOrderEligibleForLoyalty(orderRef, targetTenantId, "POINTS", tenantObj);
+    }
+    if (opts.stampsEligible === undefined) {
+      canAwardStamps = await isOrderEligibleForLoyalty(orderRef, targetTenantId, "STAMPS", tenantObj);
+    }
+  }
+
+  if (!canAwardPoints && points > 0) {
+    console.log(`[LOYALTY] Points program was NOT active when order was placed. Zeroing out points.`);
+    points = 0;
+  }
+
   // ─── STAMP CARD CALCULATION (Independent of Points) ─────────────
   let earnedStampsCount = Number(opts.earnedStamps || 0);
-  const tenantObj = targetTenantId ? await mainPrisma.tenant.findUnique({ where: { id: targetTenantId } }) : null;
-  const stampProg = Array.isArray(tenantObj?.stampPrograms) && tenantObj.stampPrograms.length > 0 ? tenantObj.stampPrograms[0] : null;
+  if (!canAwardStamps) {
+    earnedStampsCount = 0;
+  }
 
-  const isFreeReward = opts.paymentMethod === "free_reward" || Boolean(opts.isFreeRewardOrder);
+  const isStampSubscribed = Boolean(tenantObj?.subStamps);
+  const stampProg = (isStampSubscribed && Array.isArray(tenantObj?.stampPrograms) && tenantObj.stampPrograms.length > 0)
+    ? tenantObj.stampPrograms[0]
+    : null;
 
-  if (!isFreeReward && earnedStampsCount === 0 && stampProg && stampProg.enabled !== false && Array.isArray(opts.items || opts.orderItems)) {
+  const isFreeReward =
+    opts.paymentMethod === "free_reward" ||
+    opts.paymentMethod === "coupon" ||
+    Boolean(opts.isFreeRewardOrder) ||
+    (opts.notes &&
+      (opts.notes.includes("Free Stamp Reward") ||
+        opts.notes.includes("Stamp Reward Coupon") ||
+        opts.notes.includes("[STAMPS_ELIGIBLE:false]")));
+
+  if (!isFreeReward && canAwardStamps && earnedStampsCount === 0 && stampProg && stampProg.enabled !== false && Array.isArray(opts.items || opts.orderItems)) {
     const eligibleIds = Array.isArray(stampProg.eligibleItemIds) ? stampProg.eligibleItemIds.map(String).filter(Boolean) : [];
     const orderItems = opts.items || opts.orderItems;
     for (const item of orderItems) {
@@ -190,7 +232,9 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
   }
 
   let finalStamps = wallet.stamps || 0;
-  if (hasActiveUnclaimedCoupon) {
+  if (!canAwardStamps) {
+    earnedStampsCount = 0;
+  } else if (hasActiveUnclaimedCoupon) {
     // If an unclaimed reward coupon exists, card stays capped at requiredStamps and cannot earn new stamps until redeemed
     const requiredStamps = Number(stampProg?.requiredStamps || 6);
     finalStamps = requiredStamps;
@@ -201,11 +245,13 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
     finalStamps = Math.min(requiredStamps, (wallet.stamps || 0) + earnedStampsCount);
   }
 
-  const finalPointsToEarn = points;
+  const finalPointsToEarn = canAwardPoints ? points : 0;
   if (finalPointsToEarn <= 0 && earnedStampsCount <= 0) return wallet;
 
   let txDesc = description || (earnedStampsCount > 0 ? `Points & +${earnedStampsCount} Stamp(s) earned` : "Points earned");
-  if (earnedStampsCount > 0 && description && !description.toLowerCase().includes("stamp")) {
+  if (finalPointsToEarn <= 0 && earnedStampsCount > 0) {
+    txDesc = `Earned +${earnedStampsCount} Stamp${earnedStampsCount > 1 ? "s" : ""} on Order #${opts.orderNumber || ""}`.trim();
+  } else if (earnedStampsCount > 0 && description && !description.toLowerCase().includes("stamp")) {
     txDesc = `${description} (+${earnedStampsCount} Stamp${earnedStampsCount > 1 ? "s" : ""})`;
   }
 

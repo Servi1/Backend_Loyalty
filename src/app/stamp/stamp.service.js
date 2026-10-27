@@ -180,17 +180,18 @@ const checkPhoneAndSendOtp = async (rawPhone) => {
  * Calculates and synchronizes customer earned stamps from completed orders
  * across the tenant's database, taking into account any generated coupons.
  */
-const syncCustomerStamps = async (user, tenant, stampProg) => {
-  if (!user || !tenant || !stampProg) {
+const syncCustomerStamps = async (user, tenant, stampProg = null) => {
+  const activeProg = stampProg || (Array.isArray(tenant?.stampPrograms) ? tenant.stampPrograms[0] : null);
+  if (!user || !tenant || !activeProg) {
     return { stamps: 0, wallet: null };
   }
 
-  const requiredStamps = Number(stampProg.requiredStamps || 6);
-  const eligibleIds = Array.isArray(stampProg.eligibleItemIds)
-    ? stampProg.eligibleItemIds.map(String).filter(Boolean)
+  const requiredStamps = Number(activeProg.requiredStamps || 6);
+  const eligibleIds = Array.isArray(activeProg.eligibleItemIds)
+    ? activeProg.eligibleItemIds.map(String).filter(Boolean)
     : [];
-  const eligibleNames = Array.isArray(stampProg.eligibleItemNames)
-    ? stampProg.eligibleItemNames.map((n) => String(n).toLowerCase().trim()).filter(Boolean)
+  const eligibleNames = Array.isArray(activeProg.eligibleItemNames)
+    ? activeProg.eligibleItemNames.map((n) => String(n).toLowerCase().trim()).filter(Boolean)
     : [];
 
   // Get current wallet if it exists
@@ -300,10 +301,35 @@ const syncCustomerStamps = async (user, tenant, stampProg) => {
         orderBy: { createdAt: "asc" },
       });
 
-      completedOrders.forEach((o) => {
+      const { isOrderEligibleForLoyalty } = require("../../shared/loyalty/loyaltyEligibility");
+
+      for (const o of completedOrders) {
+        // Skip coupon claim orders or free reward orders
+        const oPm = (o.paymentMethod || "").toLowerCase();
+        const oNotes = o.notes || "";
+        if (
+          oPm === "coupon" ||
+          oPm === "free_reward" ||
+          oNotes.includes("Free Stamp Reward") ||
+          oNotes.includes("Stamp Reward Coupon") ||
+          oNotes.includes("[STAMPS_ELIGIBLE:false]")
+        ) {
+          console.log(`[STAMPS SYNC] Order #${o.orderNumber} is a reward coupon claim order. Skipping stamps.`);
+          continue;
+        }
+
+        // Real-time check: was stamps enabled at the exact moment this order was placed?
+        const isEligible = await isOrderEligibleForLoyalty(o, tenant.id, "STAMPS", tenant);
+        if (!isEligible) {
+          console.log(`[STAMPS SYNC] Order #${o.orderNumber} placed at ${o.createdAt} was placed when stamps was disabled. Skipping stamps.`);
+          continue;
+        }
+
         let orderStamps = 0;
         if (Array.isArray(o.items)) {
           o.items.forEach((it) => {
+            // Do not award stamps for free reward items (price 0)
+            if (Number(it.price || 0) === 0) return;
             const mId = String(it.menuItemId || it.itemId || it.id || "");
             const itName = String(it.name || it.menuItem?.name || "").toLowerCase().trim();
             const matchesId = eligibleIds.length === 0 || (mId && eligibleIds.includes(mId));
@@ -321,7 +347,7 @@ const syncCustomerStamps = async (user, tenant, stampProg) => {
             stamps: orderStamps,
           });
         }
-      });
+      }
     } catch (err) {
       console.error(`Failed to calculate stamps from tenant DB for user ${user.id}:`, err.message);
     }
@@ -951,8 +977,9 @@ const claimRewardCoupon = async ({ customerId, tenantId, menuItemId }) => {
  * Redeems an EarnedCoupon at POS / cashier or counter:
  * 1. Marks coupon as used (isUsed = true)
  * 2. Decrements wallet.stamps: Math.max(0, wallet.stamps - requiredStamps)
+ * 3. Creates an order without payment with the menu item associated with the generated coupon, directly COMPLETED
  */
-const redeemRewardCoupon = async ({ code, customerId, tenantId }) => {
+const redeemRewardCoupon = async ({ code, customerId, tenantId, branchId = null }) => {
   if (!code) {
     throw new ApiError(400, "Coupon code is required");
   }
@@ -1014,6 +1041,174 @@ const redeemRewardCoupon = async ({ code, customerId, tenantId }) => {
     });
   }
 
+  // 4. Create an order without payment with the menu item associated with the generated coupon, directly COMPLETED
+  let createdOrder = null;
+  let targetMenuItem = null;
+  if (tenant && tenant.dbUrl) {
+    try {
+      const { getTenantClient } = require("../../config/tenantManager");
+      const tenantDb = getTenantClient(tenant.dbUrl);
+
+      // Locate the associated menu item
+      if (coupon.menuItemId) {
+        try {
+          targetMenuItem = await tenantDb.menuItem.findUnique({
+            where: { id: coupon.menuItemId },
+          });
+        } catch (mErr) {
+          console.error("Failed to find menuItem by id:", mErr.message);
+        }
+      }
+
+      if (!targetMenuItem) {
+        const cleanItemName = (coupon.prizeLabel || "")
+          .replace(/^Free\s+/i, "")
+          .replace(/\s*\(Stamp Reward\)$/i, "")
+          .trim();
+
+        if (cleanItemName) {
+          try {
+            targetMenuItem = await tenantDb.menuItem.findFirst({
+              where: {
+                OR: [
+                  { name: { equals: cleanItemName, mode: "insensitive" } },
+                  { nameAr: { equals: cleanItemName, mode: "insensitive" } },
+                ],
+              },
+            });
+          } catch (err) {}
+        }
+
+        if (!targetMenuItem) {
+          try {
+            targetMenuItem =
+              (await tenantDb.menuItem.findFirst({ where: { isAvailable: true } })) ||
+              (await tenantDb.menuItem.findFirst());
+          } catch (err) {}
+        }
+      }
+
+      // Locate the branch
+      let targetBranch = null;
+      if (branchId && branchId !== "all") {
+        try {
+          targetBranch = await tenantDb.branch.findUnique({ where: { id: branchId } });
+        } catch (err) {}
+      }
+      if (!targetBranch) {
+        try {
+          targetBranch =
+            (await tenantDb.branch.findFirst({ where: { isOpen: true } })) ||
+            (await tenantDb.branch.findFirst());
+        } catch (err) {}
+      }
+
+      if (targetBranch && targetMenuItem) {
+        const crypto = require("crypto");
+        const orderNumber = `SRV-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+
+        createdOrder = await tenantDb.order.create({
+          data: {
+            orderNumber,
+            status: "COMPLETED", // directly completed as requested
+            type: "TAKEAWAY",
+            total: 0.0, // without payment
+            feeRate: 0.0,
+            loyaltyEarnRate: 0.0,
+            customerId: coupon.appUserId || customerId || null,
+            customerPhone: coupon.appUser?.phone || null,
+            branchId: targetBranch.id,
+            source: "management",
+            paymentMethod: "coupon",
+            notes: `Free Stamp Reward: ${targetMenuItem.name} | Coupon: ${cleanCode} [POINTS_ELIGIBLE:false] [STAMPS_ELIGIBLE:false]`,
+            items: {
+              create: [
+                {
+                  menuItemId: targetMenuItem.id,
+                  quantity: 1,
+                  price: 0.0,
+                  notes: `Stamp Reward Coupon: ${cleanCode}`,
+                },
+              ],
+            },
+          },
+          include: {
+            items: { include: { menuItem: true } },
+            branch: true,
+          },
+        });
+
+        // Mirror to main database order table
+        try {
+          await mainPrisma.order.create({
+            data: {
+              id: createdOrder.id,
+              orderNumber: createdOrder.orderNumber,
+              status: "COMPLETED",
+              type: createdOrder.type,
+              total: 0.0,
+              notes: createdOrder.notes,
+              feeRate: 0.0,
+              loyaltyEarnRate: 0.0,
+              paymentMethod: "coupon",
+              tenantId: coupon.tenantId,
+              branchId: targetBranch.id,
+              source: "management",
+              appUserId: coupon.appUserId || customerId || null,
+              createdAt: createdOrder.createdAt,
+              updatedAt: createdOrder.updatedAt,
+            },
+          });
+        } catch (mainErr) {
+          console.error("[REDEEM COUPON] Failed to mirror order to mainPrisma.order:", mainErr.message);
+        }
+
+        // Mirror to main database aggregatedOrder table
+        try {
+          const cName = coupon.appUser?.name || coupon.appUser?.phone || "Customer Walk-in";
+          await mainPrisma.aggregatedOrder.upsert({
+            where: { id: `${coupon.tenantId}_${createdOrder.id}` },
+            create: {
+              id: `${coupon.tenantId}_${createdOrder.id}`,
+              tenantId: coupon.tenantId,
+              orderId: createdOrder.id,
+              orderNumber: createdOrder.orderNumber,
+              status: "COMPLETED",
+              type: createdOrder.type,
+              total: 0.0,
+              notes: createdOrder.notes,
+              customerName: cName,
+              customerPhone: coupon.appUser?.phone || null,
+              branchName: targetBranch.name || "Main Branch",
+              feeRate: 0.0,
+              source: "management",
+              paymentMethod: "coupon",
+              items: [
+                {
+                  name: targetMenuItem.name,
+                  quantity: 1,
+                  price: 0.0,
+                },
+              ],
+              createdAt: createdOrder.createdAt,
+              updatedAt: createdOrder.updatedAt,
+            },
+            update: {
+              status: "COMPLETED",
+              total: 0.0,
+              notes: createdOrder.notes,
+              updatedAt: createdOrder.updatedAt,
+            },
+          });
+        } catch (aggErr) {
+          console.error("[REDEEM COUPON] Failed to upsert aggregatedOrder:", aggErr.message);
+        }
+      }
+    } catch (orderErr) {
+      console.error("[REDEEM COUPON] Failed to create completed reward order:", orderErr.message);
+    }
+  }
+
   return {
     coupon: {
       id: updatedCoupon.id,
@@ -1022,8 +1217,19 @@ const redeemRewardCoupon = async ({ code, customerId, tenantId }) => {
       isUsed: true,
       usedAt: updatedCoupon.usedAt,
     },
+    order: createdOrder
+      ? {
+          id: createdOrder.id,
+          orderNumber: createdOrder.orderNumber,
+          status: createdOrder.status,
+          total: createdOrder.total,
+          itemName: targetMenuItem?.name || updatedCoupon.prizeLabel,
+        }
+      : null,
     remainingStamps,
-    message: `Reward coupon ${cleanCode} redeemed successfully!`,
+    message: createdOrder
+      ? `Reward coupon ${cleanCode} claimed successfully! Free reward order #${createdOrder.orderNumber} created with status COMPLETED.`
+      : `Reward coupon ${cleanCode} redeemed successfully!`,
   };
 };
 
