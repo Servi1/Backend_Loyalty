@@ -131,19 +131,27 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
   // Lookup fee percentage and loyalty earn rate for POS channel
   let feeRate = 0.0;
   let loyaltyEarnRate = 0.0;
+  let tenant = null;
   if (tenantId) {
     try {
       const mainPrisma = require("../config/prisma");
-      const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
+      tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
       if (tenant) {
         if (tenant.feePos !== undefined && tenant.feePos !== null) {
           feeRate = Number(tenant.feePos);
         }
-        if (tenant.subLoyalty && Boolean(tenant.loyaltyEnabled) && tenant.loyaltyAddPoints !== false) {
+        const isPointsActive = Boolean(tenant.subLoyalty && tenant.loyaltyEnabled && tenant.loyaltyAddPoints !== false);
+        if (isPointsActive) {
           loyaltyEarnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
         } else {
           loyaltyEarnRate = 0.0;
         }
+
+        const stampProg = Array.isArray(tenant.stampPrograms) ? tenant.stampPrograms[0] : null;
+        const isStampsActive = Boolean(tenant.subStamps && stampProg && stampProg.enabled !== false);
+        const stampsSnapshotTag = isStampsActive ? "[STAMPS_ELIGIBLE:true]" : "[STAMPS_ELIGIBLE:false]";
+        const pointsSnapshotTag = isPointsActive ? "[POINTS_ELIGIBLE:true]" : "[POINTS_ELIGIBLE:false]";
+        notes = [notes, stampsSnapshotTag, pointsSnapshotTag].filter(Boolean).join(" ");
       }
     } catch (e) {
       console.error("[POS ORDER] Failed to lookup fee or loyalty rate:", e.message);
@@ -206,19 +214,19 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
   if (order.customerId && order.status === "COMPLETED" && orderData.paymentMethod !== "points" && orderData.paymentMethod !== "free_reward") {
     try {
       const mainPrisma = require("../config/prisma");
-      const isPointsSubscribed = Boolean(tenant?.subLoyalty);
-      const isPointsEnabled = isPointsSubscribed && Boolean(tenant?.loyaltyEnabled) && tenant?.loyaltyAddPoints !== false;
-      const isStampsSubscribed = Boolean(tenant?.subStamps);
+      const { isOrderEligibleForLoyalty } = require("../shared/loyalty/loyaltyEligibility");
+      const pointsEligible = await isOrderEligibleForLoyalty(order, tenantId, "POINTS", tenant);
+      const stampsEligible = await isOrderEligibleForLoyalty(order, tenantId, "STAMPS", tenant);
 
-      if (!tenant || (!isPointsEnabled && !isStampsSubscribed)) {
-        console.log(`[POS LOYALTY] Loyalty/Stamps disabled or not subscribed. Skipping points for order #${order.orderNumber}`);
+      if (!pointsEligible && !stampsEligible) {
+        console.log(`[POS LOYALTY] Points/Stamps was NOT enabled at order creation time (${order.createdAt}). Skipping points for order #${order.orderNumber}`);
       } else {
         let earnRate = 0.0;
-        if (isPointsEnabled) {
-          if (order.loyaltyEarnRate !== undefined && order.loyaltyEarnRate !== null && Number(order.loyaltyEarnRate) === 0) {
-            earnRate = 0.0;
+        if (pointsEligible) {
+          if (order.loyaltyEarnRate !== undefined && order.loyaltyEarnRate !== null) {
+            earnRate = Number(order.loyaltyEarnRate);
           } else {
-            earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+            earnRate = Number(tenant?.loyaltyEarnRate !== undefined && tenant?.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
           }
         }
 
@@ -230,7 +238,16 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
           pointsToEarn,
           `Earned on Order #${order.orderNumber}`,
           tenantId,
-          { source: "pos", orderId: order.id, orderNumber: order.orderNumber, items: order.items || orderData.items }
+          {
+            source: "pos",
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            orderCreatedAt: order.createdAt,
+            pointsEligible,
+            stampsEligible,
+            notes: order.notes,
+            items: order.items || orderData.items
+          }
         );
       }
     } catch (err) {
@@ -473,19 +490,20 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
 
           if (!tx) {
             const tenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
-            const isPointsSubscribed = Boolean(tenant?.subLoyalty);
-            const isPointsEnabled = isPointsSubscribed && Boolean(tenant?.loyaltyEnabled) && tenant?.loyaltyAddPoints !== false;
-            const isStampsSubscribed = Boolean(tenant?.subStamps);
+            const { isOrderEligibleForLoyalty } = require("../shared/loyalty/loyaltyEligibility");
 
-            if (!tenant || (!isPointsEnabled && !isStampsSubscribed)) {
-              console.log(`[POS LOYALTY] Loyalty/Stamps disabled or not subscribed. Skipping points for order #${updated.orderNumber}`);
+            const pointsEligible = await isOrderEligibleForLoyalty(updated, tenantId, "POINTS", tenant);
+            const stampsEligible = await isOrderEligibleForLoyalty(updated, tenantId, "STAMPS", tenant);
+
+            if (!pointsEligible && !stampsEligible) {
+              console.log(`[POS LOYALTY] Points/Stamps was NOT enabled at order creation time (${updated.createdAt}). Skipping award for order #${updated.orderNumber}`);
             } else {
               let earnRate = 0.0;
-              if (isPointsEnabled) {
+              if (pointsEligible) {
                 if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null) {
                   earnRate = Number(updated.loyaltyEarnRate);
                 } else {
-                  earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+                  earnRate = Number(tenant?.loyaltyEarnRate !== undefined && tenant?.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
                 }
               }
 
@@ -496,7 +514,16 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
                 pointsToEarn,
                 description,
                 tenantId,
-                { source: "pos", orderId: updated.id, orderNumber: updated.orderNumber, items: updated.items }
+                {
+                  source: "pos",
+                  orderId: updated.id,
+                  orderNumber: updated.orderNumber,
+                  orderCreatedAt: updated.createdAt,
+                  pointsEligible,
+                  stampsEligible,
+                  notes: updated.notes,
+                  items: updated.items
+                }
               );
             }
           }

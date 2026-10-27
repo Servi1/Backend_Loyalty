@@ -35,5 +35,6 @@ router.put("/tiers", authorize("SUPER_ADMIN", "ADMIN", "BRAND_MANAGER"), ctrl.up
 router.get("/members", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.getAllCustomers);
 router.get("/transactions", authorize("ADMIN", "BRAND_MANAGER"), ctrl.getAllTransactions);
 router.get("/stamps", authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.getBrandStampActivity);
+router.get("/audit-logs", authorize("SUPER_ADMIN", "ADMIN", "BRAND_MANAGER"), ctrl.getLoyaltyAuditLogs);
 
 module.exports = router;

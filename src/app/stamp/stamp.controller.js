@@ -47,9 +47,9 @@ const claimReward = catchAsync(async (req, res) => {
 });
 
 const redeemCoupon = catchAsync(async (req, res) => {
-  const { code, customerId } = req.body;
+  const { code, customerId, branchId } = req.body;
   const tenantId = req.body.tenantId || req.params?.tenantId;
-  const data = await stampService.redeemRewardCoupon({ code, customerId, tenantId });
+  const data = await stampService.redeemRewardCoupon({ code, customerId, tenantId, branchId });
   res.status(200).json({ success: true, data });
 });
 

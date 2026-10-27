@@ -62,7 +62,7 @@ const getTiers = catchAsync(async (req, res) => {
 const updateTiers = catchAsync(async (req, res) => {
   const isSuperAdmin = req.user?.role === "SUPER_ADMIN" || req.user?.role === "super_admin";
   const applyToAll = Boolean(req.body.applyToAll || (isSuperAdmin && req.body.applyToAll !== false));
-  const tiers = await loyaltyService.updateTiers(req.tenantId, req.body.tiers, { applyToAll });
+  const tiers = await loyaltyService.updateTiers(req.tenantId, req.body.tiers, { applyToAll }, req.user);
   res.json({ success: true, data: tiers });
 });
 
@@ -70,6 +70,12 @@ const getBrandStampActivity = catchAsync(async (req, res) => {
   const tenantsService = require("../../admin/tenants/tenants.service");
   const { startDate, endDate } = req.query;
   const result = await tenantsService.getSuperAdminStampActivity(req.tenantId, { startDate, endDate });
+  res.json({ success: true, data: result });
+});
+
+const getLoyaltyAuditLogs = catchAsync(async (req, res) => {
+  const tenantsService = require("../../admin/tenants/tenants.service");
+  const result = await tenantsService.getLoyaltyAuditLogs(req.tenantId, req.query);
   res.json({ success: true, data: result });
 });
 
@@ -92,6 +98,7 @@ module.exports = {
   getAllCustomers, 
   getAllTransactions,
   getBrandStampActivity,
+  getLoyaltyAuditLogs,
   createCustomer,
   getTiers,
   updateTiers,

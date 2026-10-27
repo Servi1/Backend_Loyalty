@@ -621,11 +621,18 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       const tenantObj = tenant || (await mainPrisma.tenant.findUnique({ where: { id: tenantId } }));
       if (tenantObj) {
         feeRate = resolveTenantFeeRate(tenantObj, orderSource);
-        if (tenantObj.subLoyalty && tenantObj.loyaltyEnabled && tenantObj.loyaltyAddPoints !== false) {
+        const isPointsActive = Boolean(tenantObj.subLoyalty && tenantObj.loyaltyEnabled && tenantObj.loyaltyAddPoints !== false);
+        if (isPointsActive) {
           orderLoyaltyEarnRate = Number(tenantObj.loyaltyEarnRate !== undefined && tenantObj.loyaltyEarnRate !== null ? tenantObj.loyaltyEarnRate : 1.0);
         } else {
           orderLoyaltyEarnRate = 0.0;
         }
+
+        const stampProg = Array.isArray(tenantObj.stampPrograms) ? tenantObj.stampPrograms[0] : null;
+        const isStampsActive = Boolean(tenantObj.subStamps && stampProg && stampProg.enabled !== false);
+        const stampsSnapshotTag = isStampsActive ? "[STAMPS_ELIGIBLE:true]" : "[STAMPS_ELIGIBLE:false]";
+        const pointsSnapshotTag = isPointsActive ? "[POINTS_ELIGIBLE:true]" : "[POINTS_ELIGIBLE:false]";
+        finalNotes = [finalNotes, stampsSnapshotTag, pointsSnapshotTag].filter(Boolean).join(" ");
       }
     } catch (e) {
       console.error("Failed to query tenant fee settings:", e.message);
@@ -753,23 +760,45 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   const initialStatus = order.status;
 
   // Award points & stamps if order is COMPLETED upon creation (except if paid by points or free reward)
-  const isPointsActive = Boolean(tenant?.subLoyalty && tenant?.loyaltyEnabled && tenant?.loyaltyAddPoints !== false);
-  const effectiveEarnRate = isPointsActive ? (earnRate !== undefined && earnRate !== null ? parseFloat(earnRate) : Number(tenant?.loyaltyEarnRate || 1.0)) : 0.0;
   if (order.status === "COMPLETED" && (userId || finalCustomerId) && paymentMethod !== "points" && paymentMethod !== "free_reward") {
-    const pointsEarned = effectiveEarnRate > 0 ? Math.floor(order.total * effectiveEarnRate) : 0;
-    if (pointsEarned > 0) {
-      try {
+    try {
+      const { isOrderEligibleForLoyalty } = require("../../shared/loyalty/loyaltyEligibility");
+      const pointsEligible = await isOrderEligibleForLoyalty(order, tenantId, "POINTS", tenant);
+      const stampsEligible = await isOrderEligibleForLoyalty(order, tenantId, "STAMPS", tenant);
+
+      if (pointsEligible || stampsEligible) {
+        let effectiveEarnRate = 0.0;
+        if (pointsEligible) {
+          if (order.loyaltyEarnRate !== undefined && order.loyaltyEarnRate !== null) {
+            effectiveEarnRate = Number(order.loyaltyEarnRate);
+          } else {
+            effectiveEarnRate = Number(tenant?.loyaltyEarnRate !== undefined && tenant?.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+          }
+        }
+
+        const pointsEarned = effectiveEarnRate > 0 ? Math.floor(order.total * effectiveEarnRate) : 0;
         await loyaltyService.earnPoints(
           db,
           finalCustomerId || userId,
           pointsEarned,
           `Earned on Order #${orderNumber}`,
           tenantId,
-          { source: "app", orderId: order.id, orderNumber: orderNumber, items: order.items || orderItems }
+          {
+            source: "app",
+            orderId: order.id,
+            orderNumber: orderNumber,
+            orderCreatedAt: order.createdAt,
+            pointsEligible,
+            stampsEligible,
+            notes: order.notes,
+            items: order.items || orderItems
+          }
         );
-      } catch (err) {
-        console.error("[APP ORDER] Failed to award loyalty points/stamps:", err.message);
+      } else {
+        console.log(`[APP ORDER] Points/Stamps was NOT enabled at order creation time (${order.createdAt}). Skipping award for order #${orderNumber}`);
       }
+    } catch (err) {
+      console.error("[APP ORDER] Failed to award loyalty points/stamps:", err.message);
     }
   }
 
@@ -868,6 +897,13 @@ const enrichOrdersWithPointsEarned = async (ordersList, tenantMap = {}) => {
 
     let pointsEarned = 0;
     const pm = (o.paymentMethod || "").toLowerCase();
+    const isCouponReward =
+      pm === "coupon" ||
+      pm === "free_reward" ||
+      (o.notes &&
+        (o.notes.includes("Free Stamp Reward") ||
+          o.notes.includes("Stamp Reward Coupon") ||
+          o.notes.includes("[POINTS_ELIGIBLE:false]")));
     const isPointsPayment =
       pm === "points" ||
       (o.pointsRedeemed && o.pointsRedeemed > 0) ||
@@ -877,7 +913,7 @@ const enrichOrdersWithPointsEarned = async (ordersList, tenantMap = {}) => {
     const isHaltedOrCancelled =
       o.status === "HALTED" || o.status === "CANCELLED";
 
-    if (isPointsPayment || isHaltedOrCancelled) {
+    if (isCouponReward || isPointsPayment || isHaltedOrCancelled) {
       pointsEarned = 0;
     } else if (earnTx) {
       pointsEarned = Math.abs(earnTx.points);
