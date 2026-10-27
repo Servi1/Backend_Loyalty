@@ -2127,7 +2127,7 @@ const getSuperAdminCustomerDetails = async (tenantId, customerId) => {
         // 2. Completed orders for this brand that earned stamps
         const brandOrders = orderHistory.filter(o => o.tenantId === tObj.id && (o.status || "").toUpperCase() === "COMPLETED");
         const orderEvents = [];
-        if (isStampActive) {
+        if (stampProg) {
           for (const o of brandOrders) {
             // Skip coupon claim orders or free reward orders from generating stamp activity
             const pm = (o.paymentMethod || "").toLowerCase();
@@ -3307,9 +3307,9 @@ const getSuperAdminStampActivity = async (tenantId = null, dateParams = {}) => {
       });
     });
 
-    // Orders for this tenant if stamps are active
+    // Orders for this tenant that earned stamps
     const orderEvents = [];
-    if (isStampActive && t.dbUrl) {
+    if (t.dbUrl && stampProg) {
       try {
         const tenantDb = getTenantClient(t.dbUrl);
         const orderWhere = { status: "COMPLETED" };
