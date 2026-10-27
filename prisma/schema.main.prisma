@@ -178,6 +178,7 @@ model Tenant {
   slotAddons          TenantSlotAddon[]
   wallets             Wallet[]
   earnedCoupons       EarnedCoupon[]
+  loyaltyAuditLogs    LoyaltyAuditLog[]
 
   lastOrderSyncAt DateTime?
 
@@ -516,5 +517,28 @@ model SupportMessage {
   ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@index([ticketId])
+  @@index([createdAt])
+}
+
+// ─── Loyalty & Stamps Configuration Audit Log ────────
+model LoyaltyAuditLog {
+  id          String   @id @default(uuid())
+  tenantId    String?
+  tenantName  String?
+  userId      String?
+  userName    String   @default("System")
+  userEmail   String?
+  userRole    String?
+  programType String   // "POINTS" | "STAMPS" | "TIERS"
+  action      String   // "UPDATE_POINTS" | "UPDATE_STAMPS" | "UPDATE_TIERS" | "UPDATE_PROGRAM"
+  summary     String
+  summaryAr   String?
+  details     Json?    // Array of { field, label, labelAr, oldValue, newValue }
+  createdAt   DateTime @default(now())
+
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([programType])
   @@index([createdAt])
 }

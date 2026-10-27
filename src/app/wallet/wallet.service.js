@@ -158,7 +158,14 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
   const tenantObj = targetTenantId ? await mainPrisma.tenant.findUnique({ where: { id: targetTenantId } }) : null;
   const stampProg = Array.isArray(tenantObj?.stampPrograms) && tenantObj.stampPrograms.length > 0 ? tenantObj.stampPrograms[0] : null;
 
-  const isFreeReward = opts.paymentMethod === "free_reward" || Boolean(opts.isFreeRewardOrder);
+  const isFreeReward =
+    opts.paymentMethod === "free_reward" ||
+    opts.paymentMethod === "coupon" ||
+    Boolean(opts.isFreeRewardOrder) ||
+    (opts.notes &&
+      (opts.notes.includes("Free Stamp Reward") ||
+        opts.notes.includes("Stamp Reward Coupon") ||
+        opts.notes.includes("[STAMPS_ELIGIBLE:false]")));
 
   if (!isFreeReward && earnedStampsCount === 0 && stampProg && stampProg.enabled !== false && Array.isArray(opts.items || opts.orderItems)) {
     const eligibleIds = Array.isArray(stampProg.eligibleItemIds) ? stampProg.eligibleItemIds.map(String).filter(Boolean) : [];
