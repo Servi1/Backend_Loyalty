@@ -653,12 +653,11 @@ const getWallet = async (db, userId, tenantId = null) => {
     }
   }
 
-  // Calculate completed orders count & spend for tier evaluation
+  // Calculate global completed orders count & spend across all brands for tier evaluation
   const completedOrdersCount = await mainPrisma.order.count({
     where: {
       appUserId: userId,
       status: "COMPLETED",
-      ...(tenantId && targetWallet?.tenantId ? { tenantId: targetWallet.tenantId } : {})
     }
   });
 
@@ -666,7 +665,6 @@ const getWallet = async (db, userId, tenantId = null) => {
     where: {
       appUserId: userId,
       status: "COMPLETED",
-      ...(tenantId && targetWallet?.tenantId ? { tenantId: targetWallet.tenantId } : {})
     },
     _sum: { total: true }
   });
@@ -676,22 +674,12 @@ const getWallet = async (db, userId, tenantId = null) => {
 
   const lifetimeSpend = Math.max(
     Number(ordersSum._sum.total || 0),
-    Number(activeLifetime || 0),
-    Number(activePoints || 0)
+    Number(globalLifetime || 0),
+    Number(globalPoints || 0)
   );
 
-  // Resolve configured tiers for tenant or default
-  let configuredTiers = DEFAULT_LOYALTY_TIERS;
-  if (targetWallet && targetWallet.tenant && Array.isArray(targetWallet.tenant.loyaltyTiers) && targetWallet.tenant.loyaltyTiers.length > 0) {
-    configuredTiers = targetWallet.tenant.loyaltyTiers;
-  } else if (tenantId) {
-    const tenantObj = await mainPrisma.tenant.findFirst({
-      where: { OR: [{ id: tenantId }, { slug: tenantId }] }
-    });
-    if (tenantObj && Array.isArray(tenantObj.loyaltyTiers) && tenantObj.loyaltyTiers.length > 0) {
-      configuredTiers = tenantObj.loyaltyTiers;
-    }
-  }
+  // Global tiers are platform-standard DEFAULT_LOYALTY_TIERS
+  const configuredTiers = DEFAULT_LOYALTY_TIERS;
 
   const activeTiers = configuredTiers
     .filter(t => t.status === "active" || t.status === undefined)
@@ -703,7 +691,7 @@ const getWallet = async (db, userId, tenantId = null) => {
     lifetimeSpend,
   };
 
-  const currentTier = getCustomerTierDetails(customerForTier, { points: activePoints, lifetimeEarn: activeLifetime }, activeTiers);
+  const currentTier = getCustomerTierDetails(customerForTier, { points: globalPoints, lifetimeEarn: globalLifetime }, activeTiers);
 
   // Determine Next Tier
   const currentLevel = Number(currentTier.level || 1);
