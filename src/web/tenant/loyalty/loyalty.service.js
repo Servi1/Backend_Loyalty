@@ -242,14 +242,13 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
     console.log(`[LOYALTY] Points program was NOT active when order was placed. Zeroing out points.`);
     points = 0;
   }
-  if (!canAwardStamps && earnedStampsCount > 0) {
-    console.log(`[LOYALTY] Stamp program was NOT active when order was placed. Zeroing out stamps.`);
-    earnedStampsCount = 0;
-  }
 
   // ─── STAMP CARD CALCULATION (Independent of Points) ─────────────
   let earnedStampsCount = Number(opts.earnedStamps || 0);
   if (!canAwardStamps) {
+    if (earnedStampsCount > 0) {
+      console.log(`[LOYALTY] Stamp program was NOT active when order was placed. Zeroing out stamps.`);
+    }
     earnedStampsCount = 0;
   }
   const isStampSubscribed = Boolean(tenantObj?.subStamps);
