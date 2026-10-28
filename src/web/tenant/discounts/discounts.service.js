@@ -42,6 +42,14 @@ const getAll = async (db) => {
 };
 
 const create = async (db, data) => {
+  const numValue = Number(data.value);
+  if (isNaN(numValue) || numValue <= 0) {
+    throw new ApiError(400, "Discount value must be greater than 0");
+  }
+  if (data.type === "percentage" && numValue > 100) {
+    throw new ApiError(400, "Percentage discount cannot exceed 100%");
+  }
+
   const targetTier = data.targetTier || "all";
   const maxCustomerCount = data.maxCustomerCount !== undefined && data.maxCustomerCount !== null && data.maxCustomerCount !== "" ? parseInt(data.maxCustomerCount) : null;
   const customerCount = data.customerCount !== undefined ? parseInt(data.customerCount) : 0;
@@ -53,7 +61,7 @@ const create = async (db, data) => {
       nameEn: data.nameEn,
       nameAr: data.nameAr || null,
       type: data.type,
-      value: Number(data.value) || 0,
+      value: numValue,
       maxAmount: data.maxAmount !== undefined && data.maxAmount !== null && data.maxAmount !== "" ? Number(data.maxAmount) : null,
       applyInstantly: data.applyInstantly !== undefined ? Boolean(data.applyInstantly) : true,
       appliedOn: data.appliedOn || "orders",
@@ -114,13 +122,26 @@ const update = async (db, id, data) => {
     ? (Array.isArray(data.applicableFeatures) ? data.applicableFeatures : DEFAULT_FEATURES)
     : (Array.isArray(discount.applicableFeatures) ? discount.applicableFeatures : DEFAULT_FEATURES);
 
+  const targetType = data.type !== undefined ? data.type : discount.type;
+  let cleanValue = discount.value;
+  if (data.value !== undefined) {
+    const numValue = Number(data.value);
+    if (isNaN(numValue) || numValue <= 0) {
+      throw new ApiError(400, "Discount value must be greater than 0");
+    }
+    if (targetType === "percentage" && numValue > 100) {
+      throw new ApiError(400, "Percentage discount cannot exceed 100%");
+    }
+    cleanValue = numValue;
+  }
+
   const updated = await db.discount.update({
     where: { id },
     data: {
       nameEn: data.nameEn !== undefined ? data.nameEn : discount.nameEn,
       nameAr: data.nameAr !== undefined ? data.nameAr : discount.nameAr,
-      type: data.type !== undefined ? data.type : discount.type,
-      value: data.value !== undefined ? Number(data.value) : discount.value,
+      type: targetType,
+      value: cleanValue,
       maxAmount: data.maxAmount !== undefined ? (data.maxAmount === "" || data.maxAmount === null ? null : Number(data.maxAmount)) : discount.maxAmount,
       applyInstantly: data.applyInstantly !== undefined ? Boolean(data.applyInstantly) : discount.applyInstantly,
       appliedOn: data.appliedOn !== undefined ? data.appliedOn : discount.appliedOn,

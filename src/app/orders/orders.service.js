@@ -516,16 +516,28 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     } catch (e) {
       console.warn("[APP ORDER] Failed to verify discount:", e.message);
     }
-  } else if (clientDiscountAmount > 0) {
+  } else if (clientDiscountAmount > 0 && body.posUnit) {
+    // Only POS terminal staff can pass manual discountAmount without a registered discount campaign
     appliedDiscountAmount = Math.min(subtotal, clientDiscountAmount);
-    appliedDiscountNote = `Discount: -${appliedDiscountAmount.toFixed(2)} SAR`;
+    appliedDiscountNote = `Manual POS Discount: -${appliedDiscountAmount.toFixed(2)} SAR`;
   }
 
   const vatRate = tenant?.vatPercentage !== undefined ? Number(tenant.vatPercentage) : 15.0;
   const discountedSubtotal = Math.max(0, Number((subtotal - appliedDiscountAmount).toFixed(2)));
   const vatAmount = Number((discountedSubtotal * (vatRate / 100)).toFixed(2));
   const calculatedTotalWithVat = Number((discountedSubtotal + vatAmount).toFixed(2));
-  const finalOrderTotal = body.total ? Number(Number(body.total).toFixed(2)) : calculatedTotalWithVat;
+
+  // Protect against price tampering: enforce server-calculated total with +/- 0.05 rounding tolerance
+  let finalOrderTotal = calculatedTotalWithVat;
+  if (body.total !== undefined && body.total !== null && !isNaN(Number(body.total))) {
+    const passedTotal = Number(Number(body.total).toFixed(2));
+    if (Math.abs(passedTotal - calculatedTotalWithVat) <= 0.05) {
+      finalOrderTotal = passedTotal;
+    } else {
+      console.warn(`[APP ORDER] Client total (${passedTotal}) differs from verified total (${calculatedTotalWithVat}). Enforcing server-calculated total.`);
+      finalOrderTotal = calculatedTotalWithVat;
+    }
+  }
 
   const orderNumber = generateOrderNumber();
   let finalNotes = notes || "";

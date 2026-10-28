@@ -29,7 +29,7 @@ const getAllStaff = async (db, branchId, startDate, endDate, shouldIncludeBrandM
     if (startDate) where.createdAt.gte = new Date(startDate);
     if (endDate) where.createdAt.lte = new Date(endDate);
   }
-  return db.user.findMany({
+  const users = await db.user.findMany({
     where,
     include: {
       branch: true,
@@ -40,6 +40,11 @@ const getAllStaff = async (db, branchId, startDate, endDate, shouldIncludeBrandM
     orderBy: {
       createdAt: "desc"
     }
+  });
+
+  return users.map(u => {
+    const { password, ...safeUser } = u;
+    return safeUser;
   });
 };
 
@@ -79,7 +84,7 @@ const createStaff = async (db, data) => {
     endTime: s.endTime
   })) : [];
 
-  return db.user.create({
+  const created = await db.user.create({
     data: {
       email: data.email,
       name: data.name,
@@ -107,6 +112,9 @@ const createStaff = async (db, data) => {
       specialties: true
     }
   });
+
+  const { password: _p, ...safeCreated } = created;
+  return safeCreated;
 };
 
 const removeStaff = async (db, id, currentUser) => {
@@ -235,7 +243,7 @@ const updateStaff = async (db, id, data, currentUser) => {
     };
   }
 
-  return db.user.update({
+  const updated = await db.user.update({
     where: { id },
     data: updateData,
     include: {
@@ -245,6 +253,9 @@ const updateStaff = async (db, id, data, currentUser) => {
       specialties: true
     }
   });
+
+  const { password: _p, ...safeUpdated } = updated;
+  return safeUpdated;
 };
 
 module.exports = {

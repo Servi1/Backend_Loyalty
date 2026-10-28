@@ -45,12 +45,32 @@ const uploadMultiple = catchAsync(async (req, res) => {
   res.status(201).json({ success: true, data: images });
 });
 
+const ALLOWED_SUBDIRS = ["menus", "logos", "avatars", "receipts", "branding", "receipt-logos", "banners"];
+
 /**
  * Delete an uploaded image by filename.
  */
 const deleteImage = catchAsync(async (req, res) => {
   const { subDir, filename } = req.params;
-  const filePath = path.join(__dirname, "../../../uploads", subDir, filename);
+
+  if (!ALLOWED_SUBDIRS.includes(subDir)) {
+    throw new ApiError(400, "Invalid upload directory");
+  }
+
+  // Prevent path traversal attacks (e.g. ../../server.js)
+  const safeFilename = path.basename(filename);
+  if (safeFilename !== filename || filename.includes("..")) {
+    throw new ApiError(400, "Invalid filename");
+  }
+
+  const uploadsRoot = path.resolve(__dirname, "../../../uploads");
+  const targetDir = path.resolve(uploadsRoot, subDir);
+  const filePath = path.resolve(targetDir, safeFilename);
+
+  // Ensure resolved path is strictly within the target subdirectory
+  if (!filePath.startsWith(targetDir)) {
+    throw new ApiError(403, "Access denied");
+  }
 
   if (!fs.existsSync(filePath)) {
     throw new ApiError(404, "Image not found");

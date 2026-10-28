@@ -85,6 +85,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 const { extractTenant } = require("./src/middlewares/tenantMiddleware");
+const { authenticate, authorize } = require("./src/middlewares/authMiddleware");
 const { authenticatePos } = require("./src/middlewares/posMiddleware");
 const { authenticateKds } = require("./src/middlewares/kdsMiddleware");
 const supportRoutes = require("./src/web/admin/support/support.routes");
@@ -123,10 +124,13 @@ tenantRouter.get("/info", async (req, res, next) => {
     });
     const globalMarketEnabled = marketSetting ? marketSetting.value !== "false" : true;
 
+    // Never leak database connection string or credentials to clients
+    const { dbUrl, ...safeTenant } = req.tenant || {};
+
     res.json({
       success: true,
       data: {
-        ...req.tenant,
+        ...safeTenant,
         marketEnabled: globalMarketEnabled,
         activeTablesCount: tableCount,
         activePosCount: posCount,
@@ -140,7 +144,7 @@ tenantRouter.get("/info", async (req, res, next) => {
     next(err);
   }
 });
-tenantRouter.post("/market/buy", async (req, res, next) => {
+tenantRouter.post("/market/buy", authenticate, authorize("ADMIN", "BRAND_MANAGER", "SUPER_ADMIN"), async (req, res, next) => {
   try {
     const marketSetting = await mainPrisma.systemSetting.findUnique({
       where: { key: "marketEnabled" }
@@ -155,12 +159,16 @@ tenantRouter.post("/market/buy", async (req, res, next) => {
     const currentTenant = await mainPrisma.tenant.findUnique({ where: { id: tenantId } });
     if (!currentTenant) return next(new ApiError(404, "Tenant not found"));
 
-    const posInc = Number(addPosCount) || 0;
-    const tableInc = Number(addTableCount) || 0;
-    const branchInc = Number(addBranchCount) || 0;
-    const kdsInc = Number(addKdsCount) || 0;
-    const cdsInc = Number(addCdsCount) || 0;
-    const qrCashierInc = Number(addQrCashierCount) || 0;
+    const posInc = Math.max(0, Number(addPosCount) || 0);
+    const tableInc = Math.max(0, Number(addTableCount) || 0);
+    const branchInc = Math.max(0, Number(addBranchCount) || 0);
+    const kdsInc = Math.max(0, Number(addKdsCount) || 0);
+    const cdsInc = Math.max(0, Number(addCdsCount) || 0);
+    const qrCashierInc = Math.max(0, Number(addQrCashierCount) || 0);
+
+    if (posInc === 0 && tableInc === 0 && branchInc === 0 && kdsInc === 0 && cdsInc === 0 && qrCashierInc === 0) {
+      return next(new ApiError(400, "At least one valid slot quantity increment must be specified"));
+    }
 
     const updated = await mainPrisma.tenant.update({
       where: { id: tenantId },

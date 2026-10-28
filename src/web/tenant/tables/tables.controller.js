@@ -13,17 +13,18 @@ const getOne = catchAsync(async (req, res) => {
 });
 
 const create = catchAsync(async (req, res) => {
-  const table = await tablesService.create(req.tenantDb, req.body, req.tenant.cycleQrTable);
-  
-  // Sync qrTableQuantity in main database if registered count exceeds quota
-  const count = await req.tenantDb.table.count({});
-  if (count > (req.tenant.qrTableQuantity || 0)) {
-    const mainPrisma = require("../../../config/prisma");
-    await mainPrisma.tenant.update({
-      where: { id: req.tenant.id },
-      data: { qrTableQuantity: count }
-    }).catch(() => null);
+  if (req.tenant?.subQrTable === false) {
+    throw new ApiError(403, "Tables feature is deactivated for your subscription.");
   }
+  const limit = req.tenant.qrTableQuantity !== undefined && req.tenant.qrTableQuantity !== null ? Number(req.tenant.qrTableQuantity) : 0;
+  if (limit > 0) {
+    const currentCount = await req.tenantDb.table.count({});
+    if (currentCount >= limit) {
+      throw new ApiError(400, `You have reached the maximum limit of ${limit} table(s) for your subscription. Please purchase additional table slots in Brand Market.`);
+    }
+  }
+
+  const table = await tablesService.create(req.tenantDb, req.body, req.tenant.cycleQrTable);
 
   const io = req.app.get("io");
   if (io) {

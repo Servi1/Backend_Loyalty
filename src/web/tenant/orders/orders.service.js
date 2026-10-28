@@ -315,7 +315,10 @@ const normalizePhone = (rawPhone) => {
   if (menuItemIds.length === 0) {
     throw new ApiError(400, "Order must contain valid menu items");
   }
-  const menuItems = await db.menuItem.findMany({ where: { id: { in: menuItemIds } } });
+  const menuItems = await db.menuItem.findMany({ where: { id: { in: menuItemIds }, isAvailable: true } });
+  if (menuItems.length !== menuItemIds.length) {
+    throw new ApiError(400, "One or more menu items are currently unavailable or not found");
+  }
 
   let subtotal = 0;
   const orderItems = items.map((item) => {
@@ -351,8 +354,16 @@ const normalizePhone = (rawPhone) => {
     };
   });
 
-  // Use the passed total if provided; otherwise fall back to subtotal
-  const finalTotal = typeof total === "number" ? total : subtotal;
+  // Protect against price tampering: enforce server-calculated subtotal with +/- 0.05 rounding tolerance
+  let finalTotal = subtotal;
+  if (typeof total === "number" && !isNaN(total)) {
+    if (posUnit || source === "pos" || Math.abs(total - subtotal) <= 0.05) {
+      finalTotal = total;
+    } else {
+      console.warn(`[WEB ORDER] Client total (${total}) differs from calculated subtotal (${subtotal}). Enforcing verified subtotal.`);
+      finalTotal = subtotal;
+    }
+  }
 
   const orderSource = source || (tableId ? "qr_table" : (qrCashierId ? "qr_cashier" : "pos"));
 
@@ -427,6 +438,17 @@ const normalizePhone = (rawPhone) => {
     },
     include: { items: { include: { menuItem: true } }, branch: true, customOrderType: true },
   });
+
+  if (order.tableId) {
+    try {
+      await db.table.update({
+        where: { id: order.tableId },
+        data: { status: "busy" }
+      });
+    } catch (tblErr) {
+      console.error("[WEB ORDER] Failed to update table status to busy:", tblErr.message);
+    }
+  }
 
   if (finalCustomerId) {
     const user = await mainPrisma.appUser.findUnique({ where: { id: finalCustomerId } });
@@ -619,6 +641,18 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
 
   if (status !== undefined) {
     await handleOrderStatusLoyalty(db, updated, status, tenantId);
+
+    // Release table back to available when order completes, cancels, or refunds
+    if (updated.tableId && ["COMPLETED", "CANCELLED", "REFUNDED"].includes(String(status).toUpperCase())) {
+      try {
+        await db.table.update({
+          where: { id: updated.tableId },
+          data: { status: "available" }
+        });
+      } catch (tblErr) {
+        console.error("[TENANT ORDER] Failed to release table status:", tblErr.message);
+      }
+    }
   }
 
   return updated;
@@ -784,7 +818,7 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
   return updated;
 };
 
-const getAll = async (db, { status, branchId, startDate, endDate } = {}) => {
+const getAll = async (db, { status, branchId, startDate, endDate, page, limit } = {}) => {
   const where = {};
   if (status) where.status = status;
   if (branchId) {
@@ -805,11 +839,21 @@ const getAll = async (db, { status, branchId, startDate, endDate } = {}) => {
       where.createdAt.lte = end;
     }
   }
-  const orders = await db.order.findMany({
+
+  const queryOptions = {
     where,
     include: { items: { include: { menuItem: true } }, table: true, branch: true, customOrderType: true },
     orderBy: { createdAt: "desc" },
-  });
+  };
+
+  if (limit) {
+    const take = Math.min(Math.max(1, Number(limit) || 25), 200);
+    const skip = Math.max(0, ((Number(page) || 1) - 1) * take);
+    queryOptions.take = take;
+    queryOptions.skip = skip;
+  }
+
+  const orders = await db.order.findMany(queryOptions);
 
   const customerIds = [...new Set(orders.map(o => o.customerId).filter(Boolean))];
   const users = await mainPrisma.appUser.findMany({

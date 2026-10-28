@@ -23,10 +23,13 @@ const create = catchAsync(async (req, res) => {
     { userId, customerId, ...restBody },
     req.tenantId
   );
-  // Emit to Socket.io so cashier POS receives instantly
+  // Emit to Socket.io so cashier POS and Brand Admin receive instantly
   const io = req.app.get("io");
   if (io) {
     io.to(`branch:${order.branchId}`).emit("order:new", order);
+    if (req.tenantId) {
+      io.to(`tenant:${req.tenantId}`).emit("order:new", order);
+    }
   }
   res.status(201).json({ success: true, data: order });
 });
@@ -68,6 +71,9 @@ const updateStatus = catchAsync(async (req, res) => {
   const io = req.app.get("io");
   if (io) {
     io.to(`branch:${order.branchId}`).emit("order:updated", order);
+    if (req.tenantId) {
+      io.to(`tenant:${req.tenantId}`).emit("order:updated", order);
+    }
     io.to(`user:${order.userId}`).emit("order:status", order);
   }
   res.json({ success: true, data: order });
@@ -84,13 +90,16 @@ const updateOrder = catchAsync(async (req, res) => {
   const io = req.app.get("io");
   if (io) {
     io.to(`branch:${order.branchId}`).emit("order:updated", order);
+    if (req.tenantId) {
+      io.to(`tenant:${req.tenantId}`).emit("order:updated", order);
+    }
   }
   res.json({ success: true, data: order });
 });
 
 const getAll = catchAsync(async (req, res) => {
-  const { status, branchId, startDate, endDate } = req.query;
-  const orders = await ordersService.getAll(req.tenantDb, { status, branchId, startDate, endDate });
+  const { status, branchId, startDate, endDate, page, limit } = req.query;
+  const orders = await ordersService.getAll(req.tenantDb, { status, branchId, startDate, endDate, page, limit });
   res.json({ success: true, data: orders });
 });
 
