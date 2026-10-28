@@ -8,17 +8,18 @@ const getAll = catchAsync(async (req, res) => {
 });
 
 const create = catchAsync(async (req, res) => {
-  const device = await kdsDevicesService.create(req.tenantDb, req.body, req.tenant.cycleKds || "monthly");
-  
-  // Sync kdsQuantity in main database if registered count exceeds quota
-  const count = await req.tenantDb.kdsDevice.count({});
-  if (count > (req.tenant.kdsQuantity || 0)) {
-    const mainPrisma = require("../../../config/prisma");
-    await mainPrisma.tenant.update({
-      where: { id: req.tenant.id },
-      data: { kdsQuantity: count }
-    }).catch(() => null);
+  if (req.tenant?.subKds === false) {
+    throw new ApiError(403, "KDS feature is deactivated for your subscription.");
   }
+  const limit = req.tenant.kdsQuantity !== undefined && req.tenant.kdsQuantity !== null ? Number(req.tenant.kdsQuantity) : 0;
+  if (limit > 0) {
+    const currentCount = await req.tenantDb.kdsDevice.count({});
+    if (currentCount >= limit) {
+      throw new ApiError(400, `You have reached the maximum limit of ${limit} KDS screen(s) for your subscription. Please purchase additional KDS licenses in Brand Market.`);
+    }
+  }
+
+  const device = await kdsDevicesService.create(req.tenantDb, req.body, req.tenant.cycleKds || "monthly");
 
   res.status(201).json({ success: true, data: device });
 });

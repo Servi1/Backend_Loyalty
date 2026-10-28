@@ -8,17 +8,18 @@ const getAll = catchAsync(async (req, res) => {
 });
 
 const create = catchAsync(async (req, res) => {
-  const device = await posDevicesService.create(req.tenantDb, req.body, req.tenant.cyclePos);
-  
-  // Sync posQuantity in main database if registered count exceeds quota
-  const count = await req.tenantDb.posDevice.count({});
-  if (count > (req.tenant.posQuantity || 0)) {
-    const mainPrisma = require("../../../config/prisma");
-    await mainPrisma.tenant.update({
-      where: { id: req.tenant.id },
-      data: { posQuantity: count }
-    }).catch(() => null);
+  if (req.tenant?.subPos === false) {
+    throw new ApiError(403, "POS terminal feature is deactivated for your subscription.");
   }
+  const limit = req.tenant.posQuantity !== undefined && req.tenant.posQuantity !== null ? Number(req.tenant.posQuantity) : 0;
+  if (limit > 0) {
+    const currentCount = await req.tenantDb.posDevice.count({});
+    if (currentCount >= limit) {
+      throw new ApiError(400, `You have reached the maximum limit of ${limit} POS terminal(s) for your subscription. Please purchase additional POS licenses in Brand Market.`);
+    }
+  }
+
+  const device = await posDevicesService.create(req.tenantDb, req.body, req.tenant.cyclePos);
 
   res.status(201).json({ success: true, data: device });
 });

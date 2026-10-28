@@ -32,6 +32,7 @@ async function checkAndCancelUnacceptedOrders() {
             id: true,
             orderNumber: true,
             customerId: true,
+            tableId: true,
             pointsRedeemed: true,
             paymentMethod: true,
             type: true,
@@ -54,6 +55,18 @@ async function checkAndCancelUnacceptedOrders() {
               where: { id: order.id },
               data: { status: "CANCELLED" }
             });
+
+            // Release table back to available
+            if (order.tableId) {
+              try {
+                await db.table.update({
+                  where: { id: order.tableId },
+                  data: { status: "available" }
+                });
+              } catch (tblErr) {
+                console.warn(`[Pending Expiry Worker] Failed to release table for expired order #${order.orderNumber}:`, tblErr.message);
+              }
+            }
 
             // 2. Update in main database Order registry
             try {

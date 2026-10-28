@@ -42,7 +42,8 @@ const getAll = async (db) => {
 };
 
 const create = async (db, data) => {
-  const existing = await db.coupon.findUnique({ where: { code: data.code } });
+  const cleanCode = data.code ? String(data.code).trim().toUpperCase() : "";
+  const existing = await db.coupon.findUnique({ where: { code: cleanCode } });
   if (existing) throw new ApiError(400, "Coupon code already exists");
 
   const targetTier = data.targetTier || "all";
@@ -55,7 +56,7 @@ const create = async (db, data) => {
     data: {
       title: data.title,
       titleAr: data.titleAr || null,
-      code: data.code,
+      code: cleanCode,
       quantity: data.quantity !== undefined ? Number(data.quantity) : 0,
       usedCount: 0,
       locations: data.locations || [],
@@ -111,8 +112,9 @@ const update = async (db, id, data) => {
   const coupon = await db.coupon.findUnique({ where: { id } });
   if (!coupon) throw new ApiError(404, "Coupon not found");
 
-  if (data.code !== undefined && data.code !== coupon.code) {
-    const existing = await db.coupon.findUnique({ where: { code: data.code } });
+  const cleanCode = data.code !== undefined ? String(data.code).trim().toUpperCase() : undefined;
+  if (cleanCode !== undefined && cleanCode !== coupon.code) {
+    const existing = await db.coupon.findUnique({ where: { code: cleanCode } });
     if (existing) throw new ApiError(400, "Coupon code already exists");
   }
 
@@ -129,7 +131,7 @@ const update = async (db, id, data) => {
     data: {
       title: data.title !== undefined ? data.title : coupon.title,
       titleAr: data.titleAr !== undefined ? data.titleAr : coupon.titleAr,
-      code: data.code !== undefined ? data.code : coupon.code,
+      code: cleanCode !== undefined ? cleanCode : coupon.code,
       quantity: data.quantity !== undefined ? Number(data.quantity) : coupon.quantity,
       locations: data.locations !== undefined ? data.locations : coupon.locations,
       type: data.type !== undefined ? data.type : coupon.type,

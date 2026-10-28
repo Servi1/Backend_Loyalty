@@ -29,6 +29,10 @@ const update = catchAsync(async (req, res) => {
   const userRole = (req.user?.role || "").toUpperCase();
   const isSuperAdmin = userRole === "SUPER_ADMIN" || userRole === "SUPER_ADMINISTRATOR";
 
+  if (userRole === "BRANCH_MANAGER" && req.user?.branchId && req.user.branchId !== req.params.id) {
+    throw new ApiError(403, "You are only authorized to modify your assigned branch.");
+  }
+
   if (!isSuperAdmin) {
     if (req.body.posEnabled === true && req.tenant?.subPos === false) {
       throw new ApiError(403, "POS feature is disabled in Super Admin Subscriptions.");

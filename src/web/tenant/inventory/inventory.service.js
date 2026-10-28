@@ -33,7 +33,7 @@ const create = async (db, data) => {
     data: {
       name: data.name,
       nameAr: data.nameAr || null,
-      quantity: Number(data.quantity) || 0,
+      quantity: Math.max(0, Number(data.quantity) || 0),
       unit: data.unit || "pcs",
       unitAr: data.unitAr || null,
       branchId: data.branchId
@@ -50,7 +50,7 @@ const update = async (db, id, data) => {
     data: {
       name: data.name !== undefined ? data.name : item.name,
       nameAr: data.nameAr !== undefined ? data.nameAr : item.nameAr,
-      quantity: data.quantity !== undefined ? Number(data.quantity) : item.quantity,
+      quantity: data.quantity !== undefined ? Math.max(0, Number(data.quantity) || 0) : item.quantity,
       unit: data.unit !== undefined ? data.unit : item.unit,
       unitAr: data.unitAr !== undefined ? data.unitAr : item.unitAr
     }

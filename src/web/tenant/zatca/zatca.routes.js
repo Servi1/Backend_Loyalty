@@ -1,7 +1,10 @@
 const express = require("express");
 const { onboardZatcaSandbox, onboardPosZatcaSandbox, testZatcaCompliance, resyncOrdersZatca, reportInvoiceToZatcaSandbox } = require("./zatca.service");
+const { authenticate, authorize } = require("../../../middlewares/authMiddleware");
 
 const zatcaRouter = express.Router({ mergeParams: true });
+
+zatcaRouter.use(authenticate, authorize("SUPER_ADMIN", "ADMIN", "BRAND_MANAGER"));
 
 // Onboard POS Device in ZATCA (Sandbox or Production)
 zatcaRouter.post("/pos-devices/:posDeviceId/zatca/onboard", async (req, res, next) => {
