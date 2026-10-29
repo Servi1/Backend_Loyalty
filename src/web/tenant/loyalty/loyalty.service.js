@@ -434,12 +434,23 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
     }
   }
 
-  const [updatedWallet] = await mainPrisma.$transaction([
-    mainPrisma.wallet.update({
-      where: { id: wallet.id },
-      data: { points: { decrement: points } },
-    }),
-    mainPrisma.walletTransaction.create({
+  const updatedWallet = await mainPrisma.$transaction(async (tx) => {
+    // Atomic conditional decrement: prevents race conditions and negative balance
+    const updateResult = await tx.wallet.updateMany({
+      where: {
+        id: wallet.id,
+        points: { gte: points },
+      },
+      data: {
+        points: { decrement: points },
+      },
+    });
+
+    if (updateResult.count === 0) {
+      throw new ApiError(400, `Insufficient points for this brand. Order requires ${points} pts, but available balance is insufficient.`);
+    }
+
+    await tx.walletTransaction.create({
       data: {
         walletId: wallet.id,
         points: -points,
@@ -448,8 +459,10 @@ const redeemPoints = async (db, customerId, points, description, tenantId, opts 
         orderId: opts.orderId || null,
         orderNumber: opts.orderNumber || null,
       },
-    }),
-  ]);
+    });
+
+    return tx.wallet.findUnique({ where: { id: wallet.id } });
+  });
 
   return updatedWallet;
 };

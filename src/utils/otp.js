@@ -31,11 +31,14 @@ const getDevOtpBypassCode = () => {
  * Checks whether OTP bypass is enabled in system settings.
  */
 const isDevBypassEnabled = () => {
+  const isDev = process.env.NODE_ENV !== "production";
   if (typeof getSetting === "function") {
-    const flag = getSetting("otp_bypass_enabled", "true");
+    // In production, default must be "false" to prevent unauthorized OTP bypass
+    const defaultFlag = isDev ? "true" : "false";
+    const flag = getSetting("otp_bypass_enabled", defaultFlag);
     return flag === "true" || flag === true || flag === "1";
   }
-  return true;
+  return isDev;
 };
 
 /**

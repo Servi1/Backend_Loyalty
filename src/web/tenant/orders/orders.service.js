@@ -181,7 +181,14 @@ const isBranchOpenNow = (branch) => {
   return { isOpen: true };
 };
 
-const create = async (db, { userId, customerId, customerPhone, status, branchId, tableId, qrCashierId, type, items, notes, total, posUnit, source, staffId, staffName, selectedSlot, selectedSlotDate, customOrderTypeId }, tenantId) => {
+const create = async (db, { userId, customerId, customerPhone, status, branchId, tableId, qrCashierId, type, items, notes, total, posUnit, source, staffId, staffName, selectedSlot, selectedSlotDate, customOrderTypeId, callerRole }, tenantId) => {
+  const isStaff = Boolean(callerRole && ["ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER", "CASHIER"].includes(callerRole));
+  if (!isStaff) {
+    posUnit = null;
+    if (source === "pos") {
+      source = tableId ? "qr_table" : (qrCashierId ? "qr_cashier" : "mobile");
+    }
+  }
   if (branchId) {
     const branch = await db.branch.findUnique({ where: { id: branchId } });
     if (branch) {
@@ -357,7 +364,9 @@ const normalizePhone = (rawPhone) => {
   // Protect against price tampering: enforce server-calculated subtotal with +/- 0.05 rounding tolerance
   let finalTotal = subtotal;
   if (typeof total === "number" && !isNaN(total)) {
-    if (posUnit || source === "pos" || Math.abs(total - subtotal) <= 0.05) {
+    if (isStaff && (posUnit || source === "pos")) {
+      finalTotal = Math.max(0, total);
+    } else if (Math.abs(total - subtotal) <= 0.05) {
       finalTotal = total;
     } else {
       console.warn(`[WEB ORDER] Client total (${total}) differs from calculated subtotal (${subtotal}). Enforcing verified subtotal.`);
@@ -411,44 +420,91 @@ const normalizePhone = (rawPhone) => {
       quantity: i.quantity,
     }));
 
-  const order = await db.order.create({
-    data: {
-      orderNumber: generateOrderNumber(),
-      status: status || "PENDING",
-      userId: validUserId || null,
-      customerId: finalCustomerId || null,
-      customerPhone: normalizedCustomerPhone || customerPhone || null,
-      branchId,
-      tableId: tableId || null,
-      qrCashierId: qrCashierId || null,
-      type: type || "DINE_IN",
-      notes,
-      total: finalTotal,
-      feeRate,
-      loyaltyEarnRate,
-      posUnit: posUnit || null,
-      source: orderSource,
-      staffId: staffId || null,
-      staffName: staffName || null,
-      selectedSlot: selectedSlot || null,
-      selectedSlotDate: selectedSlotDate || null,
-      slotDetails: slotDetails.length > 0 ? slotDetails : null,
-      customOrderTypeId: customOrderTypeId || null,
-      items: { create: orderItems },
-    },
-    include: { items: { include: { menuItem: true } }, branch: true, customOrderType: true },
-  });
-
-  if (order.tableId) {
-    try {
-      await db.table.update({
-        where: { id: order.tableId },
-        data: { status: "busy" }
+  const order = await db.$transaction(async (tx) => {
+    // Prevent double booking with transaction-level advisory locks
+    if (tableId && selectedSlot && selectedSlotDate) {
+      const tableLockKey = `slot_tbl_${branchId}_${tableId}_${selectedSlotDate}_${selectedSlot}`;
+      try {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tableLockKey}))`;
+      } catch (lockErr) {
+        console.warn("[WEB ORDER LOCK] Advisory lock skipped/unsupported:", lockErr.message);
+      }
+      const existingTableBooking = await tx.order.findFirst({
+        where: {
+          branchId,
+          tableId,
+          selectedSlotDate,
+          selectedSlot,
+          status: { notIn: ["CANCELLED", "REFUNDED", "REJECTED"] }
+        }
       });
-    } catch (tblErr) {
-      console.error("[WEB ORDER] Failed to update table status to busy:", tblErr.message);
+      if (existingTableBooking) {
+        throw new ApiError(409, `This table is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
+      }
     }
-  }
+
+    if (staffId && selectedSlot && selectedSlotDate) {
+      const staffLockKey = `slot_stf_${branchId}_${staffId}_${selectedSlotDate}_${selectedSlot}`;
+      try {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${staffLockKey}))`;
+      } catch (lockErr) {
+        console.warn("[WEB ORDER LOCK] Advisory lock skipped/unsupported:", lockErr.message);
+      }
+      const existingStaffBooking = await tx.order.findFirst({
+        where: {
+          branchId,
+          staffId,
+          selectedSlotDate,
+          selectedSlot,
+          status: { notIn: ["CANCELLED", "REFUNDED", "REJECTED"] }
+        }
+      });
+      if (existingStaffBooking) {
+        throw new ApiError(409, `The selected specialist is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
+      }
+    }
+
+    const createdOrder = await tx.order.create({
+      data: {
+        orderNumber: generateOrderNumber(),
+        status: status || "PENDING",
+        userId: validUserId || null,
+        customerId: finalCustomerId || null,
+        customerPhone: normalizedCustomerPhone || customerPhone || null,
+        branchId,
+        tableId: tableId || null,
+        qrCashierId: qrCashierId || null,
+        type: type || "DINE_IN",
+        notes,
+        total: finalTotal,
+        feeRate,
+        loyaltyEarnRate,
+        posUnit: posUnit || null,
+        source: orderSource,
+        staffId: staffId || null,
+        staffName: staffName || null,
+        selectedSlot: selectedSlot || null,
+        selectedSlotDate: selectedSlotDate || null,
+        slotDetails: slotDetails.length > 0 ? slotDetails : null,
+        customOrderTypeId: customOrderTypeId || null,
+        items: { create: orderItems },
+      },
+      include: { items: { include: { menuItem: true } }, branch: true, customOrderType: true },
+    });
+
+    if (createdOrder.tableId) {
+      try {
+        await tx.table.update({
+          where: { id: createdOrder.tableId },
+          data: { status: "busy" }
+        });
+      } catch (tblErr) {
+        console.error("[WEB ORDER] Failed to update table status to busy:", tblErr.message);
+      }
+    }
+
+    return createdOrder;
+  });
 
   if (finalCustomerId) {
     const user = await mainPrisma.appUser.findUnique({ where: { id: finalCustomerId } });
@@ -543,6 +599,73 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
     include: { items: true }
   });
   if (!order) throw new ApiError(404, "Order not found");
+
+  const currentStatus = (order.status || "").toUpperCase();
+  const terminalStatuses = ["CANCELLED", "REJECTED", "REFUNDED"];
+  if (terminalStatuses.includes(currentStatus)) {
+    throw new ApiError(400, `Cannot modify order details. Order is already in terminal state '${currentStatus}'.`);
+  }
+
+  if (currentStatus === "COMPLETED") {
+    if (status && status.toUpperCase() !== "REFUNDED") {
+      throw new ApiError(400, "A completed order cannot be modified or reopened.");
+    }
+    if (staffId !== undefined || selectedSlot !== undefined || selectedSlotDate !== undefined) {
+      throw new ApiError(400, "Cannot reschedule or reassign staff on a completed order.");
+    }
+  }
+
+  if (status !== undefined) {
+    const nextStatus = status.toUpperCase();
+    if (nextStatus === "CANCELLED" || nextStatus === "REJECTED") {
+      if (currentStatus !== "PENDING" && currentStatus !== "HALTED") {
+        throw new ApiError(400, "Cannot cancel an order that has already been accepted or is in progress.");
+      }
+    }
+  }
+
+  // Prevent double booking when rescheduling
+  const targetSlot = selectedSlot !== undefined ? selectedSlot : order.selectedSlot;
+  const targetSlotDate = selectedSlotDate !== undefined ? selectedSlotDate : order.selectedSlotDate;
+  const targetStaffId = staffId !== undefined ? staffId : order.staffId;
+  const targetTableId = order.tableId;
+
+  if (targetSlot && targetSlotDate) {
+    const slotChanged = selectedSlot !== undefined || selectedSlotDate !== undefined || staffId !== undefined;
+    if (slotChanged) {
+      if (targetTableId) {
+        const conflictTable = await db.order.findFirst({
+          where: {
+            id: { not: id },
+            branchId: order.branchId,
+            tableId: targetTableId,
+            selectedSlotDate: targetSlotDate,
+            selectedSlot: targetSlot,
+            status: { notIn: ["CANCELLED", "REFUNDED", "REJECTED"] }
+          }
+        });
+        if (conflictTable) {
+          throw new ApiError(409, `This table is already booked for ${targetSlotDate} at ${targetSlot}. Please choose a different time slot.`);
+        }
+      }
+
+      if (targetStaffId) {
+        const conflictStaff = await db.order.findFirst({
+          where: {
+            id: { not: id },
+            branchId: order.branchId,
+            staffId: targetStaffId,
+            selectedSlotDate: targetSlotDate,
+            selectedSlot: targetSlot,
+            status: { notIn: ["CANCELLED", "REFUNDED", "REJECTED"] }
+          }
+        });
+        if (conflictStaff) {
+          throw new ApiError(409, `The selected specialist is already booked for ${targetSlotDate} at ${targetSlot}. Please choose a different time slot.`);
+        }
+      }
+    }
+  }
 
   const updateData = {};
   if (status !== undefined) updateData.status = status;
@@ -641,18 +764,7 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
 
   if (status !== undefined) {
     await handleOrderStatusLoyalty(db, updated, status, tenantId);
-
-    // Release table back to available when order completes, cancels, or refunds
-    if (updated.tableId && ["COMPLETED", "CANCELLED", "REFUNDED"].includes(String(status).toUpperCase())) {
-      try {
-        await db.table.update({
-          where: { id: updated.tableId },
-          data: { status: "available" }
-        });
-      } catch (tblErr) {
-        console.error("[TENANT ORDER] Failed to release table status:", tblErr.message);
-      }
-    }
+    // Table status is adjusted manually only by branch manager or brand admin (auto-available logic removed)
   }
 
   return updated;
@@ -762,9 +874,29 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
   const order = await db.order.findUnique({ where: { id } });
   if (!order) throw new ApiError(404, "Order not found");
 
+  const currentStatus = (order.status || "").toUpperCase();
+  const nextStatus = (status || "").toUpperCase();
+
+  // If already at nextStatus and no notes change, return early (idempotent, avoid duplicate side-effects)
+  if (currentStatus === nextStatus && notes === undefined) {
+    return order;
+  }
+
+  // Terminal states cannot transition to any other status
+  const terminalStatuses = ["CANCELLED", "REJECTED", "REFUNDED"];
+  if (terminalStatuses.includes(currentStatus)) {
+    throw new ApiError(400, `Cannot update order status. Order is already in terminal state '${currentStatus}'.`);
+  }
+
+  // Completed order can only transition to REFUNDED
+  if (currentStatus === "COMPLETED") {
+    if (nextStatus !== "REFUNDED") {
+      throw new ApiError(400, "A completed order cannot be transitioned to any status other than REFUNDED.");
+    }
+  }
+
   // Disallow cancelling/rejecting an order that has already been accepted or is in progress
-  if (status === "CANCELLED" || status === "REJECTED") {
-    const currentStatus = (order.status || "").toUpperCase();
+  if (nextStatus === "CANCELLED" || nextStatus === "REJECTED") {
     if (currentStatus !== "PENDING" && currentStatus !== "HALTED") {
       throw new ApiError(400, "Cannot cancel an order that has already been accepted or is in progress.");
     }

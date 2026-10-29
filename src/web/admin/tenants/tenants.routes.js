@@ -21,6 +21,8 @@ router.get("/loyalty", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WARE
 router.get("/loyalty/tiers", authorize("SUPER_ADMIN"), ctrl.getSuperAdminTiers);
 router.put("/loyalty/tiers", authorize("SUPER_ADMIN"), ctrl.updateSuperAdminTiers);
 router.get("/loyalty/stamps/activity", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.getSuperAdminStampActivity);
+router.get("/loyalty/stamps/overview", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.getSuperAdminStampsOverview);
+router.get("/loyalty/stamps", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.getSuperAdminStampsOverview);
 router.get("/loyalty/audit-logs", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.getLoyaltyAuditLogs);
 router.get("/loyalty/customers", authorize("SUPER_ADMIN"), ctrl.getSuperAdminCustomers);
 router.post("/loyalty/customers", authorize("SUPER_ADMIN"), ctrl.addSuperAdminCustomer);

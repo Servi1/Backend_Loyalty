@@ -218,6 +218,41 @@ const create = async (data) => {
 const update = async (id, data, user = null) => {
   const existingTenant = await getById(id);
 
+  // Security Hardening: Prevent Non-Super-Admins from modifying sensitive infrastructure/billing/DB settings
+  if (user && user.role !== "SUPER_ADMIN") {
+    const allowedKeys = new Set([
+      "name",
+      "slug",
+      "logoUrl",
+      "category",
+      "vatPercentage",
+      "phone",
+      "email",
+      "description",
+      "notes",
+      "commercialRegister",
+      "currency",
+      "loyaltyEnabled",
+      "loyaltyAddPoints",
+      "loyaltyRedeemPoints",
+      "loyaltyEarnRate",
+      "loyaltyRedeemRate",
+      "loyaltyTiers",
+      "stampPrograms",
+      "notificationsEnabled",
+      "autoPayouts",
+      "ordersEnabled",
+    ]);
+
+    const sanitizedData = {};
+    for (const key of Object.keys(data)) {
+      if (allowedKeys.has(key)) {
+        sanitizedData[key] = data[key];
+      }
+    }
+    data = sanitizedData;
+  }
+
   // Track mid-month slot additions
   const slotFields = [
     { key: "posQuantity", serviceType: "pos", priceKey: "pricePos", defaultPrice: 49.0 },
@@ -521,17 +556,19 @@ const remove = async (id) => {
     try {
       const urlObj = new URL(tenant.dbUrl);
       const dbName = urlObj.pathname.replace("/", "");
-      if (dbName && dbName.startsWith("tenant_")) {
+      // Strictly validate database identifier pattern to prevent SQL injection
+      if (dbName && /^tenant_[a-zA-Z0-9_]+$/.test(dbName)) {
         const mainDbUrl = process.env.DATABASE_URL;
         const client = new Client({ connectionString: mainDbUrl });
         await client.connect();
-        // Terminate existing active connections to tenant DB before dropping
-        await client.query(`
-          SELECT pg_terminate_backend(pg_stat_activity.pid)
-          FROM pg_stat_activity
-          WHERE pg_stat_activity.datname = '${dbName}'
-            AND pid <> pg_backend_pid();
-        `);
+        // Terminate existing active connections to tenant DB using parameterized query
+        await client.query(
+          `SELECT pg_terminate_backend(pg_stat_activity.pid)
+           FROM pg_stat_activity
+           WHERE pg_stat_activity.datname = $1
+             AND pid <> pg_backend_pid();`,
+          [dbName]
+        );
         await client.query(`DROP DATABASE IF EXISTS "${dbName}";`);
         await client.end();
         console.log(`Successfully dropped physical database ${dbName} for tenant ${tenant.slug}`);
@@ -547,55 +584,68 @@ const remove = async (id) => {
 const getOverview = async () => {
   const tenants = await mainPrisma.tenant.findMany();
 
+  // Parallelize tenant database stats queries across all tenants
+  const tenantResults = await Promise.all(
+    tenants.map(async (tenant) => {
+      let ordersCount = 0;
+      let revenueSum = 0;
+      let locationsCount = 0;
+      let usersCount = 0;
+
+      if (tenant.dbUrl) {
+        try {
+          const tenantPrisma = getTenantClient(tenant.dbUrl);
+          const [oCount, oSum, lCount, uCount] = await Promise.all([
+            tenantPrisma.order.count().catch(() => 0),
+            tenantPrisma.order.aggregate({
+              where: { status: "COMPLETED" },
+              _sum: { total: true }
+            }).catch(() => ({ _sum: { total: 0 } })),
+            tenantPrisma.branch.count().catch(() => 0),
+            tenantPrisma.user.count().catch(() => 0)
+          ]);
+
+          ordersCount = oCount || 0;
+          revenueSum = oSum._sum?.total || 0;
+          locationsCount = lCount || 0;
+          usersCount = uCount || 0;
+        } catch (err) {
+          console.error(`Failed to fetch stats for tenant ${tenant.slug}:`, err.message);
+        }
+      }
+
+      return {
+        tenant,
+        ordersCount,
+        revenueSum,
+        locationsCount,
+        usersCount
+      };
+    })
+  );
+
   let totalOrders = 0;
   let totalRevenue = 0;
-  let totalUsers = 0;
   let totalLocations = 0;
-
+  let totalUsers = 0;
   const tenantsOverview = [];
 
-  for (const tenant of tenants) {
-    let ordersCount = 0;
-    let revenueSum = 0;
-    let locationsCount = 0;
-    let usersCount = 0;
-
-    try {
-      const tenantPrisma = getTenantClient(tenant.dbUrl);
-
-      const [oCount, oSum, lCount, uCount] = await Promise.all([
-        tenantPrisma.order.count(),
-        tenantPrisma.order.aggregate({
-          where: { status: "COMPLETED" },
-          _sum: { total: true }
-        }),
-        tenantPrisma.branch.count(),
-        tenantPrisma.user.count()
-      ]);
-
-      ordersCount = oCount;
-      revenueSum = oSum._sum.total || 0;
-      locationsCount = lCount;
-      usersCount = uCount;
-    } catch (err) {
-      console.error(`Failed to fetch stats for tenant ${tenant.slug}:`, err.message);
-    }
-
-    totalOrders += ordersCount;
-    totalRevenue += revenueSum;
-    totalLocations += locationsCount;
-    totalUsers += usersCount;
+  for (const r of tenantResults) {
+    totalOrders += r.ordersCount;
+    totalRevenue += r.revenueSum;
+    totalLocations += r.locationsCount;
+    totalUsers += r.usersCount;
 
     tenantsOverview.push({
-      id: tenant.id,
-      name: tenant.name,
-      slug: tenant.slug,
-      plan: tenant.plan || "free",
-      logo: tenant.name.charAt(0),
-      ordersThisMonth: ordersCount,
-      revenueThisMonth: revenueSum,
-      locationsCount: locationsCount,
-      status: tenant.isActive ? "active" : "inactive"
+      id: r.tenant.id,
+      name: r.tenant.name,
+      slug: r.tenant.slug,
+      plan: r.tenant.plan || "free",
+      logo: r.tenant.name.charAt(0),
+      ordersThisMonth: r.ordersCount,
+      revenueThisMonth: r.revenueSum,
+      locationsCount: r.locationsCount,
+      status: r.tenant.isActive ? "active" : "inactive"
     });
   }
 
@@ -1508,8 +1558,7 @@ const getInvoices = async (filters = {}) => {
 };
 
 const getSuperAdminOrders = async ({ tenantId, startDate, endDate, status, page = 1, limit = 20 }) => {
-  // Ensure 100% real-time accuracy by reconciling any un-synced tenant orders
-  await syncAllTenantOrders().catch(err => console.error("[REAL-TIME SYNC] Order reconciliation warning:", err.message));
+  // Directly query aggregatedOrder registry for instant response; orders sync in real time via order lifecycle hooks
 
   const where = {};
   if (status) where.status = status;
@@ -1591,21 +1640,57 @@ const resolveCustomerName = (order, appUsersMap = null) => {
   return "Customer Walk-in";
 };
 
-const syncAllTenantOrders = async () => {
+let isSyncAllInProgress = false;
+let lastSyncAllTimestamp = 0;
+
+const syncAllTenantOrders = async (options = {}) => {
+  const { force = false, recentOnly = true } = options;
+  const now = Date.now();
+
+  // Guard against concurrent executions or excessive triggers
+  if (isSyncAllInProgress) {
+    console.log("[ORDER SYNC] Sync is already running in background. Skipping duplicate trigger.");
+    return { skipped: true, reason: "in_progress" };
+  }
+  if (!force && (now - lastSyncAllTimestamp < 3 * 60 * 1000)) {
+    return { skipped: true, reason: "throttled" };
+  }
+
+  isSyncAllInProgress = true;
+  lastSyncAllTimestamp = now;
   console.log("🔄 Starting aggregated orders synchronization...");
+
   try {
     const tenants = await mainPrisma.tenant.findMany({ where: { isActive: true } });
     let totalSynced = 0;
 
-    const appUsers = await mainPrisma.appUser.findMany();
-    const appUsersMap = new Map(appUsers.map(u => [u.id, u]));
-
     for (const tenant of tenants) {
       try {
         const tenantDb = getTenantClient(tenant.dbUrl);
+
+        // Incremental sync: unless forced, sync orders from the last 48 hours for fast performance
+        const orderWhere = (recentOnly && !force)
+          ? { updatedAt: { gte: new Date(now - 48 * 60 * 60 * 1000) } }
+          : {};
+
         const orders = await tenantDb.order.findMany({
-          include: { branch: true, items: { include: { menuItem: true } } }
+          where: orderWhere,
+          include: { branch: true, items: { include: { menuItem: true } } },
+          take: 500,
+          orderBy: { updatedAt: "desc" }
         });
+
+        if (orders.length === 0) continue;
+
+        // Fetch only the appUsers associated with these specific orders
+        const customerIds = Array.from(new Set(orders.map(o => o.customerId).filter(Boolean)));
+        let appUsersMap = new Map();
+        if (customerIds.length > 0) {
+          const appUsers = await mainPrisma.appUser.findMany({
+            where: { id: { in: customerIds } }
+          });
+          appUsersMap = new Map(appUsers.map(u => [u.id, u]));
+        }
 
         for (const order of orders) {
           const resolvedFee = (order.feeRate !== undefined && order.feeRate !== null && !isNaN(Number(order.feeRate)))
@@ -1675,8 +1760,12 @@ const syncAllTenantOrders = async () => {
       }
     }
     console.log(`✅ Synchronized ${totalSynced} orders across all tenants.`);
+    return { success: true, totalSynced };
   } catch (error) {
     console.error("Failed to run order sync:", error.message);
+    return { success: false, error: error.message };
+  } finally {
+    isSyncAllInProgress = false;
   }
 };
 
@@ -3771,6 +3860,132 @@ const getLoyaltyAuditLogs = async (tenantId = null, queryParams = {}) => {
   return { total, page: Number(page) || 1, limit: take, logs };
 };
 
+
+const getSuperAdminStampsOverview = async (tenantId = null, queryParams = {}) => {
+  const { startDate, endDate } = queryParams;
+  const activity = await getSuperAdminStampActivity(tenantId, { startDate, endDate });
+
+  const tenantWhere = { subStamps: true };
+  if (tenantId && tenantId !== "all") {
+    tenantWhere.OR = [{ id: tenantId }, { slug: tenantId }];
+  }
+  const stampTenants = await mainPrisma.tenant.findMany({
+    where: tenantWhere,
+    select: { id: true, name: true, slug: true, logoUrl: true, stampPrograms: true, subStamps: true },
+  });
+
+  const tenantMap = new Map();
+  stampTenants.forEach((t) => tenantMap.set(t.id, t));
+
+  const walletWhere = {
+    OR: [
+      { stamps: { gt: 0 } },
+      { tenantId: { in: stampTenants.map((t) => t.id) } },
+    ],
+  };
+  if (tenantId && tenantId !== "all") {
+    walletWhere.tenantId = tenantId;
+  }
+
+  const wallets = await mainPrisma.wallet.findMany({
+    where: walletWhere,
+    include: {
+      appUser: { select: { id: true, name: true, phone: true, email: true } },
+      tenant: { select: { id: true, name: true, slug: true, logoUrl: true, stampPrograms: true } },
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  const couponWhere = {};
+  if (tenantId && tenantId !== "all") couponWhere.tenantId = tenantId;
+  const coupons = await mainPrisma.earnedCoupon.findMany({
+    where: couponWhere,
+    include: {
+      appUser: { select: { id: true, name: true, phone: true } },
+      tenant: { select: { id: true, name: true, logoUrl: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const couponByUserTenant = new Map();
+  coupons.forEach((c) => {
+    const key = `${c.appUserId}_${c.tenantId}`;
+    if (!couponByUserTenant.has(key)) couponByUserTenant.set(key, []);
+    couponByUserTenant.get(key).push(c);
+  });
+
+  const customerCards = wallets.map((w) => {
+    const t = w.tenant || tenantMap.get(w.tenantId) || {};
+    const stampProg = Array.isArray(t.stampPrograms) ? t.stampPrograms[0] : null;
+    const requiredStamps = Number(stampProg?.requiredStamps || 6);
+    const userCoupons = couponByUserTenant.get(`${w.appUserId}_${w.tenantId}`) || [];
+    const activeCoupon = userCoupons.find((c) => !c.isUsed && (!c.expiresAt || new Date(c.expiresAt) > new Date())) || null;
+    const redeemedCouponsCount = userCoupons.filter((c) => c.isUsed).length;
+
+    let cardStatus = "in_progress";
+    if (activeCoupon) {
+      cardStatus = "claimed";
+    } else if ((w.stamps || 0) >= requiredStamps) {
+      cardStatus = "completed";
+    }
+
+    return {
+      walletId: w.id,
+      customerId: w.appUserId,
+      customerName: w.appUser?.name || "Valued Customer",
+      customerPhone: w.appUser?.phone || "—",
+      customerEmail: w.appUser?.email || "—",
+      tenantId: w.tenantId,
+      brandName: t.name || "Brand",
+      brandSlug: t.slug,
+      brandLogo: t.logoUrl,
+      programName: stampProg?.nameEn || "Stamp Program",
+      programNameAr: stampProg?.nameAr || "",
+      stamps: w.stamps || 0,
+      requiredStamps,
+      status: cardStatus,
+      activeCoupon: activeCoupon ? {
+        id: activeCoupon.id,
+        code: activeCoupon.code,
+        prizeLabel: activeCoupon.prizeLabel,
+        expiresAt: activeCoupon.expiresAt,
+        winDate: activeCoupon.winDate,
+      } : null,
+      totalRedeemed: redeemedCouponsCount,
+      updatedAt: w.updatedAt,
+    };
+  });
+
+  const totalStampsGenerated = activity
+    .filter((a) => a.status === "earned" || a.status === "completed" || a.status === "adjusted")
+    .reduce((sum, a) => sum + (Number(a.stampsGenerated) > 0 ? Number(a.stampsGenerated) : 0), 0);
+
+  const totalRewardsClaimed = coupons.length;
+  const totalRewardsRedeemed = coupons.filter((c) => c.isUsed).length;
+  const totalActiveCards = customerCards.filter((c) => c.stamps > 0 || c.activeCoupon).length;
+  const totalStampBrands = stampTenants.length;
+
+  return {
+    stats: {
+      totalStampsGenerated,
+      totalRewardsClaimed,
+      totalRewardsRedeemed,
+      totalActiveCards,
+      totalStampBrands,
+      totalEvents: activity.length,
+    },
+    activity,
+    customerCards,
+    brands: stampTenants.map((t) => ({
+      id: t.id,
+      name: t.name,
+      slug: t.slug,
+      logoUrl: t.logoUrl,
+      stampProgram: Array.isArray(t.stampPrograms) ? t.stampPrograms[0] : null,
+    })),
+  };
+};
+
 module.exports = {
   getAll,
   getById,
@@ -3787,6 +4002,7 @@ module.exports = {
   getSuperAdminCustomers,
   getSuperAdminCustomerDetails,
   getSuperAdminStampActivity,
+  getSuperAdminStampsOverview,
   addSuperAdminCustomer,
   deleteSuperAdminCustomer,
   bulkUploadSuperAdminCustomers,

@@ -20,7 +20,7 @@ const create = catchAsync(async (req, res) => {
 
   const order = await ordersService.create(
     req.tenantDb,
-    { userId, customerId, ...restBody },
+    { userId, customerId, ...restBody, callerRole: req.user?.role },
     req.tenantId
   );
   // Emit to Socket.io so cashier POS and Brand Admin receive instantly

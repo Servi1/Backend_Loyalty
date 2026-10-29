@@ -60,6 +60,10 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 if (config.nodeEnv === "development") app.use(morgan("dev"));
 
+// ─── IP and MAC-based Rate Limiter (Protection against IP-rotating attacks) ───
+const { rateLimiter } = require("./src/middlewares/rateLimiter");
+app.use(rateLimiter);
+
 // ─── Serve uploaded files statically ─────────────────
 app.use(
   "/uploads",

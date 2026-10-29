@@ -16,6 +16,10 @@ const authenticate = async (req, _res, next) => {
     const token = authHeader.split(" ")[1];
 
     if (token.startsWith("mock-platform-admin-token-")) {
+      const isDevMockAllowed = process.env.NODE_ENV === "development" && process.env.ALLOW_DEV_MOCK_TOKENS === "true";
+      if (!isDevMockAllowed) {
+        throw new ApiError(401, "Mock authentication tokens are disabled in this environment");
+      }
       const admin = await mainPrisma.superAdmin.findFirst();
       if (!admin) throw new ApiError(401, "No Super Admin configured in database");
       req.admin = admin;
