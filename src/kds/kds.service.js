@@ -171,6 +171,11 @@ const bumpOrder = async (db, orderId, tenantId) => {
     throw new ApiError(404, "Order not found");
   }
 
+  const currentStatus = (order.status || "").toUpperCase();
+  if (["COMPLETED", "CANCELLED", "REJECTED", "REFUNDED"].includes(currentStatus)) {
+    throw new ApiError(400, `Cannot bump order. Order is already in terminal state '${currentStatus}'.`);
+  }
+
   const updated = await db.order.update({
     where: { id: orderId },
     data: { status: "READY" },
@@ -217,6 +222,11 @@ const recallOrder = async (db, orderId, tenantId) => {
   const order = await db.order.findUnique({ where: { id: orderId } });
   if (!order) {
     throw new ApiError(404, "Order not found");
+  }
+
+  const currentStatus = (order.status || "").toUpperCase();
+  if (["COMPLETED", "CANCELLED", "REJECTED", "REFUNDED"].includes(currentStatus)) {
+    throw new ApiError(400, `Cannot recall order. Order is already in terminal state '${currentStatus}'.`);
   }
 
   const updated = await db.order.update({

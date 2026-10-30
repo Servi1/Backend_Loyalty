@@ -56,17 +56,7 @@ async function checkAndCancelUnacceptedOrders() {
               data: { status: "CANCELLED" }
             });
 
-            // Release table back to available
-            if (order.tableId) {
-              try {
-                await db.table.update({
-                  where: { id: order.tableId },
-                  data: { status: "available" }
-                });
-              } catch (tblErr) {
-                console.warn(`[Pending Expiry Worker] Failed to release table for expired order #${order.orderNumber}:`, tblErr.message);
-              }
-            }
+            // Table status is adjusted manually only by branch manager or brand admin (auto-available on expiry removed)
 
             // 2. Update in main database Order registry
             try {

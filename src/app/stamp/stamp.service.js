@@ -1010,14 +1010,22 @@ const redeemRewardCoupon = async ({ code, customerId, tenantId, branchId = null 
     throw new ApiError(400, `Reward coupon ${cleanCode} has expired`);
   }
 
-  // 1. Mark coupon as used
-  const updatedCoupon = await mainPrisma.earnedCoupon.update({
-    where: { id: coupon.id },
+  // 1. Atomically mark coupon as used (prevents concurrent double-redemption)
+  const updateResult = await mainPrisma.earnedCoupon.updateMany({
+    where: {
+      id: coupon.id,
+      isUsed: false,
+    },
     data: {
       isUsed: true,
       usedAt: new Date(),
     },
   });
+
+  if (updateResult.count === 0) {
+    throw new ApiError(400, `Reward coupon ${cleanCode} has already been redeemed`);
+  }
+  const updatedCoupon = await mainPrisma.earnedCoupon.findUnique({ where: { id: coupon.id } });
 
   // 2. Resolve required stamps to deduct
   const tenant = coupon.tenant || (await mainPrisma.tenant.findUnique({ where: { id: coupon.tenantId } }));

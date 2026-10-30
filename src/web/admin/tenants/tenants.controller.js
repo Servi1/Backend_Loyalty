@@ -21,7 +21,7 @@ const update = catchAsync(async (req, res) => {
   if (req.user && req.user.role !== 'SUPER_ADMIN') {
     const targetTenantId = req.params.id;
     const userTenantId = req.tenant ? req.tenant.id : req.user.tenantId;
-    if (userTenantId && targetTenantId !== userTenantId) {
+    if (!userTenantId || targetTenantId !== userTenantId) {
       return res.status(403).json({ success: false, message: "Forbidden: Cannot edit another brand's settings" });
     }
   }
@@ -205,6 +205,23 @@ const getLoyaltyAuditLogs = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+
+const getSuperAdminStampsOverview = catchAsync(async (req, res) => {
+  let tenantId = req.query.tenantId;
+  if (!tenantId || tenantId === "all") {
+    if (req.tenant && req.tenant.id) {
+      tenantId = req.tenant.id;
+    } else if (req.headers["x-tenant-id"]) {
+      tenantId = req.headers["x-tenant-id"];
+    } else if (req.user && req.user.role !== "SUPER_ADMIN" && req.user.tenantId) {
+      tenantId = req.user.tenantId;
+    }
+  }
+  const { startDate, endDate, search, status } = req.query;
+  const result = await tenantsService.getSuperAdminStampsOverview(tenantId, { startDate, endDate, search, status });
+  res.json({ success: true, data: result });
+});
+
 module.exports = {
   getAll,
   getById,
@@ -222,6 +239,7 @@ module.exports = {
   getSuperAdminCustomers,
   getSuperAdminCustomerDetails,
   getSuperAdminStampActivity,
+  getSuperAdminStampsOverview,
   addSuperAdminCustomer,
   deleteSuperAdminCustomer,
   bulkUploadSuperAdminCustomers,

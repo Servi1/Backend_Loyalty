@@ -353,6 +353,19 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
     throw new ApiError(404, "Order not found");
   }
 
+  const currentStatus = (order.status || "").toUpperCase();
+  if (currentStatus === upperStatus) {
+    return order;
+  }
+
+  // Terminal states cannot be changed
+  if (["CANCELLED", "REJECTED", "REFUNDED"].includes(currentStatus)) {
+    throw new ApiError(400, `Cannot update status. Order is already in terminal state '${currentStatus}'.`);
+  }
+  if (currentStatus === "COMPLETED" && upperStatus !== "REFUNDED") {
+    throw new ApiError(400, "A completed order cannot be updated except for refund.");
+  }
+
   // Enforce transition rules
   if (upperStatus === "ACCEPTED") {
     if (order.status !== "PENDING" && order.status !== "HALTED") {

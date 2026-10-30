@@ -517,9 +517,28 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       console.warn("[APP ORDER] Failed to verify discount:", e.message);
     }
   } else if (clientDiscountAmount > 0 && body.posUnit) {
-    // Only POS terminal staff can pass manual discountAmount without a registered discount campaign
-    appliedDiscountAmount = Math.min(subtotal, clientDiscountAmount);
-    appliedDiscountNote = `Manual POS Discount: -${appliedDiscountAmount.toFixed(2)} SAR`;
+    // Only verified, active POS terminal can pass manual discountAmount without a registered discount campaign
+    let verifiedPos = null;
+    try {
+      verifiedPos = await db.posDevice.findFirst({
+        where: {
+          OR: [{ deviceKey: String(body.posUnit) }, { name: String(body.posUnit) }],
+          isActive: true
+        }
+      });
+      if (verifiedPos && verifiedPos.expiresAt && new Date(verifiedPos.expiresAt) < new Date()) {
+        verifiedPos = null;
+      }
+    } catch (e) {
+      verifiedPos = null;
+    }
+
+    if (verifiedPos) {
+      appliedDiscountAmount = Math.min(subtotal, clientDiscountAmount);
+      appliedDiscountNote = `Manual POS Discount: -${appliedDiscountAmount.toFixed(2)} SAR`;
+    } else {
+      console.warn(`[APP ORDER] Rejected manual discount: unverified posUnit '${body.posUnit}'`);
+    }
   }
 
   const vatRate = tenant?.vatPercentage !== undefined ? Number(tenant.vatPercentage) : 15.0;
@@ -662,49 +681,96 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       quantity: i.quantity,
     }));
 
-  const order = await db.order.create({
-    data: {
-      orderNumber,
-      customerId: finalCustomerId,
-      customerPhone: customerPhone ? normalisePhone(customerPhone) : null,
-      branchId,
-      tableId: tableId || null,
-      qrCashierId: finalQrCashierId,
-      userId: orderStaffId,
-      staffId: staffId || null,
-      staffName: staffName || null,
-      selectedSlot: selectedSlot || null,
-      selectedSlotDate: selectedSlotDate || null,
-      slotDetails: slotDetails.length > 0 ? slotDetails : null,
-      type,
-      notes: finalNotes || null,
-      total: finalOrderTotal,
-      feeRate,
-      loyaltyEarnRate: orderLoyaltyEarnRate,
-      source: orderSource,
-      paymentMethod: paymentMethod || "cash",
-      pointsRedeemed: pointsRedeemed,
-      customOrderTypeId: customOrderTypeId || null,
-      items: { create: orderItems },
-    },
-    include: {
-      items: { include: { menuItem: true } },
-      branch: true,
-      table: true,
-    },
-  });
-
-  // Change selected table status to busy for dine-in orders
-  if (order.tableId) {
-    try {
-      await db.table.update({
-        where: { id: order.tableId },
-        data: { status: "busy" }
+  const order = await db.$transaction(async (tx) => {
+    // Prevent double booking with transaction-level advisory locks
+    if (tableId && selectedSlot && selectedSlotDate) {
+      const tableLockKey = `slot_tbl_${branchId}_${tableId}_${selectedSlotDate}_${selectedSlot}`;
+      try {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tableLockKey}))`;
+      } catch (lockErr) {
+        console.warn("[APP ORDER LOCK] Advisory lock skipped/unsupported:", lockErr.message);
+      }
+      const existingTableBooking = await tx.order.findFirst({
+        where: {
+          branchId,
+          tableId,
+          selectedSlotDate,
+          selectedSlot,
+          status: { notIn: ["CANCELLED", "REFUNDED", "REJECTED"] }
+        }
       });
-    } catch (tblErr) {
-      console.error("[APP ORDER] Failed to update table status to busy:", tblErr.message);
+      if (existingTableBooking) {
+        throw new ApiError(409, `This table is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
+      }
     }
-  }
+
+    if (staffId && selectedSlot && selectedSlotDate) {
+      const staffLockKey = `slot_stf_${branchId}_${staffId}_${selectedSlotDate}_${selectedSlot}`;
+      try {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${staffLockKey}))`;
+      } catch (lockErr) {
+        console.warn("[APP ORDER LOCK] Advisory lock skipped/unsupported:", lockErr.message);
+      }
+      const existingStaffBooking = await tx.order.findFirst({
+        where: {
+          branchId,
+          staffId,
+          selectedSlotDate,
+          selectedSlot,
+          status: { notIn: ["CANCELLED", "REFUNDED", "REJECTED"] }
+        }
+      });
+      if (existingStaffBooking) {
+        throw new ApiError(409, `The selected specialist is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
+      }
+    }
+
+    const createdOrder = await tx.order.create({
+      data: {
+        orderNumber,
+        customerId: finalCustomerId,
+        customerPhone: customerPhone ? normalisePhone(customerPhone) : null,
+        branchId,
+        tableId: tableId || null,
+        qrCashierId: finalQrCashierId,
+        userId: orderStaffId,
+        staffId: staffId || null,
+        staffName: staffName || null,
+        selectedSlot: selectedSlot || null,
+        selectedSlotDate: selectedSlotDate || null,
+        slotDetails: slotDetails.length > 0 ? slotDetails : null,
+        type,
+        notes: finalNotes || null,
+        total: finalOrderTotal,
+        feeRate,
+        loyaltyEarnRate: orderLoyaltyEarnRate,
+        source: orderSource,
+        paymentMethod: paymentMethod || "cash",
+        pointsRedeemed: pointsRedeemed,
+        customOrderTypeId: customOrderTypeId || null,
+        items: { create: orderItems },
+      },
+      include: {
+        items: { include: { menuItem: true } },
+        branch: true,
+        table: true,
+      },
+    });
+
+    // Change selected table status to busy for dine-in orders
+    if (createdOrder.tableId) {
+      try {
+        await tx.table.update({
+          where: { id: createdOrder.tableId },
+          data: { status: "busy" }
+        });
+      } catch (tblErr) {
+        console.error("[APP ORDER] Failed to update table status to busy:", tblErr.message);
+      }
+    }
+
+    return createdOrder;
+  });
 
   // Mark redeemed coupon unusable and deduct stamps if coupon was supplied
   if (discountId) {
@@ -1169,6 +1235,10 @@ const payHaltedOrder = async (orderId, userId) => {
     where: { id: orderId, appUserId: userId },
   });
   if (!mainOrder) throw new ApiError(404, "Order not found");
+
+  if (mainOrder.status !== "HALTED") {
+    throw new ApiError(400, `Cannot pay order with status '${mainOrder.status}'. Only HALTED orders can be paid.`);
+  }
 
   // 2. Resolve tenant
   const tenant = await mainPrisma.tenant.findUnique({ where: { id: mainOrder.tenantId } });

@@ -19,6 +19,7 @@ app.set("io", io);
 server.listen(config.port, () => {
   console.log(`\n🚀 Servi Backend running on http://localhost:${config.port}`);
   console.log(`📡 Socket.io ready`);
+  console.log(`🛡️  IP & MAC Rate Limiting active`);
   console.log(`🌱 Environment: ${config.nodeEnv}\n`);
 
   // Trigger initial synchronization of tenant orders to the main database
