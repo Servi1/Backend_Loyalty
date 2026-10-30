@@ -1,5 +1,7 @@
 const { Client } = require("pg");
 const dotenv = require("dotenv");
+const fs = require("fs");
+const path = require("path");
 
 dotenv.config();
 
@@ -68,7 +70,7 @@ async function migrateCredentials() {
   await adminClient.query(`ALTER DATABASE servio_main OWNER TO "Servidb";`);
 
   const mainDbClient = new Client({
-    connectionString: `postgresql://Servidb:Vskkrskcwpwtvkkuec@${host}:${port}/servio_main?schema=public`
+    connectionString: adminConnString.replace(/\/[^/?]+(\?.*)?$/, `/servio_main$1`)
   });
   await mainDbClient.connect();
   await mainDbClient.query(`GRANT ALL ON SCHEMA public TO "Servidb";`);
@@ -78,7 +80,26 @@ async function migrateCredentials() {
   await mainDbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "Servidb";`);
   await mainDbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "Servidb";`);
   await mainDbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO "Servidb";`);
-  console.log("✓ Permissions and ownership configured on servio_main.");
+
+  // Transfer ownership of existing tables/sequences/views in servio_main to Servidb
+  await mainDbClient.query(`
+    DO $$
+    DECLARE
+      r RECORD;
+    BEGIN
+      FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+        EXECUTE 'ALTER TABLE "' || r.tablename || '" OWNER TO "Servidb"';
+      END LOOP;
+      FOR r IN (SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = 'public') LOOP
+        EXECUTE 'ALTER SEQUENCE "' || r.sequence_name || '" OWNER TO "Servidb"';
+      END LOOP;
+      FOR r IN (SELECT table_name FROM information_schema.views WHERE table_schema = 'public') LOOP
+        EXECUTE 'ALTER VIEW "' || r.table_name || '" OWNER TO "Servidb"';
+      END LOOP;
+    END
+    $$;
+  `);
+  console.log("✓ Permissions and full table/sequence ownership configured on servio_main.");
 
   // Fetch all tenant databases on this PostgreSQL instance
   const dbRes = await adminClient.query(`
@@ -93,10 +114,9 @@ async function migrateCredentials() {
       await adminClient.query(`GRANT ALL PRIVILEGES ON DATABASE "${dbName}" TO "Serbranddb";`);
       await adminClient.query(`ALTER DATABASE "${dbName}" OWNER TO "Serbranddb";`);
 
-      // Connect into the tenant DB to grant schema & table privileges
-      const tenantClient = new Client({
-        connectionString: `postgresql://Servidb:Vskkrskcwpwtvkkuec@${host}:${port}/${dbName}`
-      });
+      // Connect into the tenant DB as admin to grant schema privileges and reassign table ownership
+      const tenantAdminUrl = adminConnString.replace(/\/[^/?]+(\?.*)?$/, `/${dbName}$1`);
+      const tenantClient = new Client({ connectionString: tenantAdminUrl });
       await tenantClient.connect();
       await tenantClient.query(`GRANT ALL ON SCHEMA public TO "Serbranddb";`);
       await tenantClient.query(`GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO "Serbranddb";`);
@@ -105,8 +125,28 @@ async function migrateCredentials() {
       await tenantClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "Serbranddb";`);
       await tenantClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "Serbranddb";`);
       await tenantClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO "Serbranddb";`);
+
+      // Crucial: Transfer ownership of ALL existing tables, sequences, and views to Serbranddb so Prisma can alter tables
+      await tenantClient.query(`
+        DO $$
+        DECLARE
+          r RECORD;
+        BEGIN
+          FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+            EXECUTE 'ALTER TABLE "' || r.tablename || '" OWNER TO "Serbranddb"';
+          END LOOP;
+          FOR r IN (SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = 'public') LOOP
+            EXECUTE 'ALTER SEQUENCE "' || r.sequence_name || '" OWNER TO "Serbranddb"';
+          END LOOP;
+          FOR r IN (SELECT table_name FROM information_schema.views WHERE table_schema = 'public') LOOP
+            EXECUTE 'ALTER VIEW "' || r.table_name || '" OWNER TO "Serbranddb"';
+          END LOOP;
+        END
+        $$;
+      `);
+
       await tenantClient.end();
-      console.log(`  ✓ Migrated database & schema privileges for "${dbName}"`);
+      console.log(`  ✓ Transferred table ownership & privileges for "${dbName}" to Serbranddb`);
     } catch (err) {
       console.warn(`  ⚠ Warning processing "${dbName}":`, err.message);
     }
@@ -135,8 +175,6 @@ async function migrateCredentials() {
   await adminClient.end();
 
   // Automatically update Backend_Loyalty/.env if needed
-  const fs = require("fs");
-  const path = require("path");
   const envPath = path.join(__dirname, "../.env");
   if (fs.existsSync(envPath)) {
     let envContent = fs.readFileSync(envPath, "utf8");
