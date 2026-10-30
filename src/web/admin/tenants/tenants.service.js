@@ -68,26 +68,43 @@ const create = async (data) => {
   // 1. Generate DB name based on slug
   const dbName = `tenant_${data.slug.replace(/[^a-zA-Z0-9]/g, "_")}_db`;
 
-  // Extract base connection string from main database URL
-  // e.g., postgresql://postgres:root@localhost:5432/servio_main?schema=public
-  // becomes postgresql://postgres:root@localhost:5432
-  const mainDbUrl = process.env.DATABASE_URL;
-  const baseUrl = mainDbUrl.substring(0, mainDbUrl.lastIndexOf("/"));
-  const tenantDbUrl = `${baseUrl}/${dbName}?schema=public`;
+  // Dedicated connection string for upcoming tenant databases
+  const tenantUser = process.env.TENANT_DB_USER || "Serbranddb";
+  const tenantPass = encodeURIComponent(process.env.TENANT_DB_PASSWORD || "AjhsGkidrsksnkoaaehbisywa");
+  const tenantHost = process.env.TENANT_DB_HOST || "localhost";
+  const tenantPort = process.env.TENANT_DB_PORT || "5432";
+  const tenantDbUrl = `postgresql://${tenantUser}:${tenantPass}@${tenantHost}:${tenantPort}/${dbName}?schema=public`;
 
-  // 2. Connect to the default DB to create the new database
+  // 2. Connect to the default DB as admin to create the new database
+  const mainDbUrl = process.env.DATABASE_URL;
   const client = new Client({ connectionString: mainDbUrl });
 
   try {
     await client.connect();
     // In PostgreSQL, CREATE DATABASE cannot run inside a transaction block
-    await client.query(`CREATE DATABASE ${dbName}`);
+    await client.query(`CREATE DATABASE "${dbName}" OWNER "${tenantUser}"`);
+    await client.query(`GRANT ALL PRIVILEGES ON DATABASE "${dbName}" TO "${tenantUser}"`);
   } catch (err) {
     if (err.code !== "42P04") { // 42P04 = duplicate_database
       throw new ApiError(500, `Failed to create physical database: ${err.message}`);
     }
   } finally {
-    await client.end();
+    await client.end().catch(() => {});
+  }
+
+  // Grant schema permissions within the new tenant database
+  try {
+    const tenantSetupClient = new Client({
+      connectionString: `postgresql://${process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL).username + ':' + new URL(process.env.DATABASE_URL).password : 'Servidb:Vskkrskcwpwtvkkuec'}@${tenantHost}:${tenantPort}/${dbName}`
+    });
+    await tenantSetupClient.connect();
+    await tenantSetupClient.query(`GRANT ALL ON SCHEMA public TO "${tenantUser}";`);
+    await tenantSetupClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "${tenantUser}";`);
+    await tenantSetupClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "${tenantUser}";`);
+    await tenantSetupClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO "${tenantUser}";`);
+    await tenantSetupClient.end().catch(() => {});
+  } catch (grantErr) {
+    console.warn(`[Tenant DB Setup] Schema permission warning for ${dbName}:`, grantErr.message);
   }
 
   // 3. Push schema to the new database

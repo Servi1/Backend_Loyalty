@@ -1,16 +1,20 @@
 /**
- * IP and MAC-based Rate Limiter Middleware
+ * IP and MAC-based Rate Limiter & Permanent Block List Middleware
  * 
  * Provides dual-layer attack protection:
  * 1. IP Rate Limiting: Blocks flood attacks from a specific IP.
  * 2. MAC / Device-based Rate Limiting: Identifies clients by MAC address (via ARP table lookup,
  *    network interfaces, or client device headers). Even if an attacker uses an IP-changer app
  *    or VPN rotation, their device/MAC remains the same and will be blocked across rotating IPs.
+ * 3. Persistent Block List: When a client exceeds the limit, their IP or MAC is added to a
+ *    permanent block list in the database. They cannot access the server again (even after the
+ *    15-minute window expires) until manually unblocked by a Super Admin from the Admin Panel.
  */
 
 const { rateLimit } = require("express-rate-limit");
 const { exec } = require("child_process");
 const os = require("os");
+const { isClientBlocked, blockClient } = require("../web/admin/blocked-clients/blockedClients.service");
 
 // In-memory ARP Cache: Maps IPv4 -> MAC address
 const arpCache = new Map();
@@ -42,7 +46,7 @@ function refreshArpTable() {
           continue;
         }
 
-        const nixMatch = line.match(/\(?([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\)?\s+(?:at\s+)?([0-9a-fA-F:]{17})/);
+        const nixMatch = line.match(/\(?([0-9]+\.[0-9]+\.[0-9]+)\)?\s+(?:at\s+)?([0-9a-fA-F:]{17})/);
         if (nixMatch) {
           const ip = nixMatch[1];
           const mac = nixMatch[2].toLowerCase();
@@ -154,11 +158,11 @@ const MAX_IP_REQUESTS = Number(process.env.RATE_LIMIT_MAX_IP) || 400; // 400 req
 const MAX_MAC_REQUESTS = Number(process.env.RATE_LIMIT_MAX_MAC) || 400; // 400 requests per 15 min per MAC
 
 /**
- * Standard skip helper for health checks and static uploads
+ * Standard skip helper for health checks, static uploads, and admin unblock management
  */
 function shouldSkip(req) {
   const p = req.path || req.url || "";
-  return p.startsWith("/uploads") || p === "/health" || p === "/api/health";
+  return p.startsWith("/uploads") || p === "/health" || p === "/api/health" || p.startsWith("/api/admin/blocked-clients");
 }
 
 /**
@@ -171,14 +175,29 @@ const ipRateLimiter = rateLimit({
   legacyHeaders: false,
   skip: shouldSkip,
   keyGenerator: (req) => `ip:${getClientIp(req)}`,
-  handler: (req, res) => {
+  handler: async (req, res) => {
     const ip = getClientIp(req);
     const mac = getClientMac(req) || "unknown";
-    console.warn(`⚠️ [RATE LIMIT - IP BLOCKED] IP: ${ip} | MAC: ${mac} | Path: ${req.originalUrl}`);
-    res.status(429).json({
+    console.warn(`⚠️ [RATE LIMIT - IP EXCEEDED] IP: ${ip} | MAC: ${mac} | Path: ${req.originalUrl}`);
+
+    // Automatically add to permanent blocked list in database & cache
+    try {
+      await blockClient({
+        type: "IP",
+        identifier: ip,
+        ip,
+        mac: mac !== "unknown" ? mac : null,
+        reason: `Exceeded IP rate limit (${MAX_IP_REQUESTS} req / 15m)`,
+        requestCount: MAX_IP_REQUESTS,
+      });
+    } catch (err) {
+      console.error("Failed to add IP to blocked list:", err.message);
+    }
+
+    res.status(403).json({
       success: false,
-      message: "Too many requests from this IP address. Please try again later.",
-      code: "IP_RATE_LIMIT_EXCEEDED",
+      message: "Too many requests from this IP address. Your IP has been permanently added to the blocked list and access is restricted. Please contact the platform administrator to unblock.",
+      code: "IP_BLOCKED",
       clientIp: ip,
       retryAfter: Math.ceil(WINDOW_MS / 1000),
     });
@@ -196,14 +215,29 @@ const macRateLimiter = rateLimit({
   legacyHeaders: false,
   skip: (req) => shouldSkip(req) || !getClientMac(req),
   keyGenerator: (req) => `mac:${getClientMac(req)}`,
-  handler: (req, res) => {
+  handler: async (req, res) => {
     const ip = getClientIp(req);
     const mac = getClientMac(req);
-    console.warn(`🛑 [RATE LIMIT - MAC/DEVICE BLOCKED] MAC: ${mac} | Current IP: ${ip} | Path: ${req.originalUrl}`);
-    res.status(429).json({
+    console.warn(`🛑 [RATE LIMIT - MAC/DEVICE EXCEEDED] MAC: ${mac} | Current IP: ${ip} | Path: ${req.originalUrl}`);
+
+    // Automatically add to permanent blocked list in database & cache
+    try {
+      await blockClient({
+        type: "MAC",
+        identifier: mac,
+        ip,
+        mac,
+        reason: `Exceeded device MAC rate limit (${MAX_MAC_REQUESTS} req / 15m)`,
+        requestCount: MAX_MAC_REQUESTS,
+      });
+    } catch (err) {
+      console.error("Failed to add MAC to blocked list:", err.message);
+    }
+
+    res.status(403).json({
       success: false,
-      message: "Too many requests from this device/MAC address. Rate limit exceeded even if IP address was changed. Please try again later.",
-      code: "MAC_RATE_LIMIT_EXCEEDED",
+      message: "Too many requests from this device/MAC address. Your device has been permanently added to the blocked list and access is restricted across any IP. Please contact the platform administrator to unblock.",
+      code: "MAC_BLOCKED",
       deviceMac: mac,
       retryAfter: Math.ceil(WINDOW_MS / 1000),
     });
@@ -211,9 +245,36 @@ const macRateLimiter = rateLimit({
 });
 
 /**
- * Combined Dual Rate Limiting Middleware
+ * Combined Dual Rate Limiting & Block List Enforcement Middleware
  */
 const rateLimiter = (req, res, next) => {
+  if (shouldSkip(req)) {
+    return next();
+  }
+
+  const ip = getClientIp(req);
+  const mac = getClientMac(req);
+
+  // 1. First check if this client is already permanently blocked in database/cache
+  const blockCheck = isClientBlocked(ip, mac);
+  if (blockCheck.blocked) {
+    // Exception: Allow authenticated super admins to reach blocked-clients management routes
+    const p = req.path || req.url || "";
+    if (p.startsWith("/api/admin/blocked-clients") || p.startsWith("/api/auth/login")) {
+      return next();
+    }
+
+    console.warn(`⛔ [BLOCKED CLIENT ACCESS DENIED] Type: ${blockCheck.type} | Identifier: ${blockCheck.identifier} | Path: ${req.originalUrl}`);
+    return res.status(403).json({
+      success: false,
+      code: "CLIENT_BLOCKED",
+      message: "Access restricted: Your IP address or device has been blocked by the platform security system due to excessive requests. Please contact the platform administrator to unblock your access.",
+      blockedIdentifier: blockCheck.identifier,
+      blockedType: blockCheck.type,
+    });
+  }
+
+  // 2. Run standard window rate limiters (which will permanently block if limit is exceeded)
   ipRateLimiter(req, res, (err) => {
     if (err) return next(err);
     macRateLimiter(req, res, next);
@@ -227,4 +288,3 @@ module.exports = {
   macRateLimiter,
   rateLimiter,
 };
-

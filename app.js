@@ -103,6 +103,7 @@ app.use("/api/admin/notifications", adminNotificationsRoutes);
 app.use("/api/admin/categories", tenantCategoriesRoutes);
 app.use("/api/admin/global-order-types", globalOrderTypesRoutes);
 app.use("/api/admin/support", supportRoutes);
+app.use("/api/admin/blocked-clients", require("./src/web/admin/blocked-clients/blockedClients.routes"));
 app.use("/api/auth", authRoutes); // auth handles both super admin and tenant logins
 app.use("/api/pos", authenticatePos, posRoutes);
 app.use("/api/kds", authenticateKds, kdsRoutes);

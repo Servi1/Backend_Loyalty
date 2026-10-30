@@ -469,6 +469,7 @@ model BroadcastNotification {
   successCount   Int      @default(0)
   failureCount   Int      @default(0)
   status         String   @default("SENT")
+  scheduledFor   DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -541,4 +542,26 @@ model LoyaltyAuditLog {
   @@index([tenantId])
   @@index([programType])
   @@index([createdAt])
+}
+
+// ─── Blocked Clients (Rate Limiter & Access Control) ───
+model BlockedClient {
+  id           String    @id @default(uuid())
+  type         String    // "IP" | "MAC"
+  identifier   String    @unique // The blocked IP address or MAC address
+  ipAddress    String?
+  macAddress   String?
+  reason       String?   @default("Exceeded rate limit")
+  isBlocked    Boolean   @default(true)
+  requestCount Int?      @default(0)
+  blockedAt    DateTime  @default(now())
+  unblockedAt  DateTime?
+  unblockedBy  String?
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([type])
+  @@index([isBlocked])
+  @@index([identifier])
 }

@@ -33,5 +33,8 @@ server.listen(config.port, () => {
   // Start background worker to cancel orders pending > 5 minutes without POS acceptance
   const pendingExpiryWorker = require("./src/shared/workers/pendingExpiry.worker");
   pendingExpiryWorker.start();
+
+  // Start background worker to dispatch scheduled push notifications
+  const scheduledNotificationsWorker = require("./src/shared/workers/scheduledNotifications.worker");
+  scheduledNotificationsWorker.start();
 });
-// Trigger reload for new env config (HTTP base URL)

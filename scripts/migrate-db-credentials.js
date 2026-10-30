@@ -1,0 +1,176 @@
+const { Client } = require("pg");
+const dotenv = require("dotenv");
+
+dotenv.config();
+
+/**
+ * Migration Script: Migrate PostgreSQL users & tenant database URLs for Production & Staging
+ * 
+ * Target Credentials:
+ * - Super Admin Main DB (servio_main):
+ *     User: Servidb
+ *     Pass: Vskkrskcwpwtvkkuec
+ * - Tenant Databases (tenant_*_db):
+ *     User: Serbranddb
+ *     Pass: AjhsGkidrsksnkoaaehbisywa
+ */
+async function migrateCredentials() {
+  console.log("============================================================");
+  console.log("  SERVI DATABASE CREDENTIALS MIGRATION (MAIN & TENANT DBS)  ");
+  console.log("============================================================\n");
+
+  const adminConnString = process.env.ADMIN_DATABASE_URL || process.env.DATABASE_URL;
+  if (!adminConnString) {
+    throw new Error("Neither ADMIN_DATABASE_URL nor DATABASE_URL is defined in environment variables.");
+  }
+
+  // Parse host and port from existing connection
+  const urlObj = new URL(adminConnString);
+  const host = urlObj.hostname || "localhost";
+  const port = urlObj.port || "5432";
+
+  console.log(`[1/5] Connecting to PostgreSQL cluster at ${host}:${port}...`);
+  const adminClient = new Client({ connectionString: adminConnString });
+  await adminClient.connect();
+  console.log("✓ Connected to PostgreSQL cluster successfully.\n");
+
+  console.log("[2/5] Creating / updating database roles...");
+  // 1. Create or update Servidb user
+  await adminClient.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'Servidb') THEN
+        CREATE ROLE "Servidb" WITH LOGIN PASSWORD 'Vskkrskcwpwtvkkuec' CREATEDB SUPERUSER;
+      ELSE
+        ALTER ROLE "Servidb" WITH LOGIN PASSWORD 'Vskkrskcwpwtvkkuec' CREATEDB SUPERUSER;
+      END IF;
+    END
+    $$;
+  `);
+  console.log("✓ Role 'Servidb' ready with CREATEDB / SUPERUSER privileges.");
+
+  // 2. Create or update Serbranddb user
+  await adminClient.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'Serbranddb') THEN
+        CREATE ROLE "Serbranddb" WITH LOGIN PASSWORD 'AjhsGkidrsksnkoaaehbisywa';
+      ELSE
+        ALTER ROLE "Serbranddb" WITH LOGIN PASSWORD 'AjhsGkidrsksnkoaaehbisywa';
+      END IF;
+    END
+    $$;
+  `);
+  console.log("✓ Role 'Serbranddb' ready.\n");
+
+  console.log("[3/5] Configuring Main Database (servio_main)...");
+  await adminClient.query(`GRANT ALL PRIVILEGES ON DATABASE servio_main TO "Servidb";`);
+  await adminClient.query(`ALTER DATABASE servio_main OWNER TO "Servidb";`);
+
+  const mainDbClient = new Client({
+    connectionString: `postgresql://Servidb:Vskkrskcwpwtvkkuec@${host}:${port}/servio_main?schema=public`
+  });
+  await mainDbClient.connect();
+  await mainDbClient.query(`GRANT ALL ON SCHEMA public TO "Servidb";`);
+  await mainDbClient.query(`GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO "Servidb";`);
+  await mainDbClient.query(`GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO "Servidb";`);
+  await mainDbClient.query(`GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO "Servidb";`);
+  await mainDbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "Servidb";`);
+  await mainDbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "Servidb";`);
+  await mainDbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO "Servidb";`);
+  console.log("✓ Permissions and ownership configured on servio_main.");
+
+  // Fetch all tenant databases on this PostgreSQL instance
+  const dbRes = await adminClient.query(`
+    SELECT datname FROM pg_database WHERE datname LIKE 'tenant_%' AND datistemplate = false;
+  `);
+  const tenantDbs = dbRes.rows.map(r => r.datname);
+  console.log(`\n[4/5] Discovered ${tenantDbs.length} tenant databases to migrate.`);
+
+  for (const dbName of tenantDbs) {
+    try {
+      // Set DB owner to Serbranddb
+      await adminClient.query(`GRANT ALL PRIVILEGES ON DATABASE "${dbName}" TO "Serbranddb";`);
+      await adminClient.query(`ALTER DATABASE "${dbName}" OWNER TO "Serbranddb";`);
+
+      // Connect into the tenant DB to grant schema & table privileges
+      const tenantClient = new Client({
+        connectionString: `postgresql://Servidb:Vskkrskcwpwtvkkuec@${host}:${port}/${dbName}`
+      });
+      await tenantClient.connect();
+      await tenantClient.query(`GRANT ALL ON SCHEMA public TO "Serbranddb";`);
+      await tenantClient.query(`GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO "Serbranddb";`);
+      await tenantClient.query(`GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO "Serbranddb";`);
+      await tenantClient.query(`GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO "Serbranddb";`);
+      await tenantClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "Serbranddb";`);
+      await tenantClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "Serbranddb";`);
+      await tenantClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO "Serbranddb";`);
+      await tenantClient.end();
+      console.log(`  ✓ Migrated database & schema privileges for "${dbName}"`);
+    } catch (err) {
+      console.warn(`  ⚠ Warning processing "${dbName}":`, err.message);
+    }
+  }
+
+  // Update Tenant table records in servio_main
+  console.log("\n[5/5] Updating 'Tenant' table connection URLs in servio_main...");
+  const tenantsRes = await mainDbClient.query(`SELECT id, slug, "dbUrl" FROM "Tenant"`);
+  let updatedCount = 0;
+  for (const t of tenantsRes.rows) {
+    if (t.dbUrl) {
+      try {
+        const u = new URL(t.dbUrl);
+        const dbName = u.pathname.replace("/", "");
+        const newDbUrl = `postgresql://Serbranddb:AjhsGkidrsksnkoaaehbisywa@${host}:${port}/${dbName}?schema=public`;
+        await mainDbClient.query(`UPDATE "Tenant" SET "dbUrl" = $1 WHERE id = $2`, [newDbUrl, t.id]);
+        updatedCount++;
+      } catch (e) {
+        console.warn(`  ⚠ Could not parse dbUrl for tenant ${t.slug}:`, t.dbUrl);
+      }
+    }
+  }
+  console.log(`✓ Updated ${updatedCount} tenant records to use 'Serbranddb' credentials.\n`);
+
+  await mainDbClient.end();
+  await adminClient.end();
+
+  // Automatically update Backend_Loyalty/.env if needed
+  const fs = require("fs");
+  const path = require("path");
+  const envPath = path.join(__dirname, "../.env");
+  if (fs.existsSync(envPath)) {
+    let envContent = fs.readFileSync(envPath, "utf8");
+    const targetDbUrl = `postgresql://Servidb:Vskkrskcwpwtvkkuec@${host}:${port}/servio_main?schema=public`;
+    const targetTenantDbUrl = `postgresql://Serbranddb:AjhsGkidrsksnkoaaehbisywa@${host}:${port}/servio_main?schema=public`;
+
+    if (envContent.includes("DATABASE_URL=")) {
+      envContent = envContent.replace(/DATABASE_URL=["'][^"']+["']/g, `DATABASE_URL="${targetDbUrl}"`);
+    } else {
+      envContent += `\nDATABASE_URL="${targetDbUrl}"\n`;
+    }
+
+    if (!envContent.includes("TENANT_DB_USER=")) {
+      envContent += `\nTENANT_DB_USER="Serbranddb"\nTENANT_DB_PASSWORD="AjhsGkidrsksnkoaaehbisywa"\nTENANT_DB_HOST="${host}"\nTENANT_DB_PORT="${port}"\nTENANT_DATABASE_URL="${targetTenantDbUrl}"\n`;
+    } else {
+      envContent = envContent.replace(/TENANT_DATABASE_URL=["'][^"']+["']/g, `TENANT_DATABASE_URL="${targetTenantDbUrl}"`);
+    }
+
+    fs.writeFileSync(envPath, envContent, "utf8");
+    console.log("✓ Synchronized Backend_Loyalty/.env configuration.");
+  }
+
+  console.log("============================================================");
+  console.log("  MIGRATION COMPLETE! ALL DATABASES CONFIGURED SUCCESSFULLY  ");
+  console.log("============================================================");
+}
+
+if (require.main === module) {
+  migrateCredentials()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error("\n❌ Migration failed:", err.message);
+      process.exit(1);
+    });
+}
+
+module.exports = migrateCredentials;

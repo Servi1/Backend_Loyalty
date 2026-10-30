@@ -2,7 +2,7 @@ const catchAsync = require("../../../utils/catchAsync");
 const service = require("./adminNotifications.service");
 
 const sendBroadcast = catchAsync(async (req, res) => {
-  const { title, titleEn, titleAr, body, bodyEn, bodyAr, imageUrl, targetAudience, action } = req.body;
+  const { title, titleEn, titleAr, body, bodyEn, bodyAr, imageUrl, targetAudience, action, scheduledFor } = req.body;
   const sentBy = req.user ? req.user.name || req.user.email : "Super Admin";
 
   const result = await service.sendBroadcastNotification({
@@ -15,13 +15,28 @@ const sendBroadcast = catchAsync(async (req, res) => {
     imageUrl,
     targetAudience,
     action,
-    sentBy
+    sentBy,
+    scheduledFor: scheduledFor || null,
   });
+
+  const isScheduled = result.status === "SCHEDULED";
 
   res.json({
     success: true,
-    message: "Broadcast notification sent successfully",
-    data: result
+    message: isScheduled
+      ? `Notification successfully scheduled for ${new Date(result.scheduledFor).toLocaleString()}`
+      : "Broadcast notification sent successfully",
+    data: result,
+  });
+});
+
+const cancelScheduled = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const result = await service.cancelScheduledNotification(id);
+  res.json({
+    success: true,
+    message: "Scheduled notification cancelled successfully",
+    data: result,
   });
 });
 
@@ -33,13 +48,13 @@ const sendTest = catchAsync(async (req, res) => {
     bodyEn,
     bodyAr,
     phone,
-    sentBy: req.user ? req.user.name || req.user.email : "Super Admin"
+    sentBy: req.user ? req.user.name || req.user.email : "Super Admin",
   });
 
   res.json({
     success: true,
     message: "Test notification sent successfully",
-    data: result
+    data: result,
   });
 });
 
@@ -61,8 +76,9 @@ const getStatus = catchAsync(async (req, res) => {
 
 module.exports = {
   sendBroadcast,
+  cancelScheduled,
   sendTest,
   getHistory,
   deleteHistory,
-  getStatus
+  getStatus,
 };

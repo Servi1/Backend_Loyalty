@@ -10,6 +10,8 @@ router.use(authenticate, authorize("SUPER_ADMIN"));
 router.get("/status", ctrl.getStatus);
 router.get("/history", ctrl.getHistory);
 router.post("/broadcast", ctrl.sendBroadcast);
+router.put("/schedule/:id/cancel", ctrl.cancelScheduled);
+router.post("/schedule/:id/cancel", ctrl.cancelScheduled);
 router.post("/test-send", ctrl.sendTest);
 router.delete("/history/:id", ctrl.deleteHistory);
 
