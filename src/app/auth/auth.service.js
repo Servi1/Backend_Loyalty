@@ -2,7 +2,7 @@
  * App Auth Service — Mobile OTP Authentication
  *
  * Handles:
- *  - sendOtp:   Creates/upserts an OTP record. In dev, always uses "1111".
+ *  - sendOtp:   Creates/upserts an OTP record and dispatches SMS.
  *  - verifyOtp: Validates OTP, auto-creates user + wallet on first login.
  *  - getMe:     Returns the authenticated customer's full profile + wallet.
  */

@@ -56,8 +56,7 @@ const isDevOtpBypass = (code) => {
 
   const input = String(code).trim();
   const targetCode = getDevOtpBypassCode();
-
-  return input === targetCode || input === "111111" || input === "1111";
+  return input === targetCode;
 };
 
 const generateOtp = (length = 4) => {
