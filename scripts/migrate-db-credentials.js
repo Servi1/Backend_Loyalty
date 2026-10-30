@@ -81,20 +81,43 @@ async function migrateCredentials() {
   await mainDbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "Servidb";`);
   await mainDbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO "Servidb";`);
 
-  // Transfer ownership of existing tables/sequences/views in servio_main to Servidb
+  // Transfer ownership of existing tables/sequences/views/types in servio_main to Servidb
   await mainDbClient.query(`
     DO $$
     DECLARE
       r RECORD;
     BEGIN
+      BEGIN
+        REASSIGN OWNED BY postgres TO "Servidb";
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END;
+
       FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-        EXECUTE 'ALTER TABLE "' || r.tablename || '" OWNER TO "Servidb"';
+        BEGIN
+          EXECUTE 'ALTER TABLE "' || r.tablename || '" OWNER TO "Servidb"';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
       END LOOP;
+
       FOR r IN (SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = 'public') LOOP
-        EXECUTE 'ALTER SEQUENCE "' || r.sequence_name || '" OWNER TO "Servidb"';
+        BEGIN
+          EXECUTE 'ALTER SEQUENCE "' || r.sequence_name || '" OWNER TO "Servidb"';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
       END LOOP;
+
       FOR r IN (SELECT table_name FROM information_schema.views WHERE table_schema = 'public') LOOP
-        EXECUTE 'ALTER VIEW "' || r.table_name || '" OWNER TO "Servidb"';
+        BEGIN
+          EXECUTE 'ALTER VIEW "' || r.table_name || '" OWNER TO "Servidb"';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+      END LOOP;
+
+      FOR r IN (SELECT typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = 'public' AND t.typtype = 'e') LOOP
+        BEGIN
+          EXECUTE 'ALTER TYPE "' || r.typname || '" OWNER TO "Servidb"';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
       END LOOP;
     END
     $$;
@@ -126,27 +149,50 @@ async function migrateCredentials() {
       await tenantClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "Serbranddb";`);
       await tenantClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO "Serbranddb";`);
 
-      // Crucial: Transfer ownership of ALL existing tables, sequences, and views to Serbranddb so Prisma can alter tables
+      // Crucial: Transfer ownership of ALL existing tables, sequences, views, and enum types to Serbranddb so Prisma can alter tables
       await tenantClient.query(`
         DO $$
         DECLARE
           r RECORD;
         BEGIN
+          BEGIN
+            REASSIGN OWNED BY postgres TO "Serbranddb";
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+
           FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-            EXECUTE 'ALTER TABLE "' || r.tablename || '" OWNER TO "Serbranddb"';
+            BEGIN
+              EXECUTE 'ALTER TABLE "' || r.tablename || '" OWNER TO "Serbranddb"';
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
           END LOOP;
+
           FOR r IN (SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = 'public') LOOP
-            EXECUTE 'ALTER SEQUENCE "' || r.sequence_name || '" OWNER TO "Serbranddb"';
+            BEGIN
+              EXECUTE 'ALTER SEQUENCE "' || r.sequence_name || '" OWNER TO "Serbranddb"';
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
           END LOOP;
+
           FOR r IN (SELECT table_name FROM information_schema.views WHERE table_schema = 'public') LOOP
-            EXECUTE 'ALTER VIEW "' || r.table_name || '" OWNER TO "Serbranddb"';
+            BEGIN
+              EXECUTE 'ALTER VIEW "' || r.table_name || '" OWNER TO "Serbranddb"';
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+          END LOOP;
+
+          FOR r IN (SELECT typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = 'public' AND t.typtype = 'e') LOOP
+            BEGIN
+              EXECUTE 'ALTER TYPE "' || r.typname || '" OWNER TO "Serbranddb"';
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
           END LOOP;
         END
         $$;
       `);
 
       await tenantClient.end();
-      console.log(`  ✓ Transferred table ownership & privileges for "${dbName}" to Serbranddb`);
+      console.log(`  ✓ Transferred table/type ownership & privileges for "${dbName}" to Serbranddb`);
     } catch (err) {
       console.warn(`  ⚠ Warning processing "${dbName}":`, err.message);
     }
