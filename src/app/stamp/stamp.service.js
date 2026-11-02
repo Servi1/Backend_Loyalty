@@ -125,7 +125,7 @@ const resolveStampProgram = async ({ token, tenantId }) => {
 };
 
 /**
- * Checks if a customer exists by phone and sends OTP (1111 in dev)
+ * Checks if a customer exists by phone and sends OTP
  */
 const checkPhoneAndSendOtp = async (rawPhone) => {
   const phone = normalisePhone(rawPhone);
@@ -162,6 +162,7 @@ const checkPhoneAndSendOtp = async (rawPhone) => {
   await sendOtpSms(rawPhone, code);
 
   const devBypassAllowed = isDevBypassEnabled();
+  const bypassCode = devBypassAllowed ? getDevOtpBypassCode() : null;
 
   return {
     phone,
@@ -169,6 +170,7 @@ const checkPhoneAndSendOtp = async (rawPhone) => {
     name: user?.name || "",
     message: "OTP sent successfully",
     devBypass: devBypassAllowed,
+    bypassCode,
   };
 };
 
