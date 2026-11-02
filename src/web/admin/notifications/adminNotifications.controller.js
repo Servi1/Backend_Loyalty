@@ -2,7 +2,7 @@ const catchAsync = require("../../../utils/catchAsync");
 const service = require("./adminNotifications.service");
 
 const sendBroadcast = catchAsync(async (req, res) => {
-  const { title, titleEn, titleAr, body, bodyEn, bodyAr, imageUrl, targetAudience, action, scheduledFor } = req.body;
+  const { title, titleEn, titleAr, body, bodyEn, bodyAr, imageUrl, targetAudience, action, scheduledFor, repeatWeekly, repeatDays, repeatTime } = req.body;
   const sentBy = req.user ? req.user.name || req.user.email : "Super Admin";
 
   const result = await service.sendBroadcastNotification({
@@ -17,6 +17,9 @@ const sendBroadcast = catchAsync(async (req, res) => {
     action,
     sentBy,
     scheduledFor: scheduledFor || null,
+    repeatWeekly: Boolean(repeatWeekly),
+    repeatDays: Array.isArray(repeatDays) ? repeatDays : [],
+    repeatTime: repeatTime || null,
   });
 
   const isScheduled = result.status === "SCHEDULED";

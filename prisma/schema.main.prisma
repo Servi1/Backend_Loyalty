@@ -179,6 +179,8 @@ model Tenant {
   wallets             Wallet[]
   earnedCoupons       EarnedCoupon[]
   loyaltyAuditLogs    LoyaltyAuditLog[]
+  paymentMethods      TenantPaymentMethod[]
+  invoices            TenantInvoice[]
 
   lastOrderSyncAt DateTime?
 
@@ -564,4 +566,76 @@ model BlockedClient {
   @@index([type])
   @@index([isBlocked])
   @@index([identifier])
+}
+
+
+// ─── Tenant Invoicing & Billing Models ──────────────────────────────────────
+
+model TenantPaymentMethod {
+  id                  String   @id @default(uuid())
+  tenantId            String
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type                String   @default("card") // "mada", "card", "apple_pay", "bank"
+  brand               String   @default("Mada")
+  last4               String   @default("4242")
+  expiryMonth         Int      @default(12)
+  expiryYear          Int      @default(2028)
+  cardholder          String?  @default("Brand Owner")
+  gatewayToken        String   @default("tok_demo_default")
+  isDefault           Boolean  @default(true)
+  status              String   @default("ACTIVE") // "ACTIVE", "EXPIRED", "FAILED"
+  demoSimulateOutcome String   @default("SUCCESS") // "SUCCESS", "FAIL_DECLINED", "FAIL_INSUFFICIENT_FUNDS"
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+model TenantInvoice {
+  id                  String                 @id // e.g. "INV-SLUG-202611-01"
+  invoiceNumber       String?                @unique
+  tenantId            String
+  tenant              Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type                String                 // "SUBSCRIPTION_MONTHLY", "MID_MONTH_ADDON", "TRANSACTION_FEES"
+  title               String?
+  status              String                 @default("PENDING") // "PENDING", "PAYMENT_FAILED", "PAID", "CANCELLED"
+  subtotal            Float                  @default(0.0)
+  vatPercentage       Float                  @default(15.0)
+  vatAmount           Float                  @default(0.0)
+  amount              Float                  @default(0.0) // Total amount with VAT
+  currency            String                 @default("SAR")
+  periodStart         DateTime
+  periodEnd           DateTime
+  dueDate             DateTime
+  paidAt              DateTime?
+  breakdown           Json?                  // Global services, device slots, branches, fee breakdown
+  autoPaymentAttempts Int                    @default(0)
+  nextRetryAt         DateTime?
+  lastPaymentError    String?
+  allowManualPayment  Boolean                @default(false)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  payments            TenantPaymentAttempt[]
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([nextRetryAt])
+}
+
+model TenantPaymentAttempt {
+  id                   String        @id @default(uuid())
+  invoiceId            String
+  invoice              TenantInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  tenantId             String
+  attemptNumber        Int
+  type                 String        // "AUTOMATIC" | "MANUAL"
+  status               String        // "SUCCESS" | "FAILED"
+  amount               Float
+  paymentMethod        String?       // "mada", "card", "apple", "bank"
+  transactionReference String?
+  failureReason        String?
+  createdAt            DateTime      @default(now())
+
+  @@index([invoiceId])
+  @@index([tenantId])
 }

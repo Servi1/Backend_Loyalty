@@ -1,3 +1,23 @@
+
+function computeNextRecurringDate(daysOfWeek, timeString = "12:00") {
+  if (!Array.isArray(daysOfWeek) || daysOfWeek.length === 0) return null;
+  const parts = String(timeString).split(":");
+  const hours = parseInt(parts[0], 10) || 12;
+  const minutes = parseInt(parts[1], 10) || 0;
+
+  const now = new Date();
+  for (let offset = 0; offset <= 14; offset++) {
+    const candidate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, hours, minutes, 0, 0);
+    const day = candidate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    if (daysOfWeek.includes(day)) {
+      if (candidate.getTime() > now.getTime() + 60 * 1000) {
+        return candidate;
+      }
+    }
+  }
+  return null;
+}
+
 const mainPrisma = require("../../../config/prisma");
 const firebaseConfig = require("../../../config/firebase");
 
@@ -89,6 +109,9 @@ const sendBroadcastNotification = async ({
   action = "OPEN_APP",
   sentBy = "Super Admin",
   scheduledFor = null,
+  repeatWeekly = false,
+  repeatDays = [],
+  repeatTime = null,
 }) => {
   if (!title || !title.trim()) {
     throw new Error("Notification title is required");
@@ -100,6 +123,9 @@ const sendBroadcastNotification = async ({
   const payloadData = {
     action: action || "OPEN_APP",
     targetAudience: targetAudience || "ALL",
+    repeatWeekly: Boolean(repeatWeekly),
+    repeatDays: Array.isArray(repeatDays) ? repeatDays : [],
+    repeatTime: repeatTime || null,
   };
 
   // Case A: Schedule for a later time
@@ -199,6 +225,29 @@ const processDueScheduledNotifications = async () => {
         });
 
         console.log(`✅ [SCHEDULED NOTIFICATION DISPATCHED] "${n.title}" delivered with status: ${dispatchResult.status}`);
+
+        // Check if notification is set to repeat on days of the week (e.g. Every Sunday)
+        if (n.dataPayload && n.dataPayload.repeatWeekly && Array.isArray(n.dataPayload.repeatDays) && n.dataPayload.repeatDays.length > 0) {
+          const nextDate = computeNextRecurringDate(n.dataPayload.repeatDays, n.dataPayload.repeatTime || "12:00");
+          if (nextDate) {
+            await mainPrisma.broadcastNotification.create({
+              data: {
+                title: n.title,
+                body: n.body,
+                imageUrl: n.imageUrl,
+                targetAudience: n.targetAudience,
+                dataPayload: n.dataPayload,
+                sentBy: n.sentBy,
+                sentCount: 0,
+                successCount: 0,
+                failureCount: 0,
+                status: "SCHEDULED",
+                scheduledFor: nextDate,
+              }
+            });
+            console.log(`🔁 [RECURRING SCHEDULE] Next cycle scheduled for "${n.title}" at ${nextDate.toISOString()}`);
+          }
+        }
       } catch (itemErr) {
         console.error(`❌ [SCHEDULED NOTIFICATION FAILED] ID: ${n.id}:`, itemErr.message);
         await mainPrisma.broadcastNotification.update({

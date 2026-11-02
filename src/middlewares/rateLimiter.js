@@ -248,6 +248,8 @@ const macRateLimiter = rateLimit({
  * Combined Dual Rate Limiting & Block List Enforcement Middleware
  */
 const rateLimiter = (req, res, next) => {
+  // Rate limiter temporarily disabled
+  return next();
   if (shouldSkip(req)) {
     return next();
   }

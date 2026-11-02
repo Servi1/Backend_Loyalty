@@ -1,3 +1,4 @@
+const billingService = require("../../../services/billing.service");
 const mainPrisma = require("../../../config/prisma");
 const ApiError = require("../../../utils/ApiError");
 const { Client } = require("pg");
@@ -295,6 +296,14 @@ const update = async (id, data, user = null) => {
             notes: `Super Admin added +${addedQuantity} ${sf.serviceType.toUpperCase()} slot(s) mid-month`
           }
         });
+
+        // Trigger separate Mid-Month Add-on Fee Invoice
+        await billingService.generateMidMonthAddonInvoice(id, {
+          serviceType: sf.serviceType,
+          quantity: addedQuantity,
+          pricePerUnit,
+          label: sf.serviceType.toUpperCase() + " Slot"
+        }).catch(err => console.error("Mid-month slot invoice generation error:", err.message));
       } catch (err) {
         console.error(`Failed to record slot addon for tenant ${id}:`, err.message);
       }
@@ -323,6 +332,14 @@ const update = async (id, data, user = null) => {
             notes: `Super Admin activated ${tf.serviceType.toUpperCase()} feature license mid-month`
           }
         });
+
+        // Trigger separate Mid-Month Add-on Fee Invoice
+        await billingService.generateMidMonthAddonInvoice(id, {
+          serviceType: tf.serviceType,
+          quantity: 1,
+          pricePerUnit,
+          label: tf.serviceType.toUpperCase() + " Feature License"
+        }).catch(err => console.error("Mid-month feature invoice generation error:", err.message));
       } catch (err) {
         console.error(`Failed to record feature addon for tenant ${id}:`, err.message);
       }
@@ -1035,6 +1052,17 @@ const getInvoices = async (filters = {}) => {
     orderBy: { createdAt: "desc" }
   });
 
+  const dbInvoices = await mainPrisma.tenantInvoice.findMany({
+    include: {
+      tenant: { select: { id: true, name: true, slug: true } },
+      payments: { orderBy: { createdAt: "desc" } }
+    }
+  }).catch(() => []);
+  const dbInvoiceMap = new Map();
+  for (const inv of dbInvoices) {
+    dbInvoiceMap.set(inv.id, inv);
+  }
+
   const invoices = [];
 
   const getDaysActiveInMonth = (startDate, endDate, year, month) => {
@@ -1312,117 +1340,8 @@ const getInvoices = async (filters = {}) => {
         }
       }
 
-      // Mid-month Slot Add-on Prorated Charges (split into separate single-slot lines)
-      // Only process physical/slot-based add-ons (global licenses are handled in globalServiceConfigs)
-      const serviceLabels = {
-        pos: "POS Terminal",
-        qr_table: "QR Table Dining",
-        qr_cashier: "QR Cashier Counter",
-        kds: "KDS Kitchen Screen",
-        cds: "CDS Customer Display",
-        branch: "Branch Location"
-      };
-
-      const slotBasedServiceTypes = ["pos", "qr_table", "qr_cashier", "kds", "cds", "branch"];
-      const tenantAddons = (tenant.slotAddons || []).filter(a => slotBasedServiceTypes.includes((a.serviceType || "").toLowerCase()));
-      const addonCounts = {};
-      for (const addon of tenantAddons) {
-        const addedDate = new Date(addon.addedAt);
-        if (addedDate.getFullYear() === currentYear && addedDate.getMonth() === currentMonth) {
-          const { daysActive, cycleActiveDays, remainingDays, totalDays, period } = getDaysActiveInMonth(addedDate, currentMonthEnd, currentYear, currentMonth);
-          if (cycleActiveDays > 0 || daysActive > 0) {
-            const unitPrice = Number(addon.pricePerUnit || 0);
-            const addonQty = Number(addon.quantity || 1);
-            const label = serviceLabels[addon.serviceType.toLowerCase()] || addon.serviceType.toUpperCase();
-            const typeKey = addon.serviceType.toLowerCase();
-
-            let regDevices = [];
-            if (typeKey === "pos") regDevices = dbPosDevices;
-            else if (typeKey === "kds") regDevices = dbKdsDevices;
-            else if (typeKey === "qr_table") regDevices = dbTables;
-
-            const cycleKeyMap = {
-              pos: "cyclePos",
-              qr_table: "cycleQrTable",
-              qr_cashier: "cycleQrCashier",
-              kds: "cycleKds",
-              cds: "cycleCds",
-              branch: "cycleBranch",
-              app_servi: "cycleAppServi",
-              app_brand: "cycleAppBrand"
-            };
-            const cycleKey = cycleKeyMap[typeKey];
-            const serviceCycle = tenant[cycleKey] || tenant.billingCycle || "monthly";
-            const isYearly = String(serviceCycle).toLowerCase() === "yearly";
-            const effectiveMonthlyPrice = isYearly ? (unitPrice / 12) : unitPrice;
-
-            let yearlyDaysActive = daysActive;
-            let yearlyDaysRemaining = 365 - daysActive;
-            let yearlyPeriod = period;
-            let yearlyTotalDays = 365;
-            if (isYearly) {
-              const subStart = new Date(addedDate);
-              const calendarYearEnd = new Date(currentYear, 11, 31, 23, 59, 59, 999);
-              const activeStart = new Date(Math.max(new Date(currentYear, 0, 1).getTime(), subStart.getTime()));
-              
-              const totalMs = Math.max(0, calendarYearEnd.getTime() - activeStart.getTime());
-              yearlyTotalDays = Math.max(1, Math.ceil(totalMs / (24 * 60 * 60 * 1000)));
-
-              const remainingMs = Math.max(0, calendarYearEnd.getTime() - now.getTime());
-              yearlyDaysRemaining = Math.max(0, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
-              yearlyDaysActive = Math.max(0, yearlyTotalDays - yearlyDaysRemaining);
-
-              const startStr = activeStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-              const endStr = calendarYearEnd.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-              yearlyPeriod = `${startStr} - ${endStr}`;
-            }
-
-            for (let i = 0; i < addonQty; i++) {
-              const singleCost = effectiveMonthlyPrice * (cycleActiveDays / totalDays);
-              const globalIndex = (baseSlotCounts[typeKey] || 0);
-              baseSlotCounts[typeKey] = globalIndex + 1;
-              const addonSeq = (addonCounts[typeKey] = (addonCounts[typeKey] || 0) + 1);
-              const assigned = regDevices[globalIndex] || null;
-              const isAddonCanceled = assigned ? assigned.isActive === false : false;
-              const itemCharge = isAddonCanceled ? 0.0 : parseFloat(singleCost.toFixed(2));
-
-              if (!isAddonCanceled) {
-                invoiceAmount += itemCharge;
-              }
-
-              globalServices.push({
-                id: `addon_${typeKey}_slot_${addonSeq}_${addedDate.getTime()}`,
-                typeKey,
-                slotIndex: globalIndex + 1,
-                name: `Add-on: ${label} Slot #${addonSeq}`,
-                isCanceled: isAddonCanceled,
-                assignedDevice: assigned ? {
-                  id: assigned.id,
-                  name: assigned.name || assigned.label || `Device #${globalIndex + 1}`,
-                  deviceKey: assigned.deviceKey || null,
-                  branchName: assigned.branch?.name || "Main Branch",
-                  isActive: assigned.isActive ?? true,
-                } : null,
-                price: unitPrice,
-                billingCycle: serviceCycle,
-                isYearly,
-                monthlyTotal: parseFloat(effectiveMonthlyPrice.toFixed(2)),
-                amount: itemCharge,
-                quantity: 1,
-                daysActive: remainingDays,
-                cycleActiveDays,
-                remainingDays,
-                totalDays,
-                yearlyDaysActive,
-                yearlyTotalDays: isYearly ? yearlyTotalDays : 365,
-                yearlyDaysRemaining,
-                period: isYearly ? yearlyPeriod : period,
-                prorated: cycleActiveDays < totalDays
-              });
-            }
-          }
-        }
-      }
+      // Mid-month Slot Add-ons are billed separately as dedicated MID_MONTH_ADDON invoices per Rule 2.
+      // They are NOT re-injected into the 1st-of-month recurring invoice to prevent double-billing and preserve past invoice integrity.
 
       // B. Branch-level services
       for (const branch of dbBranches) {
@@ -1541,22 +1460,62 @@ const getInvoices = async (filters = {}) => {
 
       if (match) {
         const totalBilledAmount = invoiceAmount + totalTransactionFees;
+        const baseId = `INV-${tenant.slug.toUpperCase()}-${currentYear}${String(currentMonth + 1).padStart(2, "0")}`;
+        const subInvoiceId = `${baseId}-SUB`;
+        const feeInvoiceId = `${baseId}-FEES`;
+
+        const subRecord = dbInvoiceMap.get(subInvoiceId);
+        const feeRecord = dbInvoiceMap.get(feeInvoiceId);
+
+        const subStatus = subRecord
+          ? (subRecord.status === "PAID" ? "paid" : (subRecord.status === "PAYMENT_FAILED" ? "overdue" : "pending"))
+          : (tenant.isActive ? "paid" : "overdue");
+
+        const feeStatus = feeRecord
+          ? (feeRecord.status === "PAID" ? "paid" : (feeRecord.status === "PAYMENT_FAILED" ? "overdue" : "pending"))
+          : (tenant.isActive ? "paid" : "overdue");
+
+        const overallStatus = (subStatus === "overdue" || feeStatus === "overdue")
+          ? "overdue"
+          : (subStatus === "paid" && feeStatus === "paid" ? "paid" : "pending");
+
         invoices.push({
-          id: `INV-${tenant.slug.toUpperCase()}-${currentYear}${String(currentMonth + 1).padStart(2, "0")}`,
+          id: baseId,
+          type: "SUBSCRIPTION_MONTHLY",
+          subInvoiceId,
+          feeInvoiceId,
           tenantId: tenant.id,
           tenantName: tenant.name,
           plan: planName,
           period: `${startPeriodStr} - ${endPeriodStr}`,
           amount: parseFloat(totalBilledAmount.toFixed(2)),
           subscriptionAmount: parseFloat(invoiceAmount.toFixed(2)),
-          status: tenant.isActive ? "paid" : "overdue",
+          status: overallStatus,
+          subStatus,
+          feeStatus,
+          subDbStatus: subRecord?.status || null,
+          feeDbStatus: feeRecord?.status || null,
+          dbStatus: subRecord?.status || feeRecord?.status || null,
+          autoPaymentAttempts: subRecord?.autoPaymentAttempts ?? feeRecord?.autoPaymentAttempts ?? 0,
+          allowManualPayment: subRecord?.allowManualPayment || feeRecord?.allowManualPayment || false,
+          nextRetryAt: subRecord?.nextRetryAt || feeRecord?.nextRetryAt || null,
+          lastPaymentError: subRecord?.lastPaymentError || feeRecord?.lastPaymentError || null,
+          subAutoPaymentAttempts: subRecord?.autoPaymentAttempts ?? 0,
+          subAllowManualPayment: subRecord?.allowManualPayment ?? false,
+          subNextRetryAt: subRecord?.nextRetryAt ?? null,
+          subLastPaymentError: subRecord?.lastPaymentError ?? null,
+          feeAutoPaymentAttempts: feeRecord?.autoPaymentAttempts ?? 0,
+          feeAllowManualPayment: feeRecord?.allowManualPayment ?? false,
+          feeNextRetryAt: feeRecord?.nextRetryAt ?? null,
+          feeLastPaymentError: feeRecord?.lastPaymentError ?? null,
           createdAt: new Date(currentYear, currentMonth, 1),
           breakdown: {
             globalServices,
             branches: branchBreakdowns,
             transactionFees: transactionFeesList,
             totalTransactionFees: parseFloat(totalTransactionFees.toFixed(2))
-          }
+          },
+          payments: [...(subRecord?.payments || []), ...(feeRecord?.payments || [])]
         });
       }
 
@@ -1566,6 +1525,70 @@ const getInvoices = async (filters = {}) => {
         currentYear++;
       }
     }
+  }
+
+  // Also include mid-month add-on invoices from DB
+  const addonInvoices = dbInvoices.filter(i => i.type === "MID_MONTH_ADDON");
+  for (const addInv of addonInvoices) {
+    if (filters.startDate && new Date(addInv.createdAt) < new Date(filters.startDate)) continue;
+    if (filters.endDate && new Date(addInv.createdAt) > new Date(filters.endDate)) continue;
+    const startStr = new Date(addInv.periodStart).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const endStr = new Date(addInv.periodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const rawBreakdown = addInv.breakdown || {};
+    const normGlobalServices = (rawBreakdown.globalServices || []).map((s, idx) => {
+      const unitPrice = s.price !== undefined ? Number(s.price) : (s.unitPrice !== undefined ? Number(s.unitPrice) : 0);
+      const amount = s.amount !== undefined ? Number(s.amount) : (s.total !== undefined ? Number(s.total) : 0);
+      return {
+        id: s.id || `addon_svc_${idx}`,
+        name: s.name || s.serviceType || "Add-on Service",
+        typeKey: s.typeKey || (s.serviceType || "svc").toLowerCase(),
+        isSlot: true,
+        slotIndex: idx + 1,
+        price: unitPrice,
+        unitPrice,
+        amount,
+        total: amount,
+        quantity: s.quantity || 1,
+        daysActive: s.daysActive || s.proratedDays || s.remainingDays || 1,
+        remainingDays: s.remainingDays || s.proratedDays || 1,
+        totalDays: s.totalDays || 30,
+        period: s.period || `${startStr} - ${endStr}`,
+        prorated: true
+      };
+    });
+
+    invoices.push({
+      id: addInv.id,
+      type: addInv.type || "MID_MONTH_ADDON",
+      subInvoiceId: addInv.id,
+      tenantId: addInv.tenantId,
+      tenantName: addInv.tenant?.name || "Brand",
+      plan: addInv.title,
+      period: `${startStr} - ${endStr}`,
+      amount: addInv.amount,
+      subscriptionAmount: addInv.subtotal,
+      status: addInv.status === "PAID" ? "paid" : (addInv.status === "PAYMENT_FAILED" ? "overdue" : "pending"),
+      subStatus: addInv.status === "PAID" ? "paid" : "overdue",
+      feeStatus: "paid",
+      dbStatus: addInv.status,
+      subDbStatus: addInv.status,
+      autoPaymentAttempts: addInv.autoPaymentAttempts,
+      subAutoPaymentAttempts: addInv.autoPaymentAttempts,
+      allowManualPayment: addInv.allowManualPayment,
+      subAllowManualPayment: addInv.allowManualPayment,
+      nextRetryAt: addInv.nextRetryAt,
+      subNextRetryAt: addInv.nextRetryAt,
+      lastPaymentError: addInv.lastPaymentError,
+      subLastPaymentError: addInv.lastPaymentError,
+      createdAt: addInv.createdAt,
+      breakdown: {
+        ...rawBreakdown,
+        globalServices: normGlobalServices,
+        branches: rawBreakdown.branches || [],
+        transactionFees: rawBreakdown.transactionFees || []
+      },
+      payments: addInv.payments || []
+    });
   }
 
   // Sort invoices by date descending
