@@ -813,7 +813,8 @@ const getEligibleItemsHistory = async ({ customerId, tenantId }) => {
     }
   }
 
-  const targetIds = purchasedItemIds.size > 0 ? Array.from(purchasedItemIds) : eligibleIds;
+  // Only show menu items that the customer has actually ordered from the eligible list
+  const targetIds = Array.from(purchasedItemIds);
 
   let items = [];
   if (targetIds.length > 0) {
@@ -824,21 +825,9 @@ const getEligibleItemsHistory = async ({ customerId, tenantId }) => {
       select: {
         id: true,
         name: true,
+        nameAr: true,
         description: true,
-        price: true,
-        imageUrl: true,
-      },
-    });
-  }
-
-  if (items.length === 0) {
-    items = await tenantDb.menuItem.findMany({
-      where: { isAvailable: true },
-      take: 20,
-      select: {
-        id: true,
-        name: true,
-        description: true,
+        descriptionAr: true,
         price: true,
         imageUrl: true,
       },
@@ -848,7 +837,7 @@ const getEligibleItemsHistory = async ({ customerId, tenantId }) => {
   return {
     items,
     rewardTextEn: stampProg?.rewardTextEn || "Free Stamp Reward",
-    rewardTextAr: stampProg?.rewardTextAr || null,
+    rewardTextAr: stampProg?.rewardTextAr || "مكافأة ختم مجانية",
   };
 };
 
