@@ -169,7 +169,7 @@ async function generateMonthEndTransactionFeeInvoices(targetDate = new Date()) {
 
     const feeConfigs = [
       { key: "feeAppServi", label: "APP servi", sourceMatch: (o) => o.source === "app" },
-      { key: "feeAppBrand", label: "APP brand", sourceMatch: (o) => o.source === "app_brand" || o.type === "DELIVERY" },
+      { key: "feeAppBrand", label: "APP brand", sourceMatch: (o) => o.source === "app_brand" },
       { key: "feePos", label: "POS Integration", sourceMatch: (o) => o.source === "pos" },
       { key: "feeQrTable", label: "QR Table Dining", sourceMatch: (o) => o.source === "qr_table" },
       { key: "feeQrCashier", label: "QR Cashier", sourceMatch: (o) => o.source === "qr_cashier" },

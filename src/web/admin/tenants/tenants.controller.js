@@ -20,10 +20,20 @@ const create = catchAsync(async (req, res) => {
 });
 
 const update = catchAsync(async (req, res) => {
-  if (req.user && req.user.role !== 'SUPER_ADMIN') {
+  const isSuperAdmin = Boolean(
+    req.admin ||
+    req.user?.role === "SUPER_ADMIN" ||
+    req.user?.role === "super_admin" ||
+    (typeof req.user?.role === "string" && req.user.role.startsWith("admin-role-"))
+  );
+
+  if (!isSuperAdmin) {
     const targetTenantId = req.params.id;
-    const userTenantId = req.tenant ? req.tenant.id : req.user.tenantId;
-    if (!userTenantId || targetTenantId !== userTenantId) {
+    const userTenantId = req.tenant?.id || req.tenantId || req.user?.tenantId || req.headers["x-tenant-id"];
+    const matchesTenant = userTenantId === targetTenantId ||
+      (req.tenant && (req.tenant.id === targetTenantId || req.tenant.slug === targetTenantId));
+
+    if (!matchesTenant) {
       return res.status(403).json({ success: false, message: "Forbidden: Cannot edit another brand's settings" });
     }
   }

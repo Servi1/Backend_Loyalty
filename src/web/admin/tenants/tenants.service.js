@@ -236,8 +236,17 @@ const create = async (data) => {
 const update = async (id, data, user = null) => {
   const existingTenant = await getById(id);
 
+  const isSuperAdmin = Boolean(
+    user && (
+      user.role === "SUPER_ADMIN" ||
+      user.role === "super_admin" ||
+      (typeof user.role === "string" && user.role.startsWith("admin-role-")) ||
+      user.isSuperAdmin
+    )
+  );
+
   // Security Hardening: Prevent Non-Super-Admins from modifying sensitive infrastructure/billing/DB settings
-  if (user && user.role !== "SUPER_ADMIN") {
+  if (user && !isSuperAdmin) {
     const allowedKeys = new Set([
       "name",
       "slug",

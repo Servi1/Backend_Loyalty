@@ -263,22 +263,28 @@ async function attemptInvoicePayment(invoiceId, attemptType = "AUTOMATIC", manua
  * Save or update default payment method for a tenant
  */
 async function saveTenantPaymentMethod(tenantId, cardData) {
+  const tenant = await mainPrisma.tenant.findFirst({
+    where: { OR: [{ id: tenantId }, { slug: tenantId }] }
+  });
+  if (!tenant) throw new Error(`Tenant not found: ${tenantId}`);
+  const resolvedTenantId = tenant.id;
+
   // Mark existing cards as non-default
   await mainPrisma.tenantPaymentMethod.updateMany({
-    where: { tenantId },
+    where: { tenantId: resolvedTenantId },
     data: { isDefault: false }
   });
 
   const paymentMethod = await mainPrisma.tenantPaymentMethod.create({
     data: {
-      tenantId,
-      type: cardData.type || "mada",
-      brand: cardData.brand || "Mada",
+      tenantId: resolvedTenantId,
+      type: cardData.type || "card",
+      brand: cardData.brand || "Visa",
       last4: cardData.last4 || "4242",
       expiryMonth: Number(cardData.expiryMonth || 12),
       expiryYear: Number(cardData.expiryYear || 2028),
       cardholder: cardData.cardholder || "Brand Owner",
-      gatewayToken: `tok_demo_${Date.now()}`,
+      gatewayToken: `tok_${Date.now()}`,
       isDefault: true,
       status: "ACTIVE",
       demoSimulateOutcome: cardData.demoSimulateOutcome || "SUCCESS"
@@ -292,8 +298,12 @@ async function saveTenantPaymentMethod(tenantId, cardData) {
  * Get payment methods for a tenant
  */
 async function getTenantPaymentMethods(tenantId) {
+  const tenant = await mainPrisma.tenant.findFirst({
+    where: { OR: [{ id: tenantId }, { slug: tenantId }] }
+  });
+  if (!tenant) return [];
   return mainPrisma.tenantPaymentMethod.findMany({
-    where: { tenantId, status: "ACTIVE" },
+    where: { tenantId: tenant.id, status: "ACTIVE" },
     orderBy: { createdAt: "desc" }
   });
 }

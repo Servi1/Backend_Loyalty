@@ -558,6 +558,32 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     }
   }
 
+  // 1. Normalize and resolve Order Type
+  let resolvedOrderType = "TAKEAWAY";
+  const typeLower = String(type || "").toLowerCase().trim();
+  if (typeLower === "dine_in" || typeLower === "dine in" || !!tableId) {
+    resolvedOrderType = "DINE_IN";
+  } else if (typeLower === "deliver_to_car" || typeLower === "deliver to car" || typeLower.includes("car") || typeLower.includes("curbside")) {
+    resolvedOrderType = "DELIVER_TO_CAR";
+  } else if (typeLower === "scheduled" || typeLower.includes("home")) {
+    resolvedOrderType = "SCHEDULED";
+  } else if (typeLower === "takeaway" || typeLower === "take away") {
+    resolvedOrderType = "TAKEAWAY";
+  }
+
+  if (customOrderTypeId && resolvedOrderType !== "DELIVER_TO_CAR") {
+    try {
+      const customType = await db.customOrderType.findUnique({ where: { id: customOrderTypeId } });
+      if (customType) {
+        if (customType.name.toLowerCase().includes("car") || customType.name.toLowerCase().includes("curbside")) {
+          resolvedOrderType = "DELIVER_TO_CAR";
+        } else if (customType.name.toLowerCase().includes("home")) {
+          resolvedOrderType = "SCHEDULED";
+        }
+      }
+    } catch (_) {}
+  }
+
   const orderNumber = generateOrderNumber();
   let finalNotes = notes || "";
   if (appliedDiscountNote && !finalNotes.toLowerCase().includes("discount")) {
@@ -565,6 +591,71 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   }
   if (customerName) {
     finalNotes = finalNotes ? `Customer: ${customerName} | ${finalNotes}` : `Customer: ${customerName}`;
+  }
+
+  // 2. Extract and format Car Details for Curbside / Deliver to Car
+  const carData = body.carDetails || body.car || (body.carBrand || body.plateNumber || body.carNumber ? {
+    brand: body.carBrand,
+    model: body.carModel,
+    color: body.carColor,
+    plateNumber: body.plateNumber || body.carNumber,
+  } : null);
+
+  if (carData) {
+    resolvedOrderType = "DELIVER_TO_CAR";
+    const cBrand = carData.brand || carData.carBrand || "";
+    const cModel = carData.model || carData.carModel || "";
+    const cColor = carData.color || carData.carColor || "";
+    const cPlate = carData.plateNumber || carData.carPlate || carData.carNumber || carData.number || "";
+    const parts = [
+      cBrand,
+      cModel,
+      cColor ? `(${cColor})` : null,
+      cPlate ? `[Plate: ${cPlate}]` : null
+    ].filter(Boolean).join(" ");
+
+    const carTag = parts ? `🚗 Car: ${parts}` : "";
+    if (carTag && !finalNotes.includes(carTag)) {
+      finalNotes = finalNotes ? `${carTag} | ${finalNotes}` : carTag;
+    }
+  }
+
+  // 3. Extract and format Address Details for Home Service / Delivery
+  const addressData = body.address || body.addressDetails || body.deliveryAddress || (body.addressStreet || body.street || body.addressBuilding || body.building ? {
+    title: body.addressTitle || "Home",
+    street: body.addressStreet || body.street,
+    building: body.addressBuilding || body.building,
+    apartment: body.addressApartment || body.addressUnit || body.apartment,
+    floor: body.addressFloor || body.floor,
+    city: body.addressCity || body.city || "Riyadh",
+    notes: body.addressNotes || body.addressInstructions || body.instructions,
+  } : null);
+
+  if (addressData && (addressData.street || addressData.building)) {
+    const aTitle = addressData.title || "Home";
+    const aStreet = addressData.street || "";
+    const aBldg = addressData.building ? `Bldg ${addressData.building}` : "";
+    const aFloor = addressData.floor ? `Floor ${addressData.floor}` : "";
+    const aApt = addressData.apartment ? `Apt ${addressData.apartment}` : "";
+    const aCity = addressData.city || "";
+    const aNotes = addressData.notes || addressData.instructions || "";
+
+    const addrParts = [
+      `[${aTitle}]`,
+      aStreet,
+      aBldg,
+      aFloor,
+      aApt,
+      aCity
+    ].filter(Boolean).join(", ");
+
+    let addrTag = addrParts ? `🏠 Address: ${addrParts}` : "";
+    if (aNotes) {
+      addrTag = addrTag ? `${addrTag} (Notes: ${aNotes})` : `🏠 Notes: ${aNotes}`;
+    }
+    if (addrTag && !finalNotes.includes(addrTag)) {
+      finalNotes = finalNotes ? `${addrTag} | ${finalNotes}` : addrTag;
+    }
   }
   let pointsRedeemed = null;
 
@@ -589,6 +680,84 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
           data: { name: customerName.trim() }
         });
       }
+      
+      // If car details were supplied for curbside order, auto-save to user profile
+      if (carData && (carData.plateNumber || carData.carPlate || carData.brand || carData.carBrand)) {
+        try {
+          const cPlate = (carData.plateNumber || carData.carPlate || carData.carNumber || carData.number || '').trim();
+          const cBrand = (carData.brand || carData.carBrand || '').trim();
+          const cColor = (carData.color || carData.carColor || '').trim();
+          const cModel = (carData.model || carData.carModel || '').trim();
+
+          const currentCars = Array.isArray(appUser.cars) ? [...appUser.cars] : [];
+          const exists = currentCars.some(
+            c => (cPlate && (c.plateNumber === cPlate || c.number === cPlate)) ||
+                 (!cPlate && cBrand && c.brand === cBrand)
+          );
+
+          if (!exists && (cPlate || cBrand)) {
+            const newCar = {
+              id: 'car_' + Date.now(),
+              brand: cBrand,
+              model: cModel,
+              color: cColor,
+              plateNumber: cPlate,
+              isDefault: currentCars.length === 0,
+            };
+            currentCars.push(newCar);
+            await mainPrisma.appUser.update({
+              where: { id: appUser.id },
+              data: { cars: currentCars }
+            });
+            appUser.cars = currentCars;
+          }
+        } catch (carErr) {
+          console.error('[PUBLIC ORDER] Failed to auto-save car to appUser:', carErr.message);
+        }
+      }
+
+      // If address details were supplied for home service order, auto-save to user profile
+      if (addressData && (addressData.street || addressData.building)) {
+        try {
+          const aStreet = (addressData.street || "").trim();
+          const aBldg = (addressData.building || "").trim();
+          const aApt = (addressData.apartment || "").trim();
+          const aFloor = (addressData.floor || "").trim();
+          const aCity = (addressData.city || "Riyadh").trim();
+          const aTitle = (addressData.title || "Home").trim();
+          const aNotes = (addressData.notes || addressData.instructions || "").trim();
+
+          const currentAddresses = Array.isArray(appUser.addresses) ? [...appUser.addresses] : [];
+          const exists = currentAddresses.some(
+            a => a.street && a.street.toLowerCase() === aStreet.toLowerCase() &&
+                 (a.building || "").toLowerCase() === aBldg.toLowerCase()
+          );
+
+          if (!exists && (aStreet || aBldg)) {
+            const newAddr = {
+              id: 'addr_' + Date.now(),
+              title: aTitle,
+              street: aStreet,
+              building: aBldg,
+              apartment: aApt,
+              floor: aFloor,
+              city: aCity,
+              notes: aNotes,
+              doorstepImages: [],
+              isDefault: currentAddresses.length === 0,
+            };
+            currentAddresses.push(newAddr);
+            await mainPrisma.appUser.update({
+              where: { id: appUser.id },
+              data: { addresses: currentAddresses }
+            });
+            appUser.addresses = currentAddresses;
+          }
+        } catch (addrErr) {
+          console.error('[PUBLIC ORDER] Failed to auto-save address to appUser:', addrErr.message);
+        }
+      }
+
       finalCustomerId = appUser.id;
     } catch (err) {
       console.error("[PUBLIC ORDER] Failed to lookup/create appUser by phone:", err.message);
@@ -696,7 +865,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
           tableId,
           selectedSlotDate,
           selectedSlot,
-          status: { notIn: ["CANCELLED", "REFUNDED", "REJECTED"] }
+          status: { notIn: ["CANCELLED", "REFUNDED"] }
         }
       });
       if (existingTableBooking) {
@@ -717,7 +886,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
           staffId,
           selectedSlotDate,
           selectedSlot,
-          status: { notIn: ["CANCELLED", "REFUNDED", "REJECTED"] }
+          status: { notIn: ["CANCELLED", "REFUNDED"] }
         }
       });
       if (existingStaffBooking) {
@@ -739,7 +908,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
         selectedSlot: selectedSlot || null,
         selectedSlotDate: selectedSlotDate || null,
         slotDetails: slotDetails.length > 0 ? slotDetails : null,
-        type,
+        type: resolvedOrderType,
         notes: finalNotes || null,
         total: finalOrderTotal,
         feeRate,
@@ -1317,7 +1486,7 @@ const notifyArrived = async (db, orderId, userId, io) => {
   if (!order) throw new ApiError(403, "Order not found or access denied");
 
   // 2. Validate order type
-  if (order.type !== "DELIVER_TO_CAR") {
+  if (order.type !== "DELIVER_TO_CAR" && !order.customOrderType?.name?.toLowerCase().includes("car")) {
     throw new ApiError(400, "This notification is only available for car delivery orders");
   }
 
