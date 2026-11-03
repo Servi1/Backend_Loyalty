@@ -25,7 +25,10 @@ const mapDbOrderToKds = (order) => {
   // Map order type
   let orderType = "Dine In";
   if (order.type === "TAKEAWAY") orderType = "Takeaway";
-  else if (order.type === "DELIVERY") orderType = "Delivery";
+  else if (order.type === "DELIVER_TO_CAR" || order.customOrderType?.name?.toLowerCase().includes("car")) orderType = "Deliver to Car";
+  else if (order.customOrderType?.name?.toLowerCase().includes("home")) orderType = "Home Service";
+  else if (order.type === "SCHEDULED" || order.customOrderType?.name?.toLowerCase().includes("schedul")) orderType = "Scheduled";
+  else if (order.customOrderType?.name) orderType = order.customOrderType.name;
 
   // Map status
   let status = "new";

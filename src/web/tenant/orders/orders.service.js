@@ -435,7 +435,7 @@ const normalizePhone = (rawPhone) => {
           tableId,
           selectedSlotDate,
           selectedSlot,
-          status: { notIn: ["CANCELLED", "REFUNDED", "REJECTED"] }
+          status: { notIn: ["CANCELLED", "REFUNDED"] }
         }
       });
       if (existingTableBooking) {
@@ -456,7 +456,7 @@ const normalizePhone = (rawPhone) => {
           staffId,
           selectedSlotDate,
           selectedSlot,
-          status: { notIn: ["CANCELLED", "REFUNDED", "REJECTED"] }
+          status: { notIn: ["CANCELLED", "REFUNDED"] }
         }
       });
       if (existingStaffBooking) {
@@ -641,7 +641,7 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
             tableId: targetTableId,
             selectedSlotDate: targetSlotDate,
             selectedSlot: targetSlot,
-            status: { notIn: ["CANCELLED", "REFUNDED", "REJECTED"] }
+            status: { notIn: ["CANCELLED", "REFUNDED"] }
           }
         });
         if (conflictTable) {
@@ -657,7 +657,7 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
             staffId: targetStaffId,
             selectedSlotDate: targetSlotDate,
             selectedSlot: targetSlot,
-            status: { notIn: ["CANCELLED", "REFUNDED", "REJECTED"] }
+            status: { notIn: ["CANCELLED", "REFUNDED"] }
           }
         });
         if (conflictStaff) {
@@ -668,7 +668,7 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
   }
 
   const updateData = {};
-  if (status !== undefined) updateData.status = status;
+  if (status !== undefined) updateData.status = (status === "REJECTED" ? "CANCELLED" : status);
 
   // Update specific slot inside slotDetails array if it exists
   let updatedSlotDetails = null;
@@ -902,7 +902,7 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
     }
   }
 
-  const updateData = { status };
+  const updateData = { status: status === "REJECTED" ? "CANCELLED" : status };
   if (notes !== undefined) {
     const existingTags = (order.notes || "").match(/\[[A-Z0-9_]+:[^\]]+\]/g) || [];
     let mergedNotes = notes;

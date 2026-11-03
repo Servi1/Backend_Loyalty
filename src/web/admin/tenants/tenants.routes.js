@@ -31,14 +31,22 @@ router.post("/loyalty/customers/:tenantId/:customerId/adjust-points", authorize(
 router.post("/loyalty/customers/:customerId/adjust-points", authorize("SUPER_ADMIN"), ctrl.adjustSuperAdminCustomerPoints);
 router.get("/loyalty/customers/:tenantId/:customerId", authorize("SUPER_ADMIN"), ctrl.getSuperAdminCustomerDetails);
 router.delete("/loyalty/customers/:tenantId/:customerId", authorize("SUPER_ADMIN"), ctrl.deleteSuperAdminCustomer);
-router.get("/invoices", authorize("SUPER_ADMIN"), ctrl.getInvoices);
+router.get("/invoices", authorize("SUPER_ADMIN", "BRAND_MANAGER"), ctrl.getInvoices);
+router.post("/invoices/:id/manual-pay", authorize("SUPER_ADMIN", "BRAND_MANAGER"), ctrl.manualPayInvoice);
+router.post("/invoices/:id/reset", authorize("SUPER_ADMIN", "BRAND_MANAGER"), ctrl.resetInvoicePayment);
+router.post("/invoices/:id/fast-forward-retry", authorize("SUPER_ADMIN", "BRAND_MANAGER"), ctrl.fastForwardRetry);
+router.post("/invoices/generate-recurring", authorize("SUPER_ADMIN"), ctrl.generateRecurringInvoices);
+router.post("/invoices/generate-month-end", authorize("SUPER_ADMIN"), ctrl.generateMonthEndInvoices);
+router.get("/:id/payment-methods", authorize("SUPER_ADMIN", "BRAND_MANAGER"), ctrl.getPaymentMethods);
+router.post("/:id/payment-methods", authorize("SUPER_ADMIN", "BRAND_MANAGER"), ctrl.savePaymentMethod);
+router.post("/:id/payment-methods/demo-outcome", authorize("SUPER_ADMIN", "BRAND_MANAGER"), ctrl.setDemoOutcome);
 router.get("/users/all", authorize("SUPER_ADMIN"), ctrl.getAllSystemUsers);
 router.get("/:id/users", authorize("SUPER_ADMIN"), ctrl.getTenantUsers);
 router.get("/", authorize("SUPER_ADMIN"), ctrl.getAll);
 router.get("/:id/products", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.getTenantProducts);
 router.get("/:id", authorize("SUPER_ADMIN"), ctrl.getById);
 router.post("/", authorize("SUPER_ADMIN"), ctrl.create);
-router.put("/:id", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.update);
+router.put("/:id", extractTenant, authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.update);
 router.patch("/:id/slots/toggle", authorize("SUPER_ADMIN"), ctrl.toggleSlot);
 router.delete("/:id", authorize("SUPER_ADMIN"), ctrl.remove);
 

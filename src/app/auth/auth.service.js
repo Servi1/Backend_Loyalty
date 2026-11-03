@@ -2,7 +2,7 @@
  * App Auth Service — Mobile OTP Authentication
  *
  * Handles:
- *  - sendOtp:   Creates/upserts an OTP record and dispatches SMS.
+ *  - sendOtp:   Creates/upserts an OTP record and sends SMS.
  *  - verifyOtp: Validates OTP, auto-creates user + wallet on first login.
  *  - getMe:     Returns the authenticated customer's full profile + wallet.
  */
@@ -63,9 +63,11 @@ const sendOtp = async (rawPhone) => {
   await sendOtpSms(rawPhone, code);
 
   const devBypassAllowed = isDevBypassEnabled();
+  const bypassCode = devBypassAllowed ? getDevOtpBypassCode() : null;
   return {
     message: "OTP sent successfully",
     devBypass: devBypassAllowed,
+    bypassCode,
   };
 };
 

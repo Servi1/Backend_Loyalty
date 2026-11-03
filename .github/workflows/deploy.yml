@@ -21,6 +21,7 @@ jobs:
             git pull origin main
             npm install --omit=dev
             npm run prisma:generate
+            node scripts/migrate-db-credentials.js
             npx prisma db push --schema=prisma/schema.main.prisma --accept-data-loss
             node sync_tenant_schemas.js
             node scripts/migrate-wallets-to-brands.js

@@ -1,3 +1,5 @@
+const paymentService = require("../../../services/payment.service");
+const billingService = require("../../../services/billing.service");
 const catchAsync = require("../../../utils/catchAsync");
 const tenantsService = require("./tenants.service");
 
@@ -18,10 +20,20 @@ const create = catchAsync(async (req, res) => {
 });
 
 const update = catchAsync(async (req, res) => {
-  if (req.user && req.user.role !== 'SUPER_ADMIN') {
+  const isSuperAdmin = Boolean(
+    req.admin ||
+    req.user?.role === "SUPER_ADMIN" ||
+    req.user?.role === "super_admin" ||
+    (typeof req.user?.role === "string" && req.user.role.startsWith("admin-role-"))
+  );
+
+  if (!isSuperAdmin) {
     const targetTenantId = req.params.id;
-    const userTenantId = req.tenant ? req.tenant.id : req.user.tenantId;
-    if (!userTenantId || targetTenantId !== userTenantId) {
+    const userTenantId = req.tenant?.id || req.tenantId || req.user?.tenantId || req.headers["x-tenant-id"];
+    const matchesTenant = userTenantId === targetTenantId ||
+      (req.tenant && (req.tenant.id === targetTenantId || req.tenant.slug === targetTenantId));
+
+    if (!matchesTenant) {
       return res.status(403).json({ success: false, message: "Forbidden: Cannot edit another brand's settings" });
     }
   }
@@ -222,7 +234,65 @@ const getSuperAdminStampsOverview = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+
+const manualPayInvoice = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const result = await paymentService.attemptInvoicePayment(id, "MANUAL", req.body);
+  res.json({ success: true, data: result });
+});
+
+const fastForwardRetry = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { type } = req.body || {};
+  const result = await paymentService.fastForwardRetry(id, type);
+  res.json({ success: true, data: result });
+});
+
+const getPaymentMethods = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const methods = await paymentService.getTenantPaymentMethods(id);
+  res.json({ success: true, data: methods });
+});
+
+const savePaymentMethod = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const method = await paymentService.saveTenantPaymentMethod(id, req.body);
+  res.json({ success: true, data: method });
+});
+
+const setDemoOutcome = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { outcome } = req.body;
+  const result = await paymentService.setDemoSimulateOutcome(id, outcome);
+  res.json({ success: true, data: result });
+});
+
+const generateRecurringInvoices = catchAsync(async (req, res) => {
+  const invoices = await billingService.generateMonthlyRecurringInvoices();
+  res.json({ success: true, data: invoices });
+});
+
+const generateMonthEndInvoices = catchAsync(async (req, res) => {
+  const invoices = await billingService.generateMonthEndTransactionFeeInvoices();
+  res.json({ success: true, data: invoices });
+});
+
+const resetInvoicePayment = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { type } = req.body || {};
+  const result = await paymentService.resetInvoicePayment(id, type);
+  res.json({ success: true, data: result });
+});
+
 module.exports = {
+  resetInvoicePayment,
+  manualPayInvoice,
+  fastForwardRetry,
+  getPaymentMethods,
+  savePaymentMethod,
+  setDemoOutcome,
+  generateRecurringInvoices,
+  generateMonthEndInvoices,
   getAll,
   getById,
   create,

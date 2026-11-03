@@ -162,6 +162,7 @@ const checkPhoneAndSendOtp = async (rawPhone) => {
   await sendOtpSms(rawPhone, code);
 
   const devBypassAllowed = isDevBypassEnabled();
+  const bypassCode = devBypassAllowed ? getDevOtpBypassCode() : null;
 
   return {
     phone,
@@ -169,6 +170,7 @@ const checkPhoneAndSendOtp = async (rawPhone) => {
     name: user?.name || "",
     message: "OTP sent successfully",
     devBypass: devBypassAllowed,
+    bypassCode,
   };
 };
 

@@ -6,6 +6,7 @@
 
 const ApiError = require("../../utils/ApiError");
 const mainPrisma = require("../../config/prisma");
+const { getAppImageURL } = require("../../config");
 
 const DEFAULT_LOYALTY_TIERS = [
   {
@@ -1634,6 +1635,15 @@ const lookupWalletByPhone = async (db, tenantId, phone) => {
     appUserId: appUser.id,
     customerName: appUser.name,
     phone: appUser.phone,
+    cars: Array.isArray(appUser.cars) ? appUser.cars : [],
+    addresses: Array.isArray(appUser.addresses)
+      ? appUser.addresses.map((addr) => ({
+          ...addr,
+          doorstepImages: addr.doorstepImages && Array.isArray(addr.doorstepImages)
+            ? addr.doorstepImages.map((img) => getAppImageURL(img))
+            : [],
+        }))
+      : [],
     points: wallet.points || 0,
     redeemRate,
     equivalentSar: Number(((wallet.points || 0) / redeemRate).toFixed(2)),

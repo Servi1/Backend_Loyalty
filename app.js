@@ -6,6 +6,8 @@ const morgan = require("morgan");
 const cookieParser = require("cookie-parser");
 const config = require("./src/config");
 const { errorHandler } = require("./src/middlewares/errorHandler");
+const billingService = require("./src/services/billing.service");
+const paymentService = require("./src/services/payment.service");
 
 // ─── Feature Routes ──────────────────────────────────
 const authRoutes = require("./src/shared/auth/auth.routes");
@@ -61,8 +63,8 @@ app.use(cookieParser());
 if (config.nodeEnv === "development") app.use(morgan("dev"));
 
 // ─── IP and MAC-based Rate Limiter (Protection against IP-rotating attacks) ───
-const { rateLimiter } = require("./src/middlewares/rateLimiter");
-app.use(rateLimiter);
+// const { rateLimiter } = require("./src/middlewares/rateLimiter");
+// app.use(rateLimiter);
 
 // ─── Serve uploaded files statically ─────────────────
 app.use(
@@ -103,6 +105,7 @@ app.use("/api/admin/notifications", adminNotificationsRoutes);
 app.use("/api/admin/categories", tenantCategoriesRoutes);
 app.use("/api/admin/global-order-types", globalOrderTypesRoutes);
 app.use("/api/admin/support", supportRoutes);
+app.use("/api/admin/blocked-clients", require("./src/web/admin/blocked-clients/blockedClients.routes"));
 app.use("/api/auth", authRoutes); // auth handles both super admin and tenant logins
 app.use("/api/pos", authenticatePos, posRoutes);
 app.use("/api/kds", authenticateKds, kdsRoutes);
@@ -186,14 +189,35 @@ tenantRouter.post("/market/buy", authenticate, authorize("ADMIN", "BRAND_MANAGER
       }
     });
 
+    // If card details were submitted in the checkout modal, save as default tenant payment method
+    if (req.body.cardNumber) {
+      const cleanNum = String(req.body.cardNumber).replace(/\s+/g, "");
+      const last4 = cleanNum.slice(-4) || "4242";
+      let expiryMonth = 12;
+      let expiryYear = 2028;
+      if (req.body.expiry && req.body.expiry.includes("/")) {
+        const [m, y] = req.body.expiry.split("/");
+        expiryMonth = parseInt(m, 10) || 12;
+        expiryYear = 2000 + (parseInt(y, 10) || 28);
+      }
+      await paymentService.saveTenantPaymentMethod(tenantId, {
+        cardholder: req.body.cardName || "Brand Owner",
+        last4,
+        expiryMonth,
+        expiryYear,
+        brand: cleanNum.startsWith("4") ? "Visa" : (cleanNum.startsWith("5") ? "Mastercard" : "Mada"),
+        type: "credit_card"
+      }).catch(err => console.warn("Failed to save card in market buy:", err.message));
+    }
+
     // Record TenantSlotAddon entries so mid-month purchases sync with Super Admin Billing
     const purchases = [
-      { serviceType: "pos", quantity: posInc, priceKey: "pricePos", defaultPrice: 49.0 },
-      { serviceType: "qr_table", quantity: tableInc, priceKey: "priceQrTable", defaultPrice: 19.0 },
-      { serviceType: "branch", quantity: branchInc, priceKey: "priceBranch", defaultPrice: 19.0 },
-      { serviceType: "kds", quantity: kdsInc, priceKey: "priceKds", defaultPrice: 19.0 },
-      { serviceType: "cds", quantity: cdsInc, priceKey: "priceCds", defaultPrice: 9.0 },
-      { serviceType: "qr_cashier", quantity: qrCashierInc, priceKey: "priceQrCashier", defaultPrice: 9.0 }
+      { serviceType: "pos", quantity: posInc, priceKey: "pricePos", defaultPrice: 49.0, label: "POS Terminal" },
+      { serviceType: "qr_table", quantity: tableInc, priceKey: "priceQrTable", defaultPrice: 19.0, label: "QR Table Dining" },
+      { serviceType: "branch", quantity: branchInc, priceKey: "priceBranch", defaultPrice: 19.0, label: "Branch Location" },
+      { serviceType: "kds", quantity: kdsInc, priceKey: "priceKds", defaultPrice: 19.0, label: "KDS Screen" },
+      { serviceType: "cds", quantity: cdsInc, priceKey: "priceCds", defaultPrice: 9.0, label: "CDS Screen" },
+      { serviceType: "qr_cashier", quantity: qrCashierInc, priceKey: "priceQrCashier", defaultPrice: 9.0, label: "QR Cashier" }
     ];
 
     for (const p of purchases) {
@@ -212,8 +236,16 @@ tenantRouter.post("/market/buy", authenticate, authorize("ADMIN", "BRAND_MANAGER
               notes: `Purchased +${p.quantity} ${p.serviceType.toUpperCase()} slot(s) via Brand Market`
             }
           });
+
+          // Trigger separate Mid-Month Add-on Fee Invoice for this purchase covering current month
+          await billingService.generateMidMonthAddonInvoice(tenantId, {
+            serviceType: p.serviceType,
+            label: p.label || `${p.serviceType.toUpperCase()} Slots`,
+            quantity: p.quantity,
+            pricePerUnit: unitPrice
+          });
         } catch (err) {
-          console.error(`Failed to record slot addon for tenant ${tenantId}:`, err.message);
+          console.error(`Failed to record slot addon / billing invoice for tenant ${tenantId}:`, err.message);
         }
       }
     }
@@ -417,6 +449,7 @@ app.use((_req, res) => {
 const tenantsService = require("./src/web/admin/tenants/tenants.service");
 setTimeout(() => {
   tenantsService.syncAllTenantOrders().catch(err => console.error("[BACKGROUND ORDER SYNC] Initial sync warning:", err.message));
+  try { require("./src/shared/workers/billingScheduler.worker").startBillingScheduler(); } catch(e) { console.error("[BILLING WORKER START ERROR]", e); }
 }, 5000);
 
 setInterval(() => {
