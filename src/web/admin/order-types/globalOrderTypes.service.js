@@ -159,16 +159,21 @@ const update = async (id, data) => {
   for (const tenant of tenants) {
     try {
       const tenantDb = getTenantClient(tenant.dbUrl);
-      await tenantDb.customOrderType.updateMany({
-        where: { name: existing.name },
-        data: {
-          name: updated.name,
-          nameAr: updated.nameAr,
-          description: updated.description,
-          descriptionAr: updated.descriptionAr,
-          ...(data.isActive === false && { isActive: false })
-        }
+      const localMatches = await tenantDb.customOrderType.findMany({
+        where: { name: { equals: existing.name, mode: "insensitive" } }
       });
+      for (const lm of localMatches) {
+        await tenantDb.customOrderType.update({
+          where: { id: lm.id },
+          data: {
+            name: updated.name,
+            nameAr: updated.nameAr,
+            description: updated.description,
+            descriptionAr: updated.descriptionAr,
+            ...(data.isActive === false && { isActive: false })
+          }
+        });
+      }
     } catch (err) {
       console.error(`Failed to propagate update of global order type ${existing.name} to tenant ${tenant.name}:`, err.message);
     }

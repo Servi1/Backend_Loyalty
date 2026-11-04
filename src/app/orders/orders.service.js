@@ -621,7 +621,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   }
 
   // 3. Extract and format Address Details for Home Service / Delivery
-  const addressData = body.address || body.addressDetails || body.deliveryAddress || (body.addressStreet || body.street || body.addressBuilding || body.building ? {
+  const addressData = body.address || body.addressDetails || body.deliveryAddress || (body.addressStreet || body.street || body.addressBuilding || body.building || body.googleMapsUrl || body.mapUrl ? {
     title: body.addressTitle || "Home",
     street: body.addressStreet || body.street,
     building: body.addressBuilding || body.building,
@@ -629,9 +629,10 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     floor: body.addressFloor || body.floor,
     city: body.addressCity || body.city || "Riyadh",
     notes: body.addressNotes || body.addressInstructions || body.instructions,
+    mapUrl: body.googleMapsUrl || body.mapUrl || (body.address && (body.address.googleMapsUrl || body.address.mapUrl)),
   } : null);
 
-  if (addressData && (addressData.street || addressData.building)) {
+  if (addressData && (addressData.street || addressData.building || addressData.mapUrl)) {
     const aTitle = addressData.title || "Home";
     const aStreet = addressData.street || "";
     const aBldg = addressData.building ? `Bldg ${addressData.building}` : "";
@@ -639,6 +640,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     const aApt = addressData.apartment ? `Apt ${addressData.apartment}` : "";
     const aCity = addressData.city || "";
     const aNotes = addressData.notes || addressData.instructions || "";
+    const aMapUrl = (addressData.mapUrl || addressData.googleMapsUrl || "").trim();
 
     const addrParts = [
       `[${aTitle}]`,
@@ -652,6 +654,9 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     let addrTag = addrParts ? `🏠 Address: ${addrParts}` : "";
     if (aNotes) {
       addrTag = addrTag ? `${addrTag} (Notes: ${aNotes})` : `🏠 Notes: ${aNotes}`;
+    }
+    if (aMapUrl) {
+      addrTag = addrTag ? `${addrTag} (Map: ${aMapUrl})` : `📍 Map: ${aMapUrl}`;
     }
     if (addrTag && !finalNotes.includes(addrTag)) {
       finalNotes = finalNotes ? `${addrTag} | ${finalNotes}` : addrTag;
@@ -733,7 +738,8 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
                  (a.building || "").toLowerCase() === aBldg.toLowerCase()
           );
 
-          if (!exists && (aStreet || aBldg)) {
+          const aMapUrl = (addressData.mapUrl || addressData.googleMapsUrl || "").trim();
+          if (!exists && (aStreet || aBldg || aMapUrl)) {
             const newAddr = {
               id: 'addr_' + Date.now(),
               title: aTitle,
@@ -743,6 +749,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
               floor: aFloor,
               city: aCity,
               notes: aNotes,
+              mapUrl: aMapUrl || undefined,
               doorstepImages: [],
               isDefault: currentAddresses.length === 0,
             };
