@@ -6,6 +6,8 @@ const ApiError = require("../../utils/ApiError");
 const { generateOtp, generateRandomOtp, isDevOtpBypass, isDevBypassEnabled } = require("../../utils/otp");
 const { sendOtpSms } = require("../../services/oursms.service");
 const twilio = require("twilio");
+const { getTenantClient } = require("../../config/tenantManager");
+const { sendPasswordResetEmail, sendLoginOtpEmail } = require("../../services/email.service");
 
 let twilioClient = null;
 try {
@@ -122,7 +124,7 @@ const attachUserPermissions = async (db, user) => {
 /**
  * B2B portal login (email + password).
  */
-const loginWithEmail = async (db, email, password) => {
+const loginWithEmail = async (db, email, password, bypassOtp = false, tenant = null) => {
   // Check if the email field holds a valid POS Device Key (case-insensitive)
   const posDevice = await db.posDevice.findFirst({
     where: {
@@ -201,17 +203,59 @@ const loginWithEmail = async (db, email, password) => {
   const valid = await bcrypt.compare(password, user.password);
   if (!valid) throw new ApiError(401, "Invalid credentials");
 
-  const token = signToken(user.id, "user");
+  // If bypassOtp is TRUE or user has no email, return token directly (Dev Mode)
+  if (bypassOtp || !user.email) {
+    const token = signToken(user.id, "user");
+    await attachUserPermissions(db, user);
+    return { token, user };
+  }
 
-  await attachUserPermissions(db, user);
+  // Otherwise, generate and send 6-digit Email OTP
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-  return { token, user };
+  await mainPrisma.otp.create({
+    data: {
+      phone: `email:${user.email.toLowerCase()}`,
+      code,
+      expiresAt,
+    },
+  });
+
+  const tempToken = jwt.sign(
+    {
+      sub: user.id,
+      email: user.email,
+      userType: "tenant_user",
+      tenantId: tenant ? tenant.id : null,
+      purpose: "login_otp",
+    },
+    config.jwt.secret,
+    { expiresIn: "10m" }
+  );
+
+  try {
+    await sendLoginOtpEmail({
+      to: user.email,
+      name: user.name,
+      code,
+    });
+  } catch (err) {
+    console.error("Failed to send login OTP email:", err.message);
+  }
+
+  return {
+    requireOtp: true,
+    tempToken,
+    email: user.email,
+    message: "A 6-digit verification code has been sent to your email.",
+  };
 };
 
 /**
  * Super Admin login (main DB).
  */
-const superAdminLogin = async (email, password) => {
+const superAdminLogin = async (email, password, bypassOtp = false) => {
   const admin = await mainPrisma.superAdmin.findUnique({ where: { email } });
   if (!admin) throw new ApiError(401, "Invalid credentials");
 
@@ -222,21 +266,64 @@ const superAdminLogin = async (email, password) => {
   const valid = await bcrypt.compare(password, admin.password);
   if (!valid) throw new ApiError(401, "Invalid credentials");
 
-  const token = signToken(admin.id, "super_admin");
+  // If bypassOtp is TRUE, return token directly (Dev Mode)
+  if (bypassOtp) {
+    const token = signToken(admin.id, "super_admin");
 
-  if (admin.role && admin.role !== "super_admin") {
-    try {
-      const roleObj = await mainPrisma.superAdminRole.findUnique({ where: { id: admin.role } });
-      if (roleObj) {
-        admin.rolePermissions = roleObj.permissions;
-        admin.roleName = roleObj.name;
+    if (admin.role && admin.role !== "super_admin") {
+      try {
+        const roleObj = await mainPrisma.superAdminRole.findUnique({ where: { id: admin.role } });
+        if (roleObj) {
+          admin.rolePermissions = roleObj.permissions;
+          admin.roleName = roleObj.name;
+        }
+      } catch (err) {
+        console.error("Failed to load admin role permissions during login:", err.message);
       }
-    } catch (err) {
-      console.error("Failed to load admin role permissions during login:", err.message);
     }
+
+    return { token, admin };
   }
 
-  return { token, admin };
+  // Otherwise, generate and send 6-digit Email OTP
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+  await mainPrisma.otp.create({
+    data: {
+      phone: `email:${admin.email.toLowerCase()}`,
+      code,
+      expiresAt,
+    },
+  });
+
+  const tempToken = jwt.sign(
+    {
+      sub: admin.id,
+      email: admin.email,
+      userType: "super_admin",
+      purpose: "login_otp",
+    },
+    config.jwt.secret,
+    { expiresIn: "10m" }
+  );
+
+  try {
+    await sendLoginOtpEmail({
+      to: admin.email,
+      name: admin.name,
+      code,
+    });
+  } catch (err) {
+    console.error("Failed to send super admin login OTP email:", err.message);
+  }
+
+  return {
+    requireOtp: true,
+    tempToken,
+    email: admin.email,
+    message: "A 6-digit verification code has been sent to your email.",
+  };
 };
 
 /**
@@ -293,4 +380,427 @@ const kdsLogin = async (db, deviceKey) => {
   };
 };
 
-module.exports = { sendOtp, verifyOtp, loginWithEmail, superAdminLogin, kdsLogin };
+
+/**
+ * Request a password reset link sent to email.
+ */
+const requestPasswordReset = async ({ email, tenantId, origin }) => {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    throw new ApiError(400, "Please provide a valid email address.");
+  }
+
+  let userTarget = null;
+  let userType = null;
+  let targetTenant = null;
+
+  // 1. Check Super Admin in main database
+  const superAdmin = await mainPrisma.superAdmin.findUnique({
+    where: { email: normalizedEmail }
+  });
+
+  if (superAdmin) {
+    if (superAdmin.status === "inactive") {
+      throw new ApiError(403, "This account is inactive. Please contact system support.");
+    }
+    userTarget = superAdmin;
+    userType = "super_admin";
+  } else {
+    // 2. Check tenant users
+    // If tenantId/companyNo is provided, check that specific tenant first
+    if (tenantId) {
+      const cleanTenantId = String(tenantId).trim();
+      const tenant = await mainPrisma.tenant.findFirst({
+        where: {
+          isActive: true,
+          OR: [{ id: cleanTenantId }, { slug: cleanTenantId }]
+        }
+      });
+      if (tenant) {
+        try {
+          const tenantDb = getTenantClient(tenant.dbUrl);
+          const user = await tenantDb.user.findUnique({
+            where: { email: normalizedEmail },
+            include: { branch: true }
+          });
+          if (user) {
+            userTarget = user;
+            userType = "tenant_user";
+            targetTenant = tenant;
+          }
+        } catch (err) {
+          console.error("Error looking up user in tenant DB:", err.message);
+        }
+      }
+    }
+
+    // If still not found, search across active tenants
+    if (!userTarget) {
+      const activeTenants = await mainPrisma.tenant.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true, slug: true, dbUrl: true }
+      });
+
+      for (const t of activeTenants) {
+        try {
+          const tDb = getTenantClient(t.dbUrl);
+          const u = await tDb.user.findUnique({
+            where: { email: normalizedEmail },
+            include: { branch: true }
+          });
+          if (u) {
+            userTarget = u;
+            userType = "tenant_user";
+            targetTenant = t;
+            break;
+          }
+        } catch (_e) {
+          // Continue to next tenant if connection fails
+        }
+      }
+    }
+  }
+
+  if (!userTarget) {
+    throw new ApiError(404, "No account was found with this email address.");
+  }
+
+  if (userTarget.isActive === false) {
+    throw new ApiError(403, "This account is inactive. Please contact administration.");
+  }
+
+  // Generate single-use reset JWT token embedded with password fingerprint
+  const pHash = (userTarget.password || "").slice(-8);
+  const resetToken = jwt.sign(
+    {
+      sub: userTarget.id,
+      email: userTarget.email,
+      name: userTarget.name || "",
+      userType,
+      tenantId: targetTenant ? targetTenant.id : null,
+      pHash,
+      purpose: "password_reset",
+    },
+    config.jwt.secret,
+    { expiresIn: "1h" }
+  );
+
+  let baseUrl = origin || process.env.FRONTEND_URL;
+  if (!baseUrl) {
+    baseUrl = "http://localhost:8080";
+  }
+  baseUrl = baseUrl.replace(/\/+$/, "");
+  const resetLink = `${baseUrl}/reset-password?token=${resetToken}`;
+
+  await sendPasswordResetEmail({
+    to: userTarget.email,
+    name: userTarget.name,
+    resetLink,
+  });
+
+  return {
+    success: true,
+    message: "A password reset link has been sent to your email address.",
+  };
+};
+
+/**
+ * Verify validity of a password reset token.
+ */
+const verifyResetToken = async (token) => {
+  if (!token) {
+    throw new ApiError(400, "Reset token is required.");
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, config.jwt.secret);
+  } catch (err) {
+    if (err.name === "TokenExpiredError") {
+      throw new ApiError(400, "This password reset link has expired. Please request a new one.");
+    }
+    throw new ApiError(400, "Invalid reset token.");
+  }
+
+  if (decoded.purpose !== "password_reset") {
+    throw new ApiError(400, "Invalid token purpose.");
+  }
+
+  if (decoded.userType === "super_admin") {
+    const admin = await mainPrisma.superAdmin.findUnique({
+      where: { id: decoded.sub }
+    });
+    if (!admin) {
+      throw new ApiError(404, "User account no longer exists.");
+    }
+    if ((admin.password || "").slice(-8) !== decoded.pHash) {
+      throw new ApiError(400, "This password reset link has already been used.");
+    }
+    return {
+      valid: true,
+      email: admin.email,
+      name: admin.name,
+      userType: "super_admin"
+    };
+  } else if (decoded.userType === "tenant_user") {
+    if (!decoded.tenantId) {
+      throw new ApiError(400, "Invalid tenant token.");
+    }
+    const tenant = await mainPrisma.tenant.findUnique({
+      where: { id: decoded.tenantId }
+    });
+    if (!tenant) {
+      throw new ApiError(404, "Tenant organization not found.");
+    }
+    const tenantDb = getTenantClient(tenant.dbUrl);
+    const user = await tenantDb.user.findUnique({
+      where: { id: decoded.sub }
+    });
+    if (!user) {
+      throw new ApiError(404, "User account no longer exists.");
+    }
+    if ((user.password || "").slice(-8) !== decoded.pHash) {
+      throw new ApiError(400, "This password reset link has already been used.");
+    }
+    return {
+      valid: true,
+      email: user.email,
+      name: user.name,
+      userType: "tenant_user",
+      companyNo: tenant.slug || tenant.id
+    };
+  }
+
+  throw new ApiError(400, "Unknown user type.");
+};
+
+/**
+ * Reset password using validated reset token.
+ */
+const resetPassword = async ({ token, newPassword }) => {
+  if (!token) {
+    throw new ApiError(400, "Reset token is required.");
+  }
+  if (!newPassword || typeof newPassword !== "string" || newPassword.length < 6) {
+    throw new ApiError(400, "Password must be at least 6 characters long.");
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, config.jwt.secret);
+  } catch (err) {
+    if (err.name === "TokenExpiredError") {
+      throw new ApiError(400, "This password reset link has expired. Please request a new one.");
+    }
+    throw new ApiError(400, "Invalid reset token.");
+  }
+
+  if (decoded.purpose !== "password_reset") {
+    throw new ApiError(400, "Invalid token purpose.");
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+  if (decoded.userType === "super_admin") {
+    const admin = await mainPrisma.superAdmin.findUnique({
+      where: { id: decoded.sub }
+    });
+    if (!admin) {
+      throw new ApiError(404, "Super Admin account not found.");
+    }
+    if ((admin.password || "").slice(-8) !== decoded.pHash) {
+      throw new ApiError(400, "This password reset link has already been used.");
+    }
+
+    await mainPrisma.superAdmin.update({
+      where: { id: admin.id },
+      data: { password: hashedPassword }
+    });
+
+    return {
+      success: true,
+      userType: "super_admin",
+      message: "Password reset successfully. You can now log in to the Super Admin portal."
+    };
+  } else if (decoded.userType === "tenant_user") {
+    const tenant = await mainPrisma.tenant.findUnique({
+      where: { id: decoded.tenantId }
+    });
+    if (!tenant) {
+      throw new ApiError(404, "Tenant organization not found.");
+    }
+    const tenantDb = getTenantClient(tenant.dbUrl);
+    const user = await tenantDb.user.findUnique({
+      where: { id: decoded.sub }
+    });
+    if (!user) {
+      throw new ApiError(404, "User account not found.");
+    }
+    if ((user.password || "").slice(-8) !== decoded.pHash) {
+      throw new ApiError(400, "This password reset link has already been used.");
+    }
+
+    await tenantDb.user.update({
+      where: { id: user.id },
+      data: { password: hashedPassword }
+    });
+
+    return {
+      success: true,
+      userType: "tenant_user",
+      companyNo: tenant.slug || tenant.id,
+      message: "Password reset successfully. You can now log in with your new password."
+    };
+  }
+
+  throw new ApiError(400, "Unknown user type.");
+};
+
+
+/**
+ * Verify Email Login OTP and issue final auth token.
+ */
+const verifyLoginOtp = async ({ tempToken, code }) => {
+  if (!tempToken) {
+    throw new ApiError(400, "Verification session token is required.");
+  }
+  if (!code) {
+    throw new ApiError(400, "Please enter the 6-digit verification code.");
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(tempToken, config.jwt.secret);
+  } catch (err) {
+    if (err.name === "TokenExpiredError") {
+      throw new ApiError(400, "Verification code session expired. Please sign in again.");
+    }
+    throw new ApiError(400, "Invalid verification session.");
+  }
+
+  if (decoded.purpose !== "login_otp") {
+    throw new ApiError(400, "Invalid token purpose.");
+  }
+
+  const inputCode = String(code).trim();
+  const isBypass = isDevOtpBypass(inputCode);
+
+  const otpRecord = await mainPrisma.otp.findFirst({
+    where: {
+      phone: `email:${decoded.email.toLowerCase()}`,
+      code: inputCode,
+      verified: false,
+      expiresAt: { gte: new Date() },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!otpRecord && !isBypass) {
+    throw new ApiError(400, "Invalid or expired verification code.");
+  }
+
+  if (otpRecord) {
+    await mainPrisma.otp.update({
+      where: { id: otpRecord.id },
+      data: { verified: true },
+    });
+  }
+
+  if (decoded.userType === "super_admin") {
+    const admin = await mainPrisma.superAdmin.findUnique({ where: { id: decoded.sub } });
+    if (!admin) throw new ApiError(404, "Super Admin account not found.");
+    if (admin.status === "inactive") throw new ApiError(403, "This account has been deactivated.");
+
+    const token = signToken(admin.id, "super_admin");
+
+    if (admin.role && admin.role !== "super_admin") {
+      try {
+        const roleObj = await mainPrisma.superAdminRole.findUnique({ where: { id: admin.role } });
+        if (roleObj) {
+          admin.rolePermissions = roleObj.permissions;
+          admin.roleName = roleObj.name;
+        }
+      } catch (err) {
+        console.error("Failed to load admin role permissions:", err.message);
+      }
+    }
+
+    return { token, admin, userType: "super_admin" };
+  } else if (decoded.userType === "tenant_user") {
+    const tenant = await mainPrisma.tenant.findUnique({ where: { id: decoded.tenantId } });
+    if (!tenant) throw new ApiError(404, "Tenant organization not found.");
+    if (!tenant.isActive) throw new ApiError(403, "This brand organization is deactivated.");
+
+    const tenantDb = getTenantClient(tenant.dbUrl);
+    const user = await tenantDb.user.findUnique({
+      where: { id: decoded.sub },
+      include: { branch: true, warehouse: true },
+    });
+    if (!user) throw new ApiError(404, "User account not found.");
+    if (user.isActive === false) throw new ApiError(403, "Your account has been deactivated.");
+
+    const token = signToken(user.id, "user");
+    await attachUserPermissions(tenantDb, user);
+
+    return { token, user, tenant, userType: "tenant_user" };
+  }
+
+  throw new ApiError(400, "Unknown user type.");
+};
+
+/**
+ * Resend Email Login OTP.
+ */
+const resendLoginOtp = async ({ tempToken }) => {
+  if (!tempToken) {
+    throw new ApiError(400, "Verification session token is required.");
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(tempToken, config.jwt.secret);
+  } catch (err) {
+    throw new ApiError(400, "Verification session expired. Please sign in again.");
+  }
+
+  if (decoded.purpose !== "login_otp") {
+    throw new ApiError(400, "Invalid token purpose.");
+  }
+
+  let name = "";
+  if (decoded.userType === "super_admin") {
+    const admin = await mainPrisma.superAdmin.findUnique({ where: { id: decoded.sub } });
+    if (admin) name = admin.name;
+  } else if (decoded.userType === "tenant_user" && decoded.tenantId) {
+    const tenant = await mainPrisma.tenant.findUnique({ where: { id: decoded.tenantId } });
+    if (tenant) {
+      const tenantDb = getTenantClient(tenant.dbUrl);
+      const user = await tenantDb.user.findUnique({ where: { id: decoded.sub } });
+      if (user) name = user.name;
+    }
+  }
+
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await mainPrisma.otp.create({
+    data: {
+      phone: `email:${decoded.email.toLowerCase()}`,
+      code,
+      expiresAt,
+    },
+  });
+
+  await sendLoginOtpEmail({
+    to: decoded.email,
+    name,
+    code,
+  });
+
+  return {
+    success: true,
+    message: "A new verification code has been sent to your email.",
+  };
+};
+
+module.exports = { sendOtp, verifyOtp, loginWithEmail, superAdminLogin, kdsLogin, requestPasswordReset, verifyResetToken, resetPassword, verifyLoginOtp, resendLoginOtp };

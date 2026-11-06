@@ -17,15 +17,25 @@ const verifyOtp = catchAsync(async (req, res) => {
 
 /** POST /api/auth/login */
 const login = catchAsync(async (req, res) => {
-  const { email, password } = req.body;
-  const result = await authService.loginWithEmail(req.tenantDb, email, password);
+  const { email, password, bypassOtp } = req.body;
+  const result = await authService.loginWithEmail(
+    req.tenantDb,
+    email,
+    password,
+    bypassOtp === true || bypassOtp === "true",
+    req.tenant
+  );
   res.status(200).json({ success: true, ...result, tenant: req.tenant });
 });
 
 /** POST /api/auth/super-admin/login */
 const superAdminLogin = catchAsync(async (req, res) => {
-  const { email, password } = req.body;
-  const result = await authService.superAdminLogin(email, password);
+  const { email, password, bypassOtp } = req.body;
+  const result = await authService.superAdminLogin(
+    email,
+    password,
+    bypassOtp === true || bypassOtp === "true"
+  );
   res.status(200).json({ success: true, ...result });
 });
 
@@ -41,4 +51,58 @@ const getMe = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, user: req.user });
 });
 
-module.exports = { sendOtp, verifyOtp, login, superAdminLogin, kdsLogin, getMe };
+
+/** POST /api/auth/forgot-password */
+const forgotPassword = catchAsync(async (req, res) => {
+  const { email, tenantId, companyNo } = req.body;
+  const origin = req.get("origin") || req.get("referer");
+  const result = await authService.requestPasswordReset({
+    email,
+    tenantId: tenantId || companyNo || req.headers["x-tenant-id"],
+    origin,
+  });
+  res.status(200).json(result);
+});
+
+/** POST /api/auth/verify-reset-token */
+const verifyResetToken = catchAsync(async (req, res) => {
+  const { token } = req.body;
+  const result = await authService.verifyResetToken(token);
+  res.status(200).json({ success: true, ...result });
+});
+
+/** POST /api/auth/reset-password */
+const resetPassword = catchAsync(async (req, res) => {
+  const { token, newPassword } = req.body;
+  const result = await authService.resetPassword({ token, newPassword });
+  res.status(200).json(result);
+});
+
+
+/** POST /api/auth/verify-login-otp */
+const verifyLoginOtp = catchAsync(async (req, res) => {
+  const { tempToken, code } = req.body;
+  const result = await authService.verifyLoginOtp({ tempToken, code });
+  res.status(200).json({ success: true, ...result });
+});
+
+/** POST /api/auth/resend-login-otp */
+const resendLoginOtp = catchAsync(async (req, res) => {
+  const { tempToken } = req.body;
+  const result = await authService.resendLoginOtp({ tempToken });
+  res.status(200).json({ success: true, ...result });
+});
+
+module.exports = {
+  sendOtp,
+  verifyOtp,
+  login,
+  superAdminLogin,
+  kdsLogin,
+  getMe,
+  forgotPassword,
+  verifyResetToken,
+  resetPassword,
+  verifyLoginOtp,
+  resendLoginOtp,
+};

@@ -19,4 +19,14 @@ router.post("/kds/login", extractTenant, authController.kdsLogin);
 // ─── Current User ────────────────────────────────────
 router.get("/me", extractTenant, authenticate, authController.getMe);
 
+
+// ─── Dashboard Email Login OTP ───────────────────────
+router.post("/verify-login-otp", authController.verifyLoginOtp);
+router.post("/resend-login-otp", authController.resendLoginOtp);
+
+// ─── Password Reset ──────────────────────────────────
+router.post("/forgot-password", authController.forgotPassword);
+router.post("/verify-reset-token", authController.verifyResetToken);
+router.post("/reset-password", authController.resetPassword);
+
 module.exports = router;

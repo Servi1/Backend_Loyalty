@@ -84,6 +84,20 @@ function getLocalInterfaceMac() {
 const LOCAL_SERVER_MAC = getLocalInterfaceMac();
 
 /**
+ * Checks if the IP is loopback / internal localhost
+ */
+function isLoopbackIp(ip) {
+  if (!ip) return false;
+  const clean = String(ip).replace(/^::ffff:/, "").trim().toLowerCase();
+  return (
+    clean === "127.0.0.1" ||
+    clean === "::1" ||
+    clean === "localhost" ||
+    clean.startsWith("127.")
+  );
+}
+
+/**
  * Extracts and normalizes client IP address from request.
  */
 function getClientIp(req) {
@@ -135,7 +149,7 @@ function getClientMac(req) {
   const ip = getClientIp(req);
 
   // If local loopback
-  if (ip === "127.0.0.1" || ip === "::1" || ip === "localhost") {
+  if (isLoopbackIp(ip)) {
     return LOCAL_SERVER_MAC;
   }
 
@@ -154,13 +168,15 @@ function getClientMac(req) {
 
 // Configuration from environment variables
 const WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000; // 15 minutes default
-const MAX_IP_REQUESTS = Number(process.env.RATE_LIMIT_MAX_IP) || 400; // 400 requests per 15 min per IP
-const MAX_MAC_REQUESTS = Number(process.env.RATE_LIMIT_MAX_MAC) || 400; // 400 requests per 15 min per MAC
+const MAX_IP_REQUESTS = Number(process.env.RATE_LIMIT_MAX_IP) || 2000; // 2000 requests per 15 min per IP
+const MAX_MAC_REQUESTS = Number(process.env.RATE_LIMIT_MAX_MAC) || 2000; // 2000 requests per 15 min per MAC
 
 /**
  * Standard skip helper for health checks, static uploads, and admin unblock management
  */
 function shouldSkip(req) {
+  const ip = getClientIp(req);
+  if (isLoopbackIp(ip)) return true;
   const p = req.path || req.url || "";
   return p.startsWith("/uploads") || p === "/health" || p === "/api/health" || p.startsWith("/api/admin/blocked-clients");
 }
@@ -173,11 +189,12 @@ const ipRateLimiter = rateLimit({
   max: MAX_IP_REQUESTS,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: shouldSkip,
+  skip: (req) => shouldSkip(req) || isLoopbackIp(getClientIp(req)),
   keyGenerator: (req) => `ip:${getClientIp(req)}`,
   handler: async (req, res) => {
     const ip = getClientIp(req);
     const mac = getClientMac(req) || "unknown";
+    if (isLoopbackIp(ip)) return;
     console.warn(`⚠️ [RATE LIMIT - IP EXCEEDED] IP: ${ip} | MAC: ${mac} | Path: ${req.originalUrl}`);
 
     // Automatically add to permanent blocked list in database & cache
@@ -213,11 +230,15 @@ const macRateLimiter = rateLimit({
   max: MAX_MAC_REQUESTS,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => shouldSkip(req) || !getClientMac(req),
+  skip: (req) => {
+    const mac = getClientMac(req);
+    return shouldSkip(req) || !mac || mac === LOCAL_SERVER_MAC;
+  },
   keyGenerator: (req) => `mac:${getClientMac(req)}`,
   handler: async (req, res) => {
     const ip = getClientIp(req);
     const mac = getClientMac(req);
+    if (!mac || mac === LOCAL_SERVER_MAC || isLoopbackIp(ip)) return;
     console.warn(`🛑 [RATE LIMIT - MAC/DEVICE EXCEEDED] MAC: ${mac} | Current IP: ${ip} | Path: ${req.originalUrl}`);
 
     // Automatically add to permanent blocked list in database & cache
@@ -248,14 +269,17 @@ const macRateLimiter = rateLimit({
  * Combined Dual Rate Limiting & Block List Enforcement Middleware
  */
 const rateLimiter = (req, res, next) => {
-  // Rate limiter temporarily disabled
-  return next();
   if (shouldSkip(req)) {
     return next();
   }
 
   const ip = getClientIp(req);
   const mac = getClientMac(req);
+
+  // Never block loopback or local server MAC
+  if (isLoopbackIp(ip) || mac === LOCAL_SERVER_MAC) {
+    return next();
+  }
 
   // 1. First check if this client is already permanently blocked in database/cache
   const blockCheck = isClientBlocked(ip, mac);
