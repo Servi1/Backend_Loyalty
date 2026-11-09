@@ -284,7 +284,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     if (isQrCashier && tenant.subQrCashier === false) {
       throw new ApiError(403, "QR Cashier takeaway ordering is currently deactivated for this brand. Please contact restaurant staff.");
     }
-    if (isNativeApp && tenant.subAppServi === false) {
+    if (isNativeApp && (tenant.subAppServi === false || tenant.ordersEnabled === false)) {
       throw new ApiError(403, "Native app ordering is currently deactivated for this brand.");
     }
   }
@@ -333,7 +333,6 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   if (staffId && selectedSlot && selectedSlotDate) {
     const existingStaffBooking = await db.order.findFirst({
       where: {
-        branchId,
         staffId,
         selectedSlotDate,
         selectedSlot,
@@ -341,6 +340,20 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       }
     });
     if (existingStaffBooking) {
+      throw new ApiError(409, `The selected specialist is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
+    }
+
+    const existingItemBooking = await db.orderItem.findFirst({
+      where: {
+        staffId,
+        selectedSlotDate,
+        selectedSlot,
+        order: {
+          status: { notIn: ["CANCELLED", "REFUNDED"] }
+        }
+      }
+    });
+    if (existingItemBooking) {
       throw new ApiError(409, `The selected specialist is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
     }
   }
@@ -881,7 +894,7 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     }
 
     if (staffId && selectedSlot && selectedSlotDate) {
-      const staffLockKey = `slot_stf_${branchId}_${staffId}_${selectedSlotDate}_${selectedSlot}`;
+      const staffLockKey = `slot_stf_${staffId}_${selectedSlotDate}_${selectedSlot}`;
       try {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${staffLockKey}))`;
       } catch (lockErr) {
@@ -889,7 +902,6 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       }
       const existingStaffBooking = await tx.order.findFirst({
         where: {
-          branchId,
           staffId,
           selectedSlotDate,
           selectedSlot,
@@ -897,6 +909,20 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
         }
       });
       if (existingStaffBooking) {
+        throw new ApiError(409, `The selected specialist is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
+      }
+
+      const existingItemBooking = await tx.orderItem.findFirst({
+        where: {
+          staffId,
+          selectedSlotDate,
+          selectedSlot,
+          order: {
+            status: { notIn: ["CANCELLED", "REFUNDED"] }
+          }
+        }
+      });
+      if (existingItemBooking) {
         throw new ApiError(409, `The selected specialist is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
       }
     }

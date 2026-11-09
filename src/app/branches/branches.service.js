@@ -344,7 +344,7 @@ const getBranchStaff = async (db, branchId) => {
     }));
 };
 
-const getStaffSlots = async (db, staffId, dateStr, durationStr, includePast = false) => {
+const getStaffSlots = async (db, staffId, dateStr, durationStr, includePast = false, clientMinutes = undefined) => {
   const duration = parseInt(durationStr, 10) || 15;
 
   // Clean local day-of-week parsing (avoid UTC shift bugs)
@@ -371,35 +371,23 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr, includePast = fa
     return [];
   }
 
-  // Fetch booked orders for this staff member and date
   const targetDateStr = dateStr || new Date().toISOString().split("T")[0];
-  const scheduledOrders = await db.order.findMany({
-    where: {
-      staffId: staffId,
-      selectedSlotDate: targetDateStr,
-      status: {
-        notIn: ["CANCELLED", "REFUNDED"]
-      }
-    },
-    select: {
-      selectedSlot: true
-    }
-  });
-
-  const bookedSlots = new Set(scheduledOrders.map(o => o.selectedSlot).filter(Boolean));
 
   const parseTime = (t) => {
     if (!t) return 0;
-    const parts = t.trim().split(" ");
-    let [h, m] = (parts[0] || "0:0").split(":").map(Number);
-    if (isNaN(h)) h = 0;
-    if (isNaN(m)) m = 0;
-    if (parts[1]) {
-      const period = parts[1].toUpperCase();
+    const str = String(t).trim();
+    if (str.includes(" ")) {
+      const parts = str.split(" ");
+      let [h, m] = (parts[0] || "0:0").split(":").map(Number);
+      if (isNaN(h)) h = 0;
+      if (isNaN(m)) m = 0;
+      const period = (parts[1] || "").toUpperCase();
       if (period === "PM" && h < 12) h += 12;
       if (period === "AM" && h === 12) h = 0;
+      return h * 60 + m;
     }
-    return h * 60 + m;
+    const [h, m] = str.split(":").map(Number);
+    return (h || 0) * 60 + (m || 0);
   };
 
   const formatTime = (min) => {
@@ -408,31 +396,102 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr, includePast = fa
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   };
 
+  // Fetch booked orders for this staff member and date from both Order and OrderItem
+  const [scheduledOrders, scheduledItems] = await Promise.all([
+    db.order.findMany({
+      where: {
+        staffId: staffId,
+        selectedSlotDate: targetDateStr,
+        status: {
+          notIn: ["CANCELLED", "REFUNDED"]
+        }
+      },
+      select: {
+        selectedSlot: true,
+        items: {
+          select: {
+            menuItem: {
+              select: { prepTime: true }
+            }
+          }
+        }
+      }
+    }),
+    db.orderItem.findMany({
+      where: {
+        staffId: staffId,
+        selectedSlotDate: targetDateStr,
+        order: {
+          status: {
+            notIn: ["CANCELLED", "REFUNDED"]
+          }
+        }
+      },
+      select: {
+        selectedSlot: true,
+        menuItem: {
+          select: { prepTime: true }
+        }
+      }
+    })
+  ]);
+
+  // Build a list of busy intervals [{ start, end }] in minutes
+  const busyIntervals = [];
+
+  for (const o of scheduledOrders) {
+    if (!o.selectedSlot) continue;
+    const bStart = parseTime(o.selectedSlot);
+    let bDur = 15;
+    if (o.items && o.items.length > 0) {
+      const maxPrep = Math.max(...o.items.map(it => it.menuItem?.prepTime || 15));
+      if (maxPrep > 0) bDur = maxPrep;
+    }
+    busyIntervals.push({ start: bStart, end: bStart + bDur });
+  }
+
+  for (const item of scheduledItems) {
+    if (!item.selectedSlot) continue;
+    const bStart = parseTime(item.selectedSlot);
+    const bDur = Math.max(15, item.menuItem?.prepTime || 15);
+    busyIntervals.push({ start: bStart, end: bStart + bDur });
+  }
+
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const isToday = targetDateStr === todayStr;
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const currentMinutes = clientMinutes !== undefined ? clientMinutes : (now.getHours() * 60 + now.getMinutes());
 
   const slots = [];
   const seenTimes = new Set();
+  const SLOT_STEP = 15; // standard 15-minute slot intervals
 
   for (const sch of schedules) {
-    const start = parseTime(sch.startTime);
-    const end = parseTime(sch.endTime);
+    const shiftStart = parseTime(sch.startTime);
+    const shiftEnd = parseTime(sch.endTime);
 
-    let curr = start;
-    while (curr + duration <= end) {
+    let curr = shiftStart;
+    while (curr + duration <= shiftEnd) {
       const slotTime = formatTime(curr);
       if (!seenTimes.has(slotTime)) {
         seenTimes.add(slotTime);
-        const isPast = isToday && curr <= nowMinutes;
+        const slotStartMin = curr;
+        const slotEndMin = curr + duration;
+
+        const isPast = isToday && slotStartMin <= currentMinutes;
+
+        // Check if candidate slot interval [slotStartMin, slotEndMin] overlaps with any busy booking
+        const hasConflict = busyIntervals.some(
+          b => slotStartMin < b.end && slotEndMin > b.start
+        );
+
         slots.push({
           time: slotTime,
           isPast,
-          available: (includePast ? true : !isPast) && !bookedSlots.has(slotTime)
+          available: (includePast ? true : !isPast) && !hasConflict
         });
       }
-      curr += duration;
+      curr += SLOT_STEP;
     }
   }
 

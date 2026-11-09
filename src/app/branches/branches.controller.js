@@ -76,7 +76,9 @@ const getOne = catchAsync(async (req, res) => {
         subQrCashier: req.tenant.subQrCashier,
         subPos: req.tenant.subPos,
         subKds: req.tenant.subKds,
-        subCds: req.tenant.subCds
+        subCds: req.tenant.subCds,
+        subAppServi: req.tenant.subAppServi,
+        ordersEnabled: req.tenant.ordersEnabled
       },
       tenantSettings: {
         logoUrl: getAppImageURL(req.tenant.logoUrl),
@@ -104,13 +106,14 @@ const getStaff = catchAsync(async (req, res) => {
 });
 
 const getStaffSlots = catchAsync(async (req, res) => {
-  const { date, duration, includePast } = req.query;
+  const { date, duration, includePast, clientMinutes } = req.query;
   const slots = await branchesService.getStaffSlots(
     req.tenantDb,
     req.params.staffId,
     date,
     duration,
-    includePast === 'true'
+    includePast === 'true',
+    clientMinutes !== undefined ? parseInt(clientMinutes, 10) : undefined
   );
   res.json({ success: true, data: slots });
 });

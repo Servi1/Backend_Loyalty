@@ -285,7 +285,6 @@ const normalizePhone = (rawPhone) => {
   if (staffId && selectedSlot && selectedSlotDate) {
     const existingStaffBooking = await db.order.findFirst({
       where: {
-        branchId,
         staffId,
         selectedSlotDate,
         selectedSlot,
@@ -293,6 +292,20 @@ const normalizePhone = (rawPhone) => {
       }
     });
     if (existingStaffBooking) {
+      throw new ApiError(409, `The selected specialist is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
+    }
+
+    const existingItemBooking = await db.orderItem.findFirst({
+      where: {
+        staffId,
+        selectedSlotDate,
+        selectedSlot,
+        order: {
+          status: { notIn: ["CANCELLED", "REFUNDED"] }
+        }
+      }
+    });
+    if (existingItemBooking) {
       throw new ApiError(409, `The selected specialist is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
     }
   }
@@ -444,7 +457,7 @@ const normalizePhone = (rawPhone) => {
     }
 
     if (staffId && selectedSlot && selectedSlotDate) {
-      const staffLockKey = `slot_stf_${branchId}_${staffId}_${selectedSlotDate}_${selectedSlot}`;
+      const staffLockKey = `slot_stf_${staffId}_${selectedSlotDate}_${selectedSlot}`;
       try {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${staffLockKey}))`;
       } catch (lockErr) {
@@ -452,7 +465,6 @@ const normalizePhone = (rawPhone) => {
       }
       const existingStaffBooking = await tx.order.findFirst({
         where: {
-          branchId,
           staffId,
           selectedSlotDate,
           selectedSlot,
@@ -460,6 +472,20 @@ const normalizePhone = (rawPhone) => {
         }
       });
       if (existingStaffBooking) {
+        throw new ApiError(409, `The selected specialist is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
+      }
+
+      const existingItemBooking = await tx.orderItem.findFirst({
+        where: {
+          staffId,
+          selectedSlotDate,
+          selectedSlot,
+          order: {
+            status: { notIn: ["CANCELLED", "REFUNDED"] }
+          }
+        }
+      });
+      if (existingItemBooking) {
         throw new ApiError(409, `The selected specialist is already booked for ${selectedSlotDate} at ${selectedSlot}. Please choose a different time slot.`);
       }
     }
@@ -653,7 +679,6 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
         const conflictStaff = await db.order.findFirst({
           where: {
             id: { not: id },
-            branchId: order.branchId,
             staffId: targetStaffId,
             selectedSlotDate: targetSlotDate,
             selectedSlot: targetSlot,
@@ -661,6 +686,21 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
           }
         });
         if (conflictStaff) {
+          throw new ApiError(409, `The selected specialist is already booked for ${targetSlotDate} at ${targetSlot}. Please choose a different time slot.`);
+        }
+
+        const conflictItem = await db.orderItem.findFirst({
+          where: {
+            orderId: { not: id },
+            staffId: targetStaffId,
+            selectedSlotDate: targetSlotDate,
+            selectedSlot: targetSlot,
+            order: {
+              status: { notIn: ["CANCELLED", "REFUNDED"] }
+            }
+          }
+        });
+        if (conflictItem) {
           throw new ApiError(409, `The selected specialist is already booked for ${targetSlotDate} at ${targetSlot}. Please choose a different time slot.`);
         }
       }
