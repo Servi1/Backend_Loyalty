@@ -172,7 +172,9 @@ const addFavorite = async (userId, brandId) => {
       OR: [
         { id: brandId },
         { slug: brandId }
-      ]
+      ],
+      isActive: true,
+      ordersEnabled: true
     }
   });
   if (!tenant) throw new ApiError(404, "Brand not found");
@@ -202,7 +204,9 @@ const removeFavorite = async (userId, brandId) => {
       OR: [
         { id: brandId },
         { slug: brandId }
-      ]
+      ],
+      isActive: true,
+      ordersEnabled: true
     }
   });
   if (!tenant) throw new ApiError(404, "Brand not found");

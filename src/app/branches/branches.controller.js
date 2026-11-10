@@ -29,7 +29,8 @@ const getAll = catchAsync(async (req, res) => {
       subQrCashier: req.tenant.subQrCashier,
       subPos: req.tenant.subPos,
       subKds: req.tenant.subKds,
-      subCds: req.tenant.subCds
+      subCds: req.tenant.subCds,
+      subAppServi: req.tenant.subAppServi
     },
     tenantSettings: {
       logoUrl: getAppImageURL(req.tenant.logoUrl),

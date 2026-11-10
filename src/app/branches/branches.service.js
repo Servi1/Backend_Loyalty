@@ -78,6 +78,7 @@ const getBranches = async (db) => {
       menuBannerUrl: true,
       tablesEnabled: true,
       qrEnabled: true,
+      appServiEnabled: true,
       customOrderTypes: {
         where: { isActive: true },
         select: { id: true, name: true, nameAr: true, description: true, descriptionAr: true },

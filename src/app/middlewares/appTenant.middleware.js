@@ -27,7 +27,7 @@ const optionalAppTenant = async (req, _res, next) => {
       },
     });
 
-    if (!tenant || !tenant.isActive) {
+    if (!tenant || !tenant.isActive || tenant.ordersEnabled === false) {
       req.tenantId = null;
       req.tenant = null;
       req.tenantDb = null;
