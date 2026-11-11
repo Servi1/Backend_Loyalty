@@ -32,6 +32,7 @@ const warehousesRoutes = require("./src/web/tenant/warehouses/warehouses.routes"
 const productRequestsRoutes = require("./src/web/tenant/product-requests/product-requests.routes");
 const posDevicesRoutes = require("./src/web/tenant/pos-devices/pos-devices.routes");
 const kdsDevicesRoutes = require("./src/web/tenant/kds-devices/kds-devices.routes");
+const cdsDevicesRoutes = require("./src/web/tenant/cds-devices/cds-devices.routes");
 const qrCashiersRoutes = require("./src/web/tenant/qr-cashiers/qr-cashiers.routes");
 const posRoutes = require("./src/pos/pos.routes");
 const kdsRoutes = require("./src/kds/kds.routes");
@@ -124,7 +125,7 @@ tenantRouter.get("/info", async (req, res, next) => {
     const branchCount = await req.tenantDb.branch.count();
     const kdsCount = await req.tenantDb.kdsDevice.count();
     const qrCashierCount = await req.tenantDb.qrCashier.count();
-    const cdsCount = 0; // CDS doesn't map to a specific database entity yet
+    const cdsCount = req.tenantDb.cdsDevice ? await req.tenantDb.cdsDevice.count().catch(() => 0) : 0;
 
     const marketSetting = await mainPrisma.systemSetting.findUnique({
       where: { key: "marketEnabled" }
@@ -255,7 +256,7 @@ tenantRouter.post("/market/buy", authenticate, authorize("ADMIN", "BRAND_MANAGER
     const branchCount = await req.tenantDb.branch.count();
     const kdsCount = await req.tenantDb.kdsDevice.count();
     const qrCashierCount = await req.tenantDb.qrCashier.count();
-    const cdsCount = 0;
+    const cdsCount = req.tenantDb.cdsDevice ? await req.tenantDb.cdsDevice.count().catch(() => 0) : 0;
 
     res.json({
       success: true,
@@ -283,6 +284,7 @@ tenantRouter.use("/warehouses", warehousesRoutes);
 tenantRouter.use("/product-requests", productRequestsRoutes);
 tenantRouter.use("/pos-devices", posDevicesRoutes);
 tenantRouter.use("/kds-devices", kdsDevicesRoutes);
+tenantRouter.use("/cds-devices", cdsDevicesRoutes);
 tenantRouter.use("/qr-cashiers", qrCashiersRoutes);
 tenantRouter.use("/menus", menusRoutes);
 tenantRouter.use("/orders", ordersRoutes);

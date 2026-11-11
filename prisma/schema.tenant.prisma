@@ -153,6 +153,7 @@ model Branch {
   inventory InventoryItem[]
   posDevices PosDevice[]
   kdsDevices KdsDevice[]
+  cdsDevices CdsDevice[]
   cashDrawerSessions CashDrawerSession[]
   qrCashiers QrCashier[]
   productRequests ProductRequest[]
@@ -382,6 +383,21 @@ model PosDevice {
 model KdsDevice {
   id        String   @id @default(uuid())
   name      String   // e.g., "KDS 1", "KDS 2", etc.
+  nameAr    String?
+  deviceKey String   @unique // 8-digit random number
+  isActive  Boolean  @default(true)
+
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+ 
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CdsDevice {
+  id        String   @id @default(uuid())
+  name      String   // e.g., "CDS 1", "CDS 2", etc.
   nameAr    String?
   deviceKey String   @unique // 8-digit random number
   isActive  Boolean  @default(true)
