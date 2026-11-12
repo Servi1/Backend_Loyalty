@@ -2,15 +2,72 @@ const mainPrisma = require("../../config/prisma");
 const { getTenantClient } = require("../../config/tenantManager");
 const loyaltyService = require("../../web/tenant/loyalty/loyalty.service");
 
-const EXPIRY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const REGULAR_EXPIRY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for regular orders
+const SCHEDULED_EXPIRY_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours for scheduled orders
+
+/**
+ * Checks whether an order is scheduled (via type, selectedSlot, selectedSlotDate, or slotDetails)
+ */
+function isScheduledOrder(order) {
+  return (
+    order.type === "SCHEDULED" ||
+    Boolean(order.selectedSlot) ||
+    Boolean(order.selectedSlotDate) ||
+    (order.slotDetails && Array.isArray(order.slotDetails) && order.slotDetails.length > 0)
+  );
+}
+
+/**
+ * Checks whether the scheduled date and time slot has already passed
+ */
+function hasSlotTimePassed(slotDate, slotTime) {
+  if (!slotDate) return false;
+  try {
+    let dateStr = "";
+    if (slotDate instanceof Date) {
+      dateStr = slotDate.toISOString().split("T")[0];
+    } else if (typeof slotDate === "string") {
+      dateStr = slotDate.split("T")[0].trim();
+    }
+    if (!dateStr) return false;
+
+    // Default to end of day if no specific slot time is given
+    let hours = 23;
+    let minutes = 59;
+    let seconds = 59;
+
+    if (typeof slotTime === "string" && slotTime.trim()) {
+      // If slotTime is a range e.g. "14:00 - 14:30", take the end time
+      const parts = slotTime.split("-");
+      const targetTimePart = (parts[parts.length - 1] || parts[0]).trim();
+      const match = targetTimePart.match(/(\d{1,2}):(\d{2})/);
+      if (match) {
+        hours = parseInt(match[1], 10);
+        minutes = parseInt(match[2], 10);
+        seconds = 0;
+      }
+    }
+
+    const dateParts = dateStr.split("-").map((p) => parseInt(p, 10));
+    if (dateParts.length >= 3) {
+      const slotEndDateTime = new Date(dateParts[0], dateParts[1] - 1, dateParts[2], hours, minutes, seconds);
+      if (!isNaN(slotEndDateTime.getTime())) {
+        return Date.now() > slotEndDateTime.getTime();
+      }
+    }
+  } catch (err) {
+    console.warn("[Pending Expiry Worker] Failed to check slot time:", err.message);
+  }
+  return false;
+}
 
 async function checkAndCancelUnacceptedOrders() {
   try {
     const tenants = await mainPrisma.tenant.findMany({
-      where: { isActive: true }
+      where: { isActive: true },
     });
 
-    const cutoffTime = new Date(Date.now() - EXPIRY_TIMEOUT_MS);
+    const now = Date.now();
 
     for (const tenant of tenants) {
       const dbUrl = tenant.dbUrl || process.env.DATABASE_URL;
@@ -19,14 +76,10 @@ async function checkAndCancelUnacceptedOrders() {
       try {
         const db = getTenantClient(dbUrl);
 
-        // Find pending orders older than 5 minutes that haven't been accepted (excluding scheduled orders)
+        // Find all pending orders that have not been accepted yet
         const unacceptedOrders = await db.order.findMany({
           where: {
             status: "PENDING",
-            createdAt: { lt: cutoffTime },
-            type: { not: "SCHEDULED" },
-            selectedSlot: null,
-            selectedSlotDate: null,
           },
           select: {
             id: true,
@@ -39,40 +92,68 @@ async function checkAndCancelUnacceptedOrders() {
             selectedSlot: true,
             selectedSlotDate: true,
             slotDetails: true,
-          }
+            createdAt: true,
+          },
         });
 
         if (unacceptedOrders.length > 0) {
-          console.log(`[Pending Expiry Worker] Found ${unacceptedOrders.length} unaccepted orders older than 5 mins for tenant: ${tenant.slug}`);
-          
           for (const order of unacceptedOrders) {
-            // Skip if scheduled order
-            const isScheduled = order.type === "SCHEDULED" || Boolean(order.selectedSlot) || Boolean(order.selectedSlotDate) || (order.slotDetails && Array.isArray(order.slotDetails) && order.slotDetails.length > 0);
-            if (isScheduled) continue;
+            const scheduled = isScheduledOrder(order);
+            const orderAgeMs = now - new Date(order.createdAt).getTime();
 
-            // 1. Update in tenant database
+            let shouldCancel = false;
+            let cancelReason = "";
+
+            if (!scheduled) {
+              // Regular orders auto-cancel after 5 minutes without POS acceptance
+              if (orderAgeMs > REGULAR_EXPIRY_TIMEOUT_MS) {
+                shouldCancel = true;
+                cancelReason = "exceeded 5 mins without POS acceptance";
+              }
+            } else {
+              // Scheduled orders auto-cancel after 24 hours OR when the slot time passes
+              if (orderAgeMs > SCHEDULED_EXPIRY_TIMEOUT_MS) {
+                shouldCancel = true;
+                cancelReason = "scheduled order exceeded 24 hours without POS acceptance";
+              } else if (hasSlotTimePassed(order.selectedSlotDate, order.selectedSlot)) {
+                shouldCancel = true;
+                cancelReason = `scheduled slot time has passed (${order.selectedSlotDate || ""} ${order.selectedSlot || ""})`.trim();
+              } else if (order.slotDetails && Array.isArray(order.slotDetails) && order.slotDetails.length > 0) {
+                const anyPassed = order.slotDetails.some((sd) =>
+                  hasSlotTimePassed(sd.selectedSlotDate || order.selectedSlotDate, sd.selectedSlot)
+                );
+                if (anyPassed) {
+                  shouldCancel = true;
+                  cancelReason = "scheduled specialist slot time has passed";
+                }
+              }
+            }
+
+            if (!shouldCancel) continue;
+
+            // 1. Update status to CANCELLED in tenant database
+            // Note: Once cancelled, slot check queries (filtering status not in CANCELLED/REFUNDED)
+            // will immediately see this slot as released and available for other customers.
             await db.order.update({
               where: { id: order.id },
-              data: { status: "CANCELLED" }
+              data: { status: "CANCELLED" },
             });
 
-            // Table status is adjusted manually only by branch manager or brand admin (auto-available on expiry removed)
-
-            // 2. Update in main database Order registry
+            // 2. Update status in main database Order registry
             try {
               await mainPrisma.order.update({
                 where: { id: order.id },
-                data: { status: "CANCELLED" }
+                data: { status: "CANCELLED" },
               });
             } catch (err) {
               console.warn(`[Pending Expiry Worker] Failed to update global Order registry: ${err.message}`);
             }
 
-            // 3. Update in main database AggregatedOrder registry
+            // 3. Update status in main database AggregatedOrder registry
             try {
               await mainPrisma.aggregatedOrder.update({
                 where: { id: `${tenant.id}_${order.id}` },
-                data: { status: "CANCELLED" }
+                data: { status: "CANCELLED" },
               });
             } catch (err) {
               console.warn(`[Pending Expiry Worker] Failed to update AggregatedOrder registry: ${err.message}`);
@@ -94,7 +175,9 @@ async function checkAndCancelUnacceptedOrders() {
               }
             }
 
-            console.log(`[Pending Expiry Worker] Cancelled unaccepted order #${order.orderNumber} (exceeded 5 mins without POS acceptance)`);
+            console.log(
+              `[Pending Expiry Worker] Cancelled unaccepted order #${order.orderNumber} (${cancelReason}). Slot released.`
+            );
           }
         }
       } catch (tenantErr) {
@@ -115,10 +198,14 @@ function start() {
     checkAndCancelUnacceptedOrders();
   }, 30 * 1000);
 
-  console.log("[Pending Expiry Worker] Started background unaccepted orders auto-cancellation service (runs every 30 seconds).");
+  console.log(
+    "[Pending Expiry Worker] Started background unaccepted orders auto-cancellation service (runs every 30 seconds, 5m regular, 24h/passed-slot scheduled)."
+  );
 }
 
 module.exports = {
   start,
   checkAndCancelUnacceptedOrders,
+  isScheduledOrder,
+  hasSlotTimePassed,
 };

@@ -571,16 +571,18 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     }
   }
 
-  // 1. Normalize and resolve Order Type
+  // 1. Normalize and resolve Order Type (never store SCHEDULED as order type)
   let resolvedOrderType = "TAKEAWAY";
   const typeLower = String(type || "").toLowerCase().trim();
   if (typeLower === "dine_in" || typeLower === "dine in" || !!tableId) {
     resolvedOrderType = "DINE_IN";
   } else if (typeLower === "deliver_to_car" || typeLower === "deliver to car" || typeLower.includes("car") || typeLower.includes("curbside")) {
     resolvedOrderType = "DELIVER_TO_CAR";
-  } else if (typeLower === "scheduled" || typeLower.includes("home")) {
-    resolvedOrderType = "SCHEDULED";
-  } else if (typeLower === "takeaway" || typeLower === "take away") {
+  } else if (typeLower === "delivery" || typeLower.includes("delivery")) {
+    resolvedOrderType = "DELIVERY";
+  } else if (typeLower === "takeaway" || typeLower === "take away" || typeLower === "pickup") {
+    resolvedOrderType = "TAKEAWAY";
+  } else if (typeLower === "scheduled") {
     resolvedOrderType = "TAKEAWAY";
   }
 
@@ -588,10 +590,15 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     try {
       const customType = await db.customOrderType.findUnique({ where: { id: customOrderTypeId } });
       if (customType) {
-        if (customType.name.toLowerCase().includes("car") || customType.name.toLowerCase().includes("curbside")) {
+        const ctName = customType.name.toLowerCase();
+        if (ctName.includes("car") || ctName.includes("curbside")) {
           resolvedOrderType = "DELIVER_TO_CAR";
-        } else if (customType.name.toLowerCase().includes("home")) {
-          resolvedOrderType = "SCHEDULED";
+        } else if (ctName.includes("delivery")) {
+          resolvedOrderType = "DELIVERY";
+        } else if (ctName.includes("dine") || ctName.includes("table")) {
+          resolvedOrderType = "DINE_IN";
+        } else if (ctName.includes("take") || ctName.includes("pick")) {
+          resolvedOrderType = "TAKEAWAY";
         }
       }
     } catch (_) {}
@@ -1351,10 +1358,16 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null }
           },
         });
         if (detailedOrder) {
+          const { getAppImageURL } = require("../../config");
           enrichedOrders.push({
             ...detailedOrder,
+            tenantId: tenant.id,
             tenantName: tenant.name,
             tenantSlug: tenant.slug,
+            brandLogo: getAppImageURL(tenant.logoUrl) || "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=100&h=100&fit=crop",
+            tenantLogo: getAppImageURL(tenant.logoUrl),
+            brandName: tenant.name,
+            brandNameAr: tenant.nameAr || null,
           });
           continue;
         }
@@ -1428,7 +1441,21 @@ const getOrder = async (db, orderId, userId) => {
     [detailedOrder],
     tenant ? { [tenant.id]: tenant } : {}
   );
-  return enrichedOrder || detailedOrder;
+  const result = enrichedOrder || detailedOrder;
+  if (tenant && result) {
+    const { getAppImageURL } = require("../../config");
+    return {
+      ...result,
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+      tenantSlug: tenant.slug,
+      brandLogo: getAppImageURL(tenant.logoUrl) || "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=100&h=100&fit=crop",
+      tenantLogo: getAppImageURL(tenant.logoUrl),
+      brandName: tenant.name,
+      brandNameAr: tenant.nameAr || null,
+    };
+  }
+  return result;
 };
 
 const payHaltedOrder = async (orderId, userId) => {
