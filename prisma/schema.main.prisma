@@ -170,6 +170,7 @@ model Tenant {
   loyaltyTiers         Json?
   stampPrograms        Json?
   isActive             Boolean          @default(true)
+  subscriptionPaused   Boolean          @default(false)
   category             String?
  
   // Relations

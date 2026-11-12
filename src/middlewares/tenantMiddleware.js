@@ -27,8 +27,34 @@ const extractTenant = async (req, _res, next) => {
       },
     });
 
-    if (!tenant || !tenant.isActive) {
-      return next(new ApiError(404, "Tenant not found or inactive"));
+    if (!tenant) {
+      return next(new ApiError(404, "Tenant not found"));
+    }
+
+    // Safely hydrate subscriptionPaused via raw SQL in case Prisma client predates schema patch
+    let subscriptionPaused = Boolean(tenant.subscriptionPaused);
+    try {
+      const pauseRows = await mainPrisma.$queryRawUnsafe(
+        'SELECT "subscriptionPaused" FROM "Tenant" WHERE "id" = $1 LIMIT 1',
+        tenant.id
+      );
+      if (Array.isArray(pauseRows) && pauseRows[0] && pauseRows[0].subscriptionPaused !== undefined) {
+        subscriptionPaused = Boolean(pauseRows[0].subscriptionPaused);
+      }
+    } catch {
+      // Ignore if column doesn't exist yet
+    }
+    tenant.subscriptionPaused = subscriptionPaused;
+
+    // Account Status check (allow Super Admin routes even if tenant is inactive)
+    const isSuperAdmin = Boolean(
+      req.admin ||
+      (req.user?.role &&
+        (String(req.user.role).toUpperCase() === "SUPER_ADMIN" ||
+         String(req.user.role).startsWith("admin-role-")))
+    );
+    if (!tenant.isActive && !isSuperAdmin) {
+      return next(new ApiError(403, "Account inactive. Your brand account has been deactivated by administration. Please contact support."));
     }
 
     // Attach the tenant ID and the specific database client to the request

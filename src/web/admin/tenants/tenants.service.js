@@ -11,6 +11,15 @@ const { getTenantClient } = require("../../../config/tenantManager");
 const { isOrderEligibleForLoyalty } = require("../../../shared/loyalty/loyaltyEligibility");
 
 
+const getSubscriptionPausedMap = async () => {
+  try {
+    const rows = await mainPrisma.$queryRawUnsafe('SELECT "id", "subscriptionPaused" FROM "Tenant"');
+    return new Map(rows.map((r) => [r.id, Boolean(r.subscriptionPaused)]));
+  } catch {
+    return new Map();
+  }
+};
+
 const getAll = async (filters = {}) => {
   const where = {};
   if (filters.startDate || filters.endDate) {
@@ -19,10 +28,13 @@ const getAll = async (filters = {}) => {
     if (filters.endDate) where.createdAt.lte = new Date(filters.endDate);
   }
 
-  const tenants = await mainPrisma.tenant.findMany({
-    where,
-    orderBy: { createdAt: "desc" }
-  });
+  const [tenants, pausedMap] = await Promise.all([
+    mainPrisma.tenant.findMany({
+      where,
+      orderBy: { createdAt: "desc" }
+    }),
+    getSubscriptionPausedMap()
+  ]);
 
   const enrichedTenants = [];
   for (const tenant of tenants) {
@@ -35,6 +47,7 @@ const getAll = async (filters = {}) => {
     }
     enrichedTenants.push({
       ...tenant,
+      subscriptionPaused: pausedMap.has(tenant.id) ? pausedMap.get(tenant.id) : Boolean(tenant.subscriptionPaused),
       _count: {
         branches: branchesCount
       }
@@ -47,7 +60,11 @@ const getAll = async (filters = {}) => {
 const getById = async (id) => {
   const tenant = await mainPrisma.tenant.findUnique({ where: { id } });
   if (!tenant) throw new ApiError(404, "Tenant not found");
-  return tenant;
+  const pausedMap = await getSubscriptionPausedMap();
+  return {
+    ...tenant,
+    subscriptionPaused: pausedMap.has(tenant.id) ? pausedMap.get(tenant.id) : Boolean(tenant.subscriptionPaused),
+  };
 };
 
 const create = async (data) => {
@@ -589,7 +606,38 @@ const update = async (id, data, user = null) => {
     console.error("Failed to record loyalty audit log:", auditErr.message);
   }
 
-  return mainPrisma.tenant.update({ where: { id }, data });
+  // Stamp updatedAt onto stampPrograms entries when modified
+  if (Array.isArray(data.stampPrograms)) {
+    const nowIso = new Date().toISOString();
+    data.stampPrograms = data.stampPrograms.map((sp) => ({
+      ...sp,
+      updatedAt: nowIso,
+    }));
+  }
+
+  // Safely persist subscriptionPaused via raw SQL so it works even if Prisma client predates schema patch
+  const hasSubscriptionPaused = data.subscriptionPaused !== undefined;
+  const nextSubscriptionPaused = Boolean(data.subscriptionPaused);
+  if (hasSubscriptionPaused) {
+    delete data.subscriptionPaused;
+  }
+
+  const updated = Object.keys(data).length > 0
+    ? await mainPrisma.tenant.update({ where: { id }, data })
+    : existingTenant;
+
+  if (hasSubscriptionPaused) {
+    await mainPrisma.$executeRawUnsafe(
+      'UPDATE "Tenant" SET "subscriptionPaused" = $1 WHERE id = $2',
+      nextSubscriptionPaused,
+      id
+    ).catch((err) => console.error("Failed updating subscriptionPaused:", err.message));
+  }
+
+  return {
+    ...updated,
+    subscriptionPaused: hasSubscriptionPaused ? nextSubscriptionPaused : Boolean(existingTenant.subscriptionPaused),
+  };
 };
 
 const remove = async (id) => {
@@ -705,39 +753,22 @@ const getOverview = async () => {
 };
 
 const getSubscriptions = async () => {
-  const tenants = await mainPrisma.tenant.findMany({
-    orderBy: { createdAt: "desc" }
-  });
+  const [tenants, pausedMap] = await Promise.all([
+    mainPrisma.tenant.findMany({
+      orderBy: { createdAt: "desc" }
+    }),
+    getSubscriptionPausedMap()
+  ]);
 
   const subsList = [];
   let totalMRR = 0;
   let expiringSoonCount = 0;
+  let activeCount = 0;
 
   for (const tenant of tenants) {
-    let amount = 0;
-    const activeFeatures = [];
-    
-    const getMonthlyEquivalent = (price, cycleKey) => {
-      const p = price !== undefined && price !== null ? Number(price) : 0.0;
-      const cycle = tenant[cycleKey] || tenant.billingCycle || "monthly";
-      return cycle === "yearly" ? (p / 12) : p;
-    };
+    const isPaused = pausedMap.has(tenant.id) ? pausedMap.get(tenant.id) : Boolean(tenant.subscriptionPaused);
 
-    if (tenant.subAppServi) { amount += getMonthlyEquivalent(tenant.priceAppServi, "cycleAppServi"); activeFeatures.push("APP servi"); }
-    if (tenant.subAppBrand) { amount += getMonthlyEquivalent(tenant.priceAppBrand, "cycleAppBrand"); activeFeatures.push("APP brand"); }
-    if (tenant.subPos) { amount += getMonthlyEquivalent(tenant.pricePos, "cyclePos"); activeFeatures.push("POS"); }
-    if (tenant.subQrTable) { amount += getMonthlyEquivalent(tenant.priceQrTable, "cycleQrTable"); activeFeatures.push("QR Table"); }
-    if (tenant.subQrCashier) { amount += getMonthlyEquivalent(tenant.priceQrCashier, "cycleQrCashier"); activeFeatures.push("QR Cashier"); }
-    if (tenant.subKds) { amount += getMonthlyEquivalent(tenant.priceKds, "cycleKds"); activeFeatures.push("KDS"); }
-    if (tenant.subCds) { amount += getMonthlyEquivalent(tenant.priceCds, "cycleCds"); activeFeatures.push("CDS"); }
-    if (tenant.subBranch) { amount += getMonthlyEquivalent(tenant.priceBranch, "cycleBranch"); activeFeatures.push("Physical Branches"); }
-    if (tenant.subBrandStory) { amount += getMonthlyEquivalent(tenant.priceBrandStory, "cycleBrandStory"); activeFeatures.push("Brand Story"); }
-    if (tenant.subLoyalty) { amount += getMonthlyEquivalent(tenant.priceLoyalty, "cycleLoyalty"); activeFeatures.push("Loyalty Points"); }
-    if (tenant.subStamps) { amount += getMonthlyEquivalent(tenant.priceStamps, "cycleStamps"); activeFeatures.push("Digital Stamps"); }
-
-    const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
-
-    // Calculate current month's active subscription range (e.g., September 1 to September 30)
+    // Calculate current month's active subscription range
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
@@ -752,71 +783,74 @@ const getSubscriptions = async () => {
     const startedAt = monthStartedAt;
     const endsAt = monthEndsAt;
 
-    if (tenant.isActive) {
-      totalMRR += amount;
-    }
-
-    // Check if expiring in 30 days
-    const remainingDays = Math.ceil((endsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    if (tenant.isActive && remainingDays > 0 && remainingDays <= 30) {
-      expiringSoonCount++;
-    }
-
     let branchesList = [];
+    let totalActiveTables = 0;
+    let totalActivePos = 0;
+    let totalActiveQrCashiers = 0;
+    let totalKdsDevices = 0;
+    let totalCdsDevices = 0;
+
     try {
       const tenantPrisma = getTenantClient(tenant.dbUrl);
-      const dbBranches = await tenantPrisma.branch.findMany({
-        select: {
-          id: true,
-          name: true,
-          city: true,
-          isOpen: true,
-          createdAt: true,
-          ordersEnabled: true,
-          menuEnabled: true,
-          tablesEnabled: true,
-          staffEnabled: true,
-          qrEnabled: true,
-          posEnabled: true,
-          kdsEnabled: true,
-          cdsEnabled: true,
-          appServiEnabled: true,
-          tables: {
-            select: {
-              id: true,
-              label: true,
-              createdAt: true,
-              expiresAt: true,
-              isActive: true
-            }
-          },
-          posDevices: {
-            select: {
-              id: true,
-              name: true,
-              createdAt: true,
-              expiresAt: true,
-              isActive: true
-            }
-          },
-          qrCashiers: {
-            select: {
-              id: true,
-              name: true,
-              createdAt: true,
-              isActive: true
-            }
-          },
-          _count: {
-            select: {
-              tables: true,
-              posDevices: true,
-              staff: true,
-              qrCashiers: true
+      const [dbBranches, kdsCountRes, cdsCountRes] = await Promise.all([
+        tenantPrisma.branch.findMany({
+          select: {
+            id: true,
+            name: true,
+            city: true,
+            isOpen: true,
+            createdAt: true,
+            ordersEnabled: true,
+            menuEnabled: true,
+            tablesEnabled: true,
+            staffEnabled: true,
+            qrEnabled: true,
+            posEnabled: true,
+            kdsEnabled: true,
+            cdsEnabled: true,
+            appServiEnabled: true,
+            tables: {
+              select: {
+                id: true,
+                label: true,
+                createdAt: true,
+                expiresAt: true,
+                isActive: true
+              }
+            },
+            posDevices: {
+              select: {
+                id: true,
+                name: true,
+                createdAt: true,
+                expiresAt: true,
+                isActive: true
+              }
+            },
+            qrCashiers: {
+              select: {
+                id: true,
+                name: true,
+                createdAt: true,
+                isActive: true
+              }
+            },
+            _count: {
+              select: {
+                tables: true,
+                posDevices: true,
+                staff: true,
+                qrCashiers: true
+              }
             }
           }
-        }
-      });
+        }),
+        tenantPrisma.kdsDevice.count({ where: { isActive: true } }).catch(() => 0),
+        tenantPrisma.$queryRawUnsafe('SELECT COUNT(*)::int AS cnt FROM "CdsDevice" WHERE "isActive" = true').then(r => Number(r?.[0]?.cnt || 0)).catch(() => 0),
+      ]);
+
+      totalKdsDevices = Number(kdsCountRes || 0);
+      totalCdsDevices = Number(cdsCountRes || 0);
 
       // Auto-inactivate tables and POS devices that expired more than 7 days ago
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -848,6 +882,7 @@ const getSubscriptions = async () => {
         }
 
         const mappedTables = (b.tables || []).map(t => {
+          if (t.isActive !== false) totalActiveTables++;
           let tStart = new Date(currentYear, currentMonth, 1);
           if (t.createdAt && new Date(t.createdAt) > tStart) {
             tStart = new Date(t.createdAt);
@@ -860,6 +895,7 @@ const getSubscriptions = async () => {
         });
 
         const mappedPosDevices = (b.posDevices || []).map(p => {
+          if (p.isActive !== false) totalActivePos++;
           let pStart = new Date(currentYear, currentMonth, 1);
           if (p.createdAt && new Date(p.createdAt) > pStart) {
             pStart = new Date(p.createdAt);
@@ -872,6 +908,7 @@ const getSubscriptions = async () => {
         });
 
         const mappedQrCashiers = (b.qrCashiers || []).map(q => {
+          if (q.isActive !== false) totalActiveQrCashiers++;
           let qStart = new Date(currentYear, currentMonth, 1);
           if (q.createdAt && new Date(q.createdAt) > qStart) {
             qStart = new Date(q.createdAt);
@@ -912,12 +949,75 @@ const getSubscriptions = async () => {
       console.error(`Failed to fetch branches for tenant ${tenant.slug} sub:`, err.message);
     }
 
+    let amount = 0;
+    const activeFeatures = [];
+
+    const getMonthlyEquivalent = (price, cycleKey) => {
+      const p = price !== undefined && price !== null ? Number(price) : 0.0;
+      const cycle = tenant[cycleKey] || tenant.billingCycle || "monthly";
+      return cycle === "yearly" ? (p / 12) : p;
+    };
+
+    if (tenant.subAppServi) { amount += getMonthlyEquivalent(tenant.priceAppServi, "cycleAppServi"); activeFeatures.push("APP servi"); }
+    if (tenant.subAppBrand) { amount += getMonthlyEquivalent(tenant.priceAppBrand, "cycleAppBrand"); activeFeatures.push("APP brand"); }
+    if (tenant.subPos) {
+      const qty = Math.max(Number(tenant.posQuantity || 0), totalActivePos);
+      amount += getMonthlyEquivalent(tenant.pricePos, "cyclePos") * qty;
+      activeFeatures.push("POS");
+    }
+    if (tenant.subQrTable) {
+      const qty = Math.max(Number(tenant.qrTableQuantity || 0), totalActiveTables);
+      amount += getMonthlyEquivalent(tenant.priceQrTable, "cycleQrTable") * qty;
+      activeFeatures.push("QR Table");
+    }
+    if (tenant.subQrCashier) {
+      const qty = Math.max(Number(tenant.qrCashierQuantity || 0), totalActiveQrCashiers);
+      amount += getMonthlyEquivalent(tenant.priceQrCashier, "cycleQrCashier") * qty;
+      activeFeatures.push("QR Cashier");
+    }
+    if (tenant.subKds) {
+      const qty = Math.max(Number(tenant.kdsQuantity || 0), totalKdsDevices);
+      amount += getMonthlyEquivalent(tenant.priceKds, "cycleKds") * qty;
+      activeFeatures.push("KDS");
+    }
+    if (tenant.subCds) {
+      const qty = Math.max(Number(tenant.cdsQuantity || 0), totalCdsDevices);
+      amount += getMonthlyEquivalent(tenant.priceCds, "cycleCds") * qty;
+      activeFeatures.push("CDS");
+    }
+    if (tenant.subBranch) {
+      const openBranches = branchesList.filter(b => b.status === "open").length;
+      const qty = Math.max(Number(tenant.branchLimit || 0), openBranches);
+      amount += getMonthlyEquivalent(tenant.priceBranch, "cycleBranch") * qty;
+      activeFeatures.push("Physical Branches");
+    }
+    if (tenant.subBrandStory) { amount += getMonthlyEquivalent(tenant.priceBrandStory, "cycleBrandStory"); activeFeatures.push("Brand Story"); }
+    if (tenant.subLoyalty) { amount += getMonthlyEquivalent(tenant.priceLoyalty, "cycleLoyalty"); activeFeatures.push("Loyalty Points"); }
+    if (tenant.subStamps) { amount += getMonthlyEquivalent(tenant.priceStamps, "cycleStamps"); activeFeatures.push("Digital Stamps"); }
+
+    amount = parseFloat(amount.toFixed(2));
+    const planName = activeFeatures.length > 0 ? activeFeatures.join(", ") : "Free";
+
+    const isBrandActive = Boolean(tenant.isActive) && !isPaused;
+    if (isBrandActive) {
+      activeCount++;
+      totalMRR += amount;
+    }
+
+    // Check if expiring soon (within 14 days, aligned with frontend filter)
+    const remainingDays = Math.ceil((endsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    if (isBrandActive && remainingDays >= 0 && remainingDays <= 14) {
+      expiringSoonCount++;
+    }
+
     subsList.push({
       tenantId: tenant.id,
       tenantName: tenant.name,
       logo: tenant.name.charAt(0),
       plan: planName,
-      status: tenant.isActive ? "active" : "canceled",
+      isActive: Boolean(tenant.isActive),
+      subscriptionPaused: isPaused,
+      status: isBrandActive ? "active" : "canceled",
       billingCycle: tenant.billingCycle || "monthly",
       amount: amount,
       startedAt: startedAt,
@@ -951,9 +1051,9 @@ const getSubscriptions = async () => {
 
   return {
     total: tenants.length,
-    active: tenants.filter(t => t.isActive).length,
+    active: activeCount,
     expiringSoon: expiringSoonCount,
-    mrr: totalMRR,
+    mrr: parseFloat(totalMRR.toFixed(2)),
     subscriptions: subsList
   };
 };

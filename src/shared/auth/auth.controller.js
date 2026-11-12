@@ -42,8 +42,26 @@ const superAdminLogin = catchAsync(async (req, res) => {
 /** POST /api/auth/kds/login */
 const kdsLogin = catchAsync(async (req, res) => {
   const { deviceKey } = req.body;
-  const result = await authService.kdsLogin(req.tenantDb, deviceKey);
+  const result = await authService.kdsLogin(req.tenantDb, deviceKey, req.tenant);
   res.status(200).json({ success: true, ...result, tenant: req.tenant });
+});
+
+/** POST /api/auth/kds/logout */
+const kdsLogout = catchAsync(async (req, res) => {
+  const result = await authService.kdsLogout(req.tenantDb, req.body || {});
+  res.status(200).json({ success: true, ...result });
+});
+
+/** POST /api/auth/pos/logout */
+const posLogout = catchAsync(async (req, res) => {
+  const result = await authService.posLogout(req.tenantDb, req.body || {});
+  res.status(200).json({ success: true, ...result });
+});
+
+/** POST /api/auth/logout */
+const logout = catchAsync(async (req, res) => {
+  const result = await authService.deviceLogout(req.tenantDb, req.body || {});
+  res.status(200).json({ success: true, ...result });
 });
 
 /** GET /api/auth/me */
@@ -99,6 +117,9 @@ module.exports = {
   login,
   superAdminLogin,
   kdsLogin,
+  kdsLogout,
+  posLogout,
+  logout,
   getMe,
   forgotPassword,
   verifyResetToken,

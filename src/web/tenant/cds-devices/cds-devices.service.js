@@ -21,12 +21,16 @@ const ensureTable = async (db) => {
       "nameAr" TEXT,
       "deviceKey" TEXT UNIQUE NOT NULL,
       "isActive" BOOLEAN DEFAULT true,
+      "isOnline" BOOLEAN DEFAULT false,
+      "lastSeenAt" TIMESTAMP(3),
       "branchId" TEXT NOT NULL,
       "expiresAt" TIMESTAMP(3),
       "createdAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP
     );
   `).catch(() => null);
+  await db.$executeRawUnsafe('ALTER TABLE "CdsDevice" ADD COLUMN IF NOT EXISTS "isOnline" BOOLEAN NOT NULL DEFAULT false;').catch(() => null);
+  await db.$executeRawUnsafe('ALTER TABLE "CdsDevice" ADD COLUMN IF NOT EXISTS "lastSeenAt" TIMESTAMP(3);').catch(() => null);
 };
 
 const getAll = async (db, branchId) => {
@@ -53,11 +57,36 @@ const getAll = async (db, branchId) => {
       }).catch(() => null);
     }
 
-    return db.cdsDevice.findMany({
+    const devices = await db.cdsDevice.findMany({
       where,
       include: { branch: true },
       orderBy: { createdAt: "desc" }
     }).catch(() => []);
+
+    if (devices.length === 0) return devices;
+
+    try {
+      const onlineRows = await db.$queryRawUnsafe(
+        `SELECT "id", "isOnline", "lastSeenAt" FROM "CdsDevice"`
+      );
+      const statusMap = new Map(
+        (Array.isArray(onlineRows) ? onlineRows : []).map((r) => [r.id, r])
+      );
+      return devices.map((d) => {
+        const st = statusMap.get(d.id);
+        return {
+          ...d,
+          isOnline: Boolean(st?.isOnline ?? d.isOnline ?? false),
+          lastSeenAt: st?.lastSeenAt ?? d.lastSeenAt ?? null,
+        };
+      });
+    } catch {
+      return devices.map((d) => ({
+        ...d,
+        isOnline: Boolean(d.isOnline ?? false),
+        lastSeenAt: d.lastSeenAt ?? null,
+      }));
+    }
   }
 
   // Fallback to raw queries if client not regenerated

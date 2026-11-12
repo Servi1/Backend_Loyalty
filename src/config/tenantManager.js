@@ -108,12 +108,20 @@ async function ensureTenantColumns(client) {
         "nameAr" TEXT,
         "deviceKey" TEXT UNIQUE NOT NULL,
         "isActive" BOOLEAN DEFAULT true,
+        "isOnline" BOOLEAN DEFAULT false,
+        "lastSeenAt" TIMESTAMP(3),
         "branchId" TEXT NOT NULL,
         "expiresAt" TIMESTAMP(3),
         "createdAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP
       );`,
-      'ALTER TABLE "CdsDevice" ADD COLUMN IF NOT EXISTS "nameAr" TEXT;'
+      'ALTER TABLE "CdsDevice" ADD COLUMN IF NOT EXISTS "nameAr" TEXT;',
+      'ALTER TABLE "PosDevice" ADD COLUMN IF NOT EXISTS "isOnline" BOOLEAN NOT NULL DEFAULT false;',
+      'ALTER TABLE "PosDevice" ADD COLUMN IF NOT EXISTS "lastSeenAt" TIMESTAMP(3);',
+      'ALTER TABLE "KdsDevice" ADD COLUMN IF NOT EXISTS "isOnline" BOOLEAN NOT NULL DEFAULT false;',
+      'ALTER TABLE "KdsDevice" ADD COLUMN IF NOT EXISTS "lastSeenAt" TIMESTAMP(3);',
+      'ALTER TABLE "CdsDevice" ADD COLUMN IF NOT EXISTS "isOnline" BOOLEAN NOT NULL DEFAULT false;',
+      'ALTER TABLE "CdsDevice" ADD COLUMN IF NOT EXISTS "lastSeenAt" TIMESTAMP(3);'
     ];
     for (const patch of patches) {
       await client.$executeRawUnsafe(patch).catch(() => null);

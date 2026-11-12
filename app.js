@@ -442,10 +442,11 @@ appTenantRouter.use("/", appRouter);
 
 app.use("/api/app/:tenantId", appTenantRouter);
 
-// ─── 404 Fallback ────────────────────────────────────
+// ─── 404 Fallback & Error Handler ───────────────────
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: "Route not found" });
 });
+app.use(errorHandler);
 
 // Start background periodic order sync worker to guarantee 100% real-time order consistency
 const tenantsService = require("./src/web/admin/tenants/tenants.service");

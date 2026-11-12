@@ -14,7 +14,10 @@ router.post("/otp/verify", extractTenant, authController.verifyOtp);
 
 // ─── B2B Portal (Email / Password) ───────────────────
 router.post("/login", extractTenant, authController.login);
+router.post("/logout", extractTenant, authController.logout);
+router.post("/pos/logout", extractTenant, authController.posLogout);
 router.post("/kds/login", extractTenant, authController.kdsLogin);
+router.post("/kds/logout", extractTenant, authController.kdsLogout);
 
 // ─── Current User ────────────────────────────────────
 router.get("/me", extractTenant, authenticate, authController.getMe);

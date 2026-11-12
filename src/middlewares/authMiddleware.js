@@ -72,7 +72,10 @@ const authenticate = async (req, _res, next) => {
               OR: [{ id: tenantHeader }, { slug: tenantHeader }]
             }
           });
-          if (tenantObj && tenantObj.isActive) {
+          if (tenantObj) {
+            if (!tenantObj.isActive) {
+              throw new ApiError(403, "Account inactive. Your brand account has been deactivated by administration. Please contact support.");
+            }
             const { getTenantClient } = require("../config/tenantManager");
             req.tenantId = tenantObj.id;
             req.tenant = tenantObj;

@@ -43,7 +43,7 @@ const getAll = async (db, branchId) => {
     });
   }
 
-  return db.posDevice.findMany({
+  const devices = await db.posDevice.findMany({
     where,
     include: {
       branch: true
@@ -52,6 +52,26 @@ const getAll = async (db, branchId) => {
       createdAt: "desc"
     }
   });
+
+  // Hydrate isOnline / lastSeenAt via raw SQL in case Prisma client predates schema patch
+  try {
+    const statusRows = await db.$queryRawUnsafe('SELECT "id", "isOnline", "lastSeenAt" FROM "PosDevice"');
+    const statusMap = new Map(statusRows.map(r => [r.id, r]));
+    return devices.map(d => {
+      const s = statusMap.get(d.id);
+      return {
+        ...d,
+        isOnline: s ? Boolean(s.isOnline) : Boolean(d.isOnline),
+        lastSeenAt: s?.lastSeenAt || d.lastSeenAt || null,
+      };
+    });
+  } catch {
+    return devices.map(d => ({
+      ...d,
+      isOnline: Boolean(d.isOnline),
+      lastSeenAt: d.lastSeenAt || null,
+    }));
+  }
 };
 
 const create = async (db, data, cycle) => {

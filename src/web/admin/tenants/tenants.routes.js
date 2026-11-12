@@ -46,7 +46,7 @@ router.get("/", authorize("SUPER_ADMIN"), ctrl.getAll);
 router.get("/:id/products", authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.getTenantProducts);
 router.get("/:id", authorize("SUPER_ADMIN"), ctrl.getById);
 router.post("/", authorize("SUPER_ADMIN"), ctrl.create);
-router.put("/:id", extractTenant, authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.update);
+router.put("/:id", authenticate, extractTenant, authorize("SUPER_ADMIN", "BRAND_MANAGER", "CUSTOM", "WAREHOUSE_MANAGER"), ctrl.update);
 router.patch("/:id/slots/toggle", authorize("SUPER_ADMIN"), ctrl.toggleSlot);
 router.delete("/:id", authorize("SUPER_ADMIN"), ctrl.remove);
 

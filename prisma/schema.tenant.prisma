@@ -359,8 +359,10 @@ model PosDevice {
   id        String   @id @default(uuid())
   name      String   // e.g., "POS 1", "POS 2", etc.
   nameAr    String?
-  deviceKey String   @unique // 8-digit random number
-  isActive  Boolean  @default(true)
+  deviceKey  String    @unique // 8-digit random number
+  isActive   Boolean   @default(true)
+  isOnline   Boolean   @default(false)
+  lastSeenAt DateTime?
 
   branchId  String
   branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -384,8 +386,10 @@ model KdsDevice {
   id        String   @id @default(uuid())
   name      String   // e.g., "KDS 1", "KDS 2", etc.
   nameAr    String?
-  deviceKey String   @unique // 8-digit random number
-  isActive  Boolean  @default(true)
+  deviceKey  String    @unique // 8-digit random number
+  isActive   Boolean   @default(true)
+  isOnline   Boolean   @default(false)
+  lastSeenAt DateTime?
 
   branchId  String
   branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -399,8 +403,10 @@ model CdsDevice {
   id        String   @id @default(uuid())
   name      String   // e.g., "CDS 1", "CDS 2", etc.
   nameAr    String?
-  deviceKey String   @unique // 8-digit random number
-  isActive  Boolean  @default(true)
+  deviceKey  String    @unique // 8-digit random number
+  isActive   Boolean   @default(true)
+  isOnline   Boolean   @default(false)
+  lastSeenAt DateTime?
 
   branchId  String
   branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
