@@ -120,6 +120,8 @@ model Tenant {
   kdsQuantity      Int              @default(1)
   subCds           Boolean          @default(false)
   cdsQuantity      Int              @default(1)
+  subPager         Boolean          @default(true)
+  pagerQuantity    Int              @default(5)
   subBranch        Boolean          @default(false)
   subBrandStory    Boolean          @default(false)
   subStamps        Boolean          @default(false)
@@ -155,6 +157,9 @@ model Tenant {
   priceCds         Float            @default(9.0)
   cycleCds         String           @default("monthly")
   feeCds           Float            @default(0.0)
+  pricePager       Float            @default(19.0)
+  cyclePager       String           @default("monthly")
+  feePager         Float            @default(0.0)
   priceBranch      Float            @default(19.0)
   cycleBranch      String           @default("monthly")
   feeBranch        Float            @default(0.0)
@@ -254,6 +259,7 @@ model AppUser {
   favoriteBrands Json?    @default("[]")
   fcmToken       String?
   isDelete       Boolean  @default(false)
+  isVerified     Boolean? @default(true)
   // Relations
   orders         Order[]
   wallets        Wallet[]

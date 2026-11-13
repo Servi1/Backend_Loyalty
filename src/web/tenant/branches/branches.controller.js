@@ -49,6 +49,9 @@ const update = catchAsync(async (req, res) => {
     if (req.body.cdsEnabled === true && req.tenant?.subCds === false) {
       throw new ApiError(403, "CDS feature is disabled in Super Admin Subscriptions.");
     }
+    if (req.body.pagerEnabled === true && req.tenant?.subPager === false) {
+      throw new ApiError(403, "Pager feature is disabled in Super Admin Subscriptions.");
+    }
     if (req.body.appServiEnabled === true && req.tenant?.subAppServi === false) {
       throw new ApiError(403, "App Servi feature is disabled in Super Admin Subscriptions.");
     }

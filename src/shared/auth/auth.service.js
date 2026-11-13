@@ -139,6 +139,9 @@ const loginWithEmail = async (db, email, password, bypassOtp = false, tenant = n
     }
   });
   if (posDevice) {
+    if (tenant && tenant.subscriptionPaused) {
+      throw new ApiError(403, "Subscription paused. Your brand subscription is currently inactive. Please contact your Brand Administrator.");
+    }
     if (posDevice.isActive === false) {
       throw new ApiError(403, "This POS terminal slot has been cancelled or deactivated by administration.");
     }
@@ -173,7 +176,11 @@ const loginWithEmail = async (db, email, password, bypassOtp = false, tenant = n
 
     await attachUserPermissions(db, user);
 
-    const token = signToken(user.id, "user");
+    const token = jwt.sign(
+      { sub: user.id, type: "user", posDeviceId: posDevice.id, deviceKey: posDevice.deviceKey },
+      config.jwt.secret,
+      { expiresIn: config.jwt.expiresIn }
+    );
     return { 
       token, 
       user, 
@@ -188,6 +195,10 @@ const loginWithEmail = async (db, email, password, bypassOtp = false, tenant = n
 
   const user = await db.user.findUnique({ where: { email }, include: { branch: true, warehouse: true } });
   if (!user) throw new ApiError(401, "Invalid credentials");
+
+  if (tenant && tenant.subscriptionPaused && user.role !== "BRAND_MANAGER") {
+    throw new ApiError(403, "Subscription paused. Your brand subscription is currently inactive. Branch Manager and staff login is restricted. Please contact your Brand Administrator.");
+  }
 
   if (user.isActive === false) {
     throw new ApiError(403, "Your account has been deactivated. Please contact administration.");
@@ -344,6 +355,9 @@ const kdsLogin = async (db, deviceKey, tenant = null) => {
   if (tenant && tenant.isActive === false) {
     throw new ApiError(403, "Account inactive. Your brand account has been deactivated by administration. Please contact support.");
   }
+  if (tenant && tenant.subscriptionPaused) {
+    throw new ApiError(403, "Subscription paused. Your brand subscription is currently inactive. Please contact your Brand Administrator.");
+  }
 
   // Check if the deviceKey field holds a valid KDS Device Key (case-insensitive)
   const kdsDevice = await db.kdsDevice.findFirst({
@@ -389,7 +403,11 @@ const kdsLogin = async (db, deviceKey, tenant = null) => {
     kdsDevice.id
   ).catch(() => null);
 
-  const token = signToken(user.id, "user");
+  const token = jwt.sign(
+    { sub: user.id, type: "user", kdsDeviceId: kdsDevice.id, deviceKey: kdsDevice.deviceKey },
+    config.jwt.secret,
+    { expiresIn: config.jwt.expiresIn }
+  );
   return {
     token,
     user,
@@ -408,19 +426,25 @@ const kdsLogin = async (db, deviceKey, tenant = null) => {
 const kdsLogout = async (db, { deviceKey, kdsDeviceId, deviceId } = {}) => {
   if (!db) throw new ApiError(400, "Tenant context is required");
   const targetId = kdsDeviceId || deviceId;
+  let devKey = deviceKey;
   if (targetId) {
+    const existing = await db.kdsDevice.findUnique({ where: { id: targetId } }).catch(() => null);
+    if (existing) devKey = existing.deviceKey;
     await db.$executeRawUnsafe(
       'UPDATE "KdsDevice" SET "isOnline" = false, "lastSeenAt" = NOW() WHERE id = $1',
       targetId
     );
-    return { message: "KDS device logged out", isOnline: false };
+    return { message: "KDS device logged out", isOnline: false, deviceId: targetId, deviceKey: devKey, type: "kds" };
   }
   if (deviceKey) {
+    const existing = await db.kdsDevice.findFirst({
+      where: { deviceKey: { equals: String(deviceKey).trim(), mode: "insensitive" } }
+    }).catch(() => null);
     await db.$executeRawUnsafe(
       'UPDATE "KdsDevice" SET "isOnline" = false, "lastSeenAt" = NOW() WHERE LOWER("deviceKey") = LOWER($1)',
       String(deviceKey).trim()
     );
-    return { message: "KDS device logged out", isOnline: false };
+    return { message: "KDS device logged out", isOnline: false, deviceId: existing?.id, deviceKey, type: "kds" };
   }
   throw new ApiError(400, "deviceKey or kdsDeviceId is required");
 };
@@ -431,19 +455,25 @@ const kdsLogout = async (db, { deviceKey, kdsDeviceId, deviceId } = {}) => {
 const posLogout = async (db, { deviceKey, posDeviceId, deviceId } = {}) => {
   if (!db) throw new ApiError(400, "Tenant context is required");
   const targetId = posDeviceId || deviceId;
+  let devKey = deviceKey;
   if (targetId) {
+    const existing = await db.posDevice.findUnique({ where: { id: targetId } }).catch(() => null);
+    if (existing) devKey = existing.deviceKey;
     await db.$executeRawUnsafe(
       'UPDATE "PosDevice" SET "isOnline" = false, "lastSeenAt" = NOW() WHERE id = $1',
       targetId
     );
-    return { message: "POS device logged out", isOnline: false };
+    return { message: "POS device logged out", isOnline: false, deviceId: targetId, deviceKey: devKey, type: "pos" };
   }
   if (deviceKey) {
+    const existing = await db.posDevice.findFirst({
+      where: { deviceKey: { equals: String(deviceKey).trim(), mode: "insensitive" } }
+    }).catch(() => null);
     await db.$executeRawUnsafe(
       'UPDATE "PosDevice" SET "isOnline" = false, "lastSeenAt" = NOW() WHERE LOWER("deviceKey") = LOWER($1)',
       String(deviceKey).trim()
     );
-    return { message: "POS device logged out", isOnline: false };
+    return { message: "POS device logged out", isOnline: false, deviceId: existing?.id, deviceKey, type: "pos" };
   }
   throw new ApiError(400, "deviceKey or posDeviceId is required");
 };
@@ -452,7 +482,7 @@ const posLogout = async (db, { deviceKey, posDeviceId, deviceId } = {}) => {
  * Generic device logout (POS / KDS / CDS).
  */
 const deviceLogout = async (db, payload = {}) => {
-  if (!db) return { message: "Logged out" };
+  if (!db) return { message: "Logged out", isOnline: false };
   const { type, deviceKey, deviceId, kdsDeviceId, posDeviceId, cdsDeviceId } = payload;
 
   if (type === "kds" || kdsDeviceId) {
@@ -463,12 +493,20 @@ const deviceLogout = async (db, payload = {}) => {
   }
   if (type === "cds" || cdsDeviceId) {
     const targetId = cdsDeviceId || deviceId;
+    let devKey = deviceKey;
     if (targetId) {
+      const existing = await db.cdsDevice.findUnique({ where: { id: targetId } }).catch(() => null);
+      if (existing) devKey = existing.deviceKey;
       await db.$executeRawUnsafe('UPDATE "CdsDevice" SET "isOnline" = false, "lastSeenAt" = NOW() WHERE id = $1', targetId).catch(() => null);
+      return { message: "CDS device logged out", isOnline: false, deviceId: targetId, deviceKey: devKey, type: "cds" };
     } else if (deviceKey) {
+      const existing = await db.cdsDevice.findFirst({
+        where: { deviceKey: { equals: String(deviceKey).trim(), mode: "insensitive" } }
+      }).catch(() => null);
       await db.$executeRawUnsafe('UPDATE "CdsDevice" SET "isOnline" = false, "lastSeenAt" = NOW() WHERE LOWER("deviceKey") = LOWER($1)', String(deviceKey).trim()).catch(() => null);
+      return { message: "CDS device logged out", isOnline: false, deviceId: existing?.id, deviceKey, type: "cds" };
     }
-    return { message: "CDS device logged out", isOnline: false };
+    return { message: "CDS device logged out", isOnline: false, type: "cds" };
   }
 
   // If no explicit type specified, mark matching deviceKey/deviceId offline across all device tables
@@ -476,12 +514,14 @@ const deviceLogout = async (db, payload = {}) => {
     await db.$executeRawUnsafe('UPDATE "KdsDevice" SET "isOnline" = false, "lastSeenAt" = NOW() WHERE id = $1', deviceId).catch(() => null);
     await db.$executeRawUnsafe('UPDATE "PosDevice" SET "isOnline" = false, "lastSeenAt" = NOW() WHERE id = $1', deviceId).catch(() => null);
     await db.$executeRawUnsafe('UPDATE "CdsDevice" SET "isOnline" = false, "lastSeenAt" = NOW() WHERE id = $1', deviceId).catch(() => null);
+    return { message: "Device logged out", isOnline: false, deviceId };
   }
   if (deviceKey) {
     const key = String(deviceKey).trim();
     await db.$executeRawUnsafe('UPDATE "KdsDevice" SET "isOnline" = false, "lastSeenAt" = NOW() WHERE LOWER("deviceKey") = LOWER($1)', key).catch(() => null);
     await db.$executeRawUnsafe('UPDATE "PosDevice" SET "isOnline" = false, "lastSeenAt" = NOW() WHERE LOWER("deviceKey") = LOWER($1)', key).catch(() => null);
     await db.$executeRawUnsafe('UPDATE "CdsDevice" SET "isOnline" = false, "lastSeenAt" = NOW() WHERE LOWER("deviceKey") = LOWER($1)', key).catch(() => null);
+    return { message: "Device logged out", isOnline: false, deviceKey };
   }
   return { message: "Device logged out", isOnline: false };
 };
@@ -858,6 +898,10 @@ const verifyLoginOtp = async ({ tempToken, code }) => {
     });
     if (!user) throw new ApiError(404, "User account not found.");
     if (user.isActive === false) throw new ApiError(403, "Your account has been deactivated.");
+
+    if (tenant.subscriptionPaused && user.role !== "BRAND_MANAGER") {
+      throw new ApiError(403, "Subscription paused. Your brand subscription is currently inactive. Branch Manager and staff login is restricted. Please contact your Brand Administrator.");
+    }
 
     const token = signToken(user.id, "user");
     await attachUserPermissions(tenantDb, user);

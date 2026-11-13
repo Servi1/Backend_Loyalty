@@ -51,6 +51,24 @@ const authenticateKds = async (req, res, next) => {
 
     const decoded = jwt.verify(token, config.jwt.secret);
 
+    // 2b. Remote Logout Verification: check if this KDS terminal was remotely logged out
+    const targetKdsId = decoded.kdsDeviceId || req.headers["x-kds-device-id"];
+    const targetDevKey = decoded.deviceKey || req.headers["x-device-key"] || req.query.deviceKey;
+
+    if (targetKdsId) {
+      const dev = await req.tenantDb.kdsDevice.findUnique({ where: { id: targetKdsId } }).catch(() => null);
+      if (dev && (dev.isOnline === false || dev.isActive === false)) {
+        return next(new ApiError(401, "KDS device has been remotely logged out. Please log in again."));
+      }
+    } else if (targetDevKey) {
+      const dev = await req.tenantDb.kdsDevice.findFirst({
+        where: { deviceKey: { equals: String(targetDevKey).trim(), mode: "insensitive" } }
+      }).catch(() => null);
+      if (dev && (dev.isOnline === false || dev.isActive === false)) {
+        return next(new ApiError(401, "KDS device has been remotely logged out. Please log in again."));
+      }
+    }
+
     // 3. User Lookup inside Tenant DB
     const user = await req.tenantDb.user.findUnique({
       where: { id: decoded.sub },
@@ -59,6 +77,11 @@ const authenticateKds = async (req, res, next) => {
 
     if (!user) {
       return next(new ApiError(401, "Kitchen user no longer exists"));
+    }
+
+    // 3b. Tenant Subscription Paused Enforcement
+    if (tenant.subscriptionPaused && user.role !== "BRAND_MANAGER") {
+      return next(new ApiError(403, "Subscription paused. Your brand subscription is currently inactive. Please contact your Brand Administrator."));
     }
 
     // 4. Role Authorization (KITCHEN or BRAND_MANAGER)

@@ -110,6 +110,36 @@ const initSocket = (io) => {
       console.log(`🎧 Socket ${socket.id} joined admin_support room`);
     });
 
+    // Pager Ticket Rooms (Live updates for customer phone screen)
+    socket.on("join:pager-ticket", (ticketId) => {
+      if (ticketId) {
+        socket.join(`pager-ticket:${ticketId}`);
+        console.log(`🔔 Socket ${socket.id} joined pager-ticket:${ticketId}`);
+      }
+    });
+
+    socket.on("leave:pager-ticket", (ticketId) => {
+      if (ticketId) {
+        socket.leave(`pager-ticket:${ticketId}`);
+        console.log(`🔔 Socket ${socket.id} left pager-ticket:${ticketId}`);
+      }
+    });
+
+    // Pager Device Room (Live updates for Brand Admin / Location Pager tab)
+    socket.on("join:pager", (pagerId) => {
+      if (pagerId) {
+        socket.join(`pager:${pagerId}`);
+        console.log(`📟 Socket ${socket.id} joined pager:${pagerId}`);
+      }
+    });
+
+    socket.on("leave:pager", (pagerId) => {
+      if (pagerId) {
+        socket.leave(`pager:${pagerId}`);
+        console.log(`📟 Socket ${socket.id} left pager:${pagerId}`);
+      }
+    });
+
     socket.on("disconnect", () => {
       console.log(`🔌 Socket disconnected: ${socket.id}`);
     });

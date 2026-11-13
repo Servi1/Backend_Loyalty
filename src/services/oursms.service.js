@@ -96,7 +96,68 @@ async function sendOtpSms(phone, otpCode) {
   }
 }
 
+/**
+ * Sends an Order Ready notification SMS via OurSMS.
+ * Controlled by sms_live_enabled setting in Super Admin.
+ *
+ * @param {string} phone - Recipient phone number
+ * @param {string} orderNumber - The customer's order number
+ * @param {string} brandName - Name of brand/restaurant
+ * @returns {Promise<{ success: boolean, mocked?: boolean, data?: any, error?: any }>}
+ */
+async function sendOrderReadySms(phone, orderNumber, brandName) {
+  const smsLiveSetting = await getSettingAsync("sms_live_enabled", "false");
+  const isLiveEnabled = smsLiveSetting === "true" || smsLiveSetting === true || smsLiveSetting === "1";
+
+  const token = process.env.OURSMS_API_TOKEN;
+  const senderName = process.env.OURSMS_SENDER_NAME || "oursms";
+  const numDisplay = orderNumber ? `#${orderNumber}` : "";
+  const nameDisplay = brandName || "Servi";
+  const bodyText = `Your order ${numDisplay} at ${nameDisplay} is ready for pickup! طلبك جاهز للاستلام.`;
+
+  if (!isLiveEnabled) {
+    console.log(`[OURSMS-MOCK] Order Ready SMS simulated for ${phone}: "${bodyText}"`);
+    return { success: true, mocked: true, message: "Mock SMS simulated" };
+  }
+
+  if (!token || token.trim() === "" || token.includes("XXXXX") || token.includes("your_oursms")) {
+    console.warn(`[OURSMS-WARN] Live SMS enabled but OURSMS_API_TOKEN is missing. Simulating: ${phone}: "${bodyText}"`);
+    return { success: true, mocked: true, warning: "Missing OURSMS_API_TOKEN" };
+  }
+
+  const destPhone = formatForOurSms(phone);
+  if (!destPhone || destPhone.length < 10) {
+    console.warn(`[OURSMS] Invalid destination address for SMS: ${phone} -> ${destPhone}`);
+    return { success: false, error: "Invalid destination address format" };
+  }
+
+  const payload = {
+    src: senderName,
+    dests: [destPhone],
+    body: bodyText,
+    priority: 1,
+    msgClass: "transactional",
+  };
+
+  try {
+    const res = await axios.post("https://api.oursms.com/msgs/sms", payload, {
+      headers: {
+        Authorization: `Bearer ${token.trim()}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 10000,
+    });
+    console.log(`[OURSMS] Order Ready SMS dispatched to ${destPhone}, jobId: ${res.data?.jobId || "N/A"}`);
+    return { success: true, data: res.data };
+  } catch (error) {
+    const errMsg = error.response?.data?.message || error.message;
+    console.error(`[OURSMS ERROR] Failed to send Order Ready SMS to ${destPhone}:`, errMsg);
+    return { success: false, error: errMsg };
+  }
+}
+
 module.exports = {
   formatForOurSms,
   sendOtpSms,
+  sendOrderReadySms,
 };

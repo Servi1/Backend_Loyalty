@@ -135,12 +135,14 @@ model Branch {
   posEnabled    Boolean @default(true)
   kdsEnabled    Boolean @default(false)
   cdsEnabled    Boolean @default(false)
+  pagerEnabled  Boolean @default(true)
   appServiEnabled Boolean @default(true)
   tablesSubscribedAt DateTime? @default(now())
   posSubscribedAt    DateTime? @default(now())
   qrSubscribedAt     DateTime? @default(now())
   kdsSubscribedAt    DateTime?
   cdsSubscribedAt    DateTime?
+  pagerSubscribedAt  DateTime? @default(now())
   appServiSubscribedAt DateTime? @default(now())
   hours     String? @default("10am - 11pm")
   rating    Float?  @default(4.8)
@@ -154,6 +156,8 @@ model Branch {
   posDevices PosDevice[]
   kdsDevices KdsDevice[]
   cdsDevices CdsDevice[]
+  pagers     PagerDevice[]
+  pagerTickets PagerTicket[]
   cashDrawerSessions CashDrawerSession[]
   qrCashiers QrCashier[]
   productRequests ProductRequest[]
@@ -414,6 +418,58 @@ model CdsDevice {
   expiresAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ─── Pager Devices & Customer Live Queue ─────────────
+
+model PagerDevice {
+  id         String        @id @default(uuid())
+  name       String        // e.g., "Counter Pager 1"
+  nameAr     String?
+  deviceKey  String        @unique // 8-digit random number
+  isActive   Boolean       @default(true)
+  isOnline   Boolean       @default(false)
+  lastSeenAt DateTime?
+
+  branchId   String
+  branch     Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  expiresAt  DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  tickets    PagerTicket[]
+}
+
+model PagerTicket {
+  id          String       @id @default(uuid())
+  pagerId     String
+  pager       PagerDevice  @relation(fields: [pagerId], references: [id], onDelete: Cascade)
+  branchId    String
+  branch      Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  phone       String       // Normalized E.164 (e.g. +966501234567)
+  countryCode String?      @default("+966")
+  rawPhone    String?
+  appUserId   String?      // Linked Servi global AppUser ID
+
+  orderNumber String?      // Entered/picked by staff when moving to PREPARING
+  status      String       @default("WAITING") // WAITING, PREPARING, READY, COLLECTED, CANCELLED
+
+  waitingAt   DateTime     @default(now())
+  preparingAt DateTime?
+  readyAt     DateTime?
+  completedAt DateTime?
+  cancelledAt DateTime?
+  cancelReason String?
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([pagerId])
+  @@index([branchId])
+  @@index([status])
+  @@index([phone])
 }
 
 model Discount {
