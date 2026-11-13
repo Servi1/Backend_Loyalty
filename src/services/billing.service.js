@@ -48,6 +48,7 @@ async function generateMonthlyRecurringInvoices(targetDate = new Date()) {
       { flag: "subQrCashier", qtyKey: "qrCashierQuantity", priceKey: "priceQrCashier", label: "QR Cashier Counter", typeKey: "qr_cashier", isSlot: true, defaultPrice: 9.0 },
       { flag: "subKds", qtyKey: "kdsQuantity", priceKey: "priceKds", label: "KDS Kitchen Screen", typeKey: "kds", isSlot: true, defaultPrice: 19.0 },
       { flag: "subCds", qtyKey: "cdsQuantity", priceKey: "priceCds", label: "CDS Customer Display", typeKey: "cds", isSlot: true, defaultPrice: 9.0 },
+      { flag: "subPager", qtyKey: "pagerQuantity", priceKey: "pricePager", label: "Pager Devices", typeKey: "pager", isSlot: true, defaultPrice: 19.0 },
       { flag: "subBranch", qtyKey: "branchLimit", priceKey: "priceBranch", label: "Branch Location", typeKey: "branch", isSlot: true, defaultPrice: 19.0 },
       { flag: "subBrandStory", priceKey: "priceBrandStory", label: "Brand Story Feature", typeKey: "brand_story", isSlot: false, defaultPrice: 0.0 },
       { flag: "subLoyalty", priceKey: "priceLoyalty", label: "Loyalty Points Program", typeKey: "loyalty", isSlot: false, defaultPrice: 0.0 },

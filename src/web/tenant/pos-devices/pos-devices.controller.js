@@ -38,10 +38,26 @@ const update = catchAsync(async (req, res) => {
   res.json({ success: true, data: device });
 });
 
+const logout = catchAsync(async (req, res) => {
+  const authService = require("../../../shared/auth/auth.service");
+  const result = await authService.posLogout(req.tenantDb, { posDeviceId: req.params.id, ...req.body });
+  const io = req.app.get("io");
+  if (io) {
+    io.emit("pos:logout", result);
+    io.emit("device:logout", result);
+    if (req.tenantId) {
+      io.to(`tenant:${req.tenantId}`).emit("pos:logout", result);
+      io.to(`tenant:${req.tenantId}`).emit("device:logout", result);
+    }
+  }
+  res.json({ success: true, ...result });
+});
+
 module.exports = {
   getAll,
   create,
   renewPos,
   remove,
   update,
+  logout,
 };

@@ -34,6 +34,8 @@ const posDevicesRoutes = require("./src/web/tenant/pos-devices/pos-devices.route
 const kdsDevicesRoutes = require("./src/web/tenant/kds-devices/kds-devices.routes");
 const cdsDevicesRoutes = require("./src/web/tenant/cds-devices/cds-devices.routes");
 const qrCashiersRoutes = require("./src/web/tenant/qr-cashiers/qr-cashiers.routes");
+const pagersRoutes = require("./src/web/tenant/pagers/pagers.routes");
+const publicPagerRoutes = require("./src/web/public/pager/publicPager.routes");
 const posRoutes = require("./src/pos/pos.routes");
 const kdsRoutes = require("./src/kds/kds.routes");
 const discountsRoutes = require("./src/web/tenant/discounts/discounts.routes");
@@ -286,6 +288,7 @@ tenantRouter.use("/pos-devices", posDevicesRoutes);
 tenantRouter.use("/kds-devices", kdsDevicesRoutes);
 tenantRouter.use("/cds-devices", cdsDevicesRoutes);
 tenantRouter.use("/qr-cashiers", qrCashiersRoutes);
+tenantRouter.use("/pagers", pagersRoutes);
 tenantRouter.use("/menus", menusRoutes);
 tenantRouter.use("/orders", ordersRoutes);
 tenantRouter.use("/loyalty", loyaltyRoutes);
@@ -420,6 +423,9 @@ const appNotificationsRoutes = require("./src/app/notifications/appNotifications
 const { authenticateAppUser } = require("./src/app/middlewares/appAuth.middleware");
 const walletCtrl = require("./src/app/wallet/wallet.controller");
 const appSupportRoutes = require("./src/app/support/appSupport.routes");
+
+// Public Customer Pager endpoints (mobile-first queue submit & live status)
+app.use(["/api/public/pager", "/api/app/pager", "/public/pager"], publicPagerRoutes);
 
 app.use("/api/app/auth", globalAuthRouter);
 app.use("/api/app/notifications", appNotificationsRoutes);

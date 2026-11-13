@@ -88,6 +88,7 @@ const create = async (db, data) => {
   initSub("qrEnabled", "qrSubscribedAt");
   initSub("kdsEnabled", "kdsSubscribedAt");
   initSub("cdsEnabled", "cdsSubscribedAt");
+  initSub("pagerEnabled", "pagerSubscribedAt");
   initSub("appServiEnabled", "appServiSubscribedAt");
 
   const relations = {};
@@ -155,6 +156,7 @@ const update = async (db, id, data) => {
   checkToggle("qrEnabled", "qrSubscribedAt");
   checkToggle("kdsEnabled", "kdsSubscribedAt");
   checkToggle("cdsEnabled", "cdsSubscribedAt");
+  checkToggle("pagerEnabled", "pagerSubscribedAt");
   checkToggle("appServiEnabled", "appServiSubscribedAt");
 
   const relations = {};

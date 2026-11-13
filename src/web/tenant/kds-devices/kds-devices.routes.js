@@ -8,6 +8,7 @@ router.get("/", authenticate, ctrl.getAll);
 router.post("/", authenticate, authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.create);
 router.post("/:id/renew", authenticate, authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.renewKds);
 router.put("/:id", authenticate, authorize("SUPER_ADMIN", "ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.update);
+router.post("/:id/logout", authenticate, authorize("SUPER_ADMIN", "ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.logout);
 router.delete("/:id", authenticate, authorize("ADMIN", "BRAND_MANAGER", "BRANCH_MANAGER"), ctrl.remove);
 
 module.exports = router;

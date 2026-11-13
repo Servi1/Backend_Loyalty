@@ -192,6 +192,7 @@ const create = async (data) => {
           qrEnabled: Boolean(data.subQrTable || data.subQrCashier),
           kdsEnabled: Boolean(data.subKds),
           cdsEnabled: Boolean(data.subCds),
+          pagerEnabled: Boolean(data.subPager),
           tablesEnabled: Boolean(data.subQrTable),
         }
       });
@@ -210,12 +211,34 @@ const create = async (data) => {
   if (!data.bannerUrl || data.bannerUrl === branchCover) {
     delete tenantData.bannerUrl;
   }
+
+  // Strip ungenerated pager fields from Prisma create to prevent Unknown argument error
+  const hasSubPagerCreate = tenantData.subPager !== undefined;
+  const nextSubPagerCreate = Boolean(tenantData.subPager);
+  delete tenantData.subPager;
+  delete tenantData.pagerQuantity;
+  delete tenantData.pricePager;
+  delete tenantData.cyclePager;
+  delete tenantData.feePager;
+
   const tenant = await mainPrisma.tenant.create({
     data: {
       ...tenantData,
       dbUrl: tenantDbUrl,
     },
   });
+
+  if (hasSubPagerCreate || data.pagerQuantity !== undefined) {
+    await mainPrisma.$executeRawUnsafe(
+      'UPDATE "Tenant" SET "subPager" = $1, "pagerQuantity" = $2, "pricePager" = $3, "cyclePager" = $4, "feePager" = $5 WHERE id = $6',
+      nextSubPagerCreate,
+      Number(data.pagerQuantity || 5),
+      Number(data.pricePager || 19.0),
+      String(data.cyclePager || "monthly"),
+      Number(data.feePager || 0.0),
+      tenant.id
+    ).catch(() => null);
+  }
 
   // Record initial TenantSlotAddon entries for initial slot capacity
   const initialSlotFields = [
@@ -224,6 +247,7 @@ const create = async (data) => {
     { key: "qrCashierQuantity", serviceType: "qr_cashier", priceKey: "priceQrCashier", defaultPrice: 9.0 },
     { key: "kdsQuantity", serviceType: "kds", priceKey: "priceKds", defaultPrice: 19.0 },
     { key: "cdsQuantity", serviceType: "cds", priceKey: "priceCds", defaultPrice: 9.0 },
+    { key: "pagerQuantity", serviceType: "pager", priceKey: "pricePager", defaultPrice: 19.0 },
     { key: "branchLimit", serviceType: "branch", priceKey: "priceBranch", defaultPrice: 19.0 },
   ];
 
@@ -304,6 +328,7 @@ const update = async (id, data, user = null) => {
     { key: "qrCashierQuantity", serviceType: "qr_cashier", priceKey: "priceQrCashier", defaultPrice: 9.0 },
     { key: "kdsQuantity", serviceType: "kds", priceKey: "priceKds", defaultPrice: 19.0 },
     { key: "cdsQuantity", serviceType: "cds", priceKey: "priceCds", defaultPrice: 9.0 },
+    { key: "pagerQuantity", serviceType: "pager", priceKey: "pricePager", defaultPrice: 19.0 },
     { key: "branchLimit", serviceType: "branch", priceKey: "priceBranch", defaultPrice: 19.0 },
   ];
 
@@ -615,12 +640,32 @@ const update = async (id, data, user = null) => {
     }));
   }
 
-  // Safely persist subscriptionPaused via raw SQL so it works even if Prisma client predates schema patch
+  // Safely persist subscriptionPaused and pager fields via raw SQL so it works even if Prisma client predates schema patch
   const hasSubscriptionPaused = data.subscriptionPaused !== undefined;
   const nextSubscriptionPaused = Boolean(data.subscriptionPaused);
   if (hasSubscriptionPaused) {
     delete data.subscriptionPaused;
   }
+
+  const hasSubPager = data.subPager !== undefined;
+  const nextSubPager = Boolean(data.subPager);
+  if (hasSubPager) delete data.subPager;
+
+  const hasPagerQuantity = data.pagerQuantity !== undefined;
+  const nextPagerQuantity = Number(data.pagerQuantity || 0);
+  if (hasPagerQuantity) delete data.pagerQuantity;
+
+  const hasPricePager = data.pricePager !== undefined;
+  const nextPricePager = Number(data.pricePager || 0);
+  if (hasPricePager) delete data.pricePager;
+
+  const hasCyclePager = data.cyclePager !== undefined;
+  const nextCyclePager = String(data.cyclePager || "monthly");
+  if (hasCyclePager) delete data.cyclePager;
+
+  const hasFeePager = data.feePager !== undefined;
+  const nextFeePager = Number(data.feePager || 0);
+  if (hasFeePager) delete data.feePager;
 
   const updated = Object.keys(data).length > 0
     ? await mainPrisma.tenant.update({ where: { id }, data })
@@ -634,9 +679,30 @@ const update = async (id, data, user = null) => {
     ).catch((err) => console.error("Failed updating subscriptionPaused:", err.message));
   }
 
+  if (hasSubPager || hasPagerQuantity || hasPricePager || hasCyclePager || hasFeePager) {
+    const sets = [];
+    const vals = [];
+    let idx = 1;
+    if (hasSubPager) { sets.push(`"subPager" = $${idx++}`); vals.push(nextSubPager); }
+    if (hasPagerQuantity) { sets.push(`"pagerQuantity" = $${idx++}`); vals.push(nextPagerQuantity); }
+    if (hasPricePager) { sets.push(`"pricePager" = $${idx++}`); vals.push(nextPricePager); }
+    if (hasCyclePager) { sets.push(`"cyclePager" = $${idx++}`); vals.push(nextCyclePager); }
+    if (hasFeePager) { sets.push(`"feePager" = $${idx++}`); vals.push(nextFeePager); }
+    vals.push(id);
+    await mainPrisma.$executeRawUnsafe(
+      `UPDATE "Tenant" SET ${sets.join(", ")} WHERE id = $${idx}`,
+      ...vals
+    ).catch((err) => console.error("Failed updating pager fields:", err.message));
+  }
+
   return {
     ...updated,
     subscriptionPaused: hasSubscriptionPaused ? nextSubscriptionPaused : Boolean(existingTenant.subscriptionPaused),
+    subPager: hasSubPager ? nextSubPager : Boolean(existingTenant.subPager),
+    pagerQuantity: hasPagerQuantity ? nextPagerQuantity : Number(existingTenant.pagerQuantity || 5),
+    pricePager: hasPricePager ? nextPricePager : Number(existingTenant.pricePager || 19.0),
+    cyclePager: hasCyclePager ? nextCyclePager : String(existingTenant.cyclePager || "monthly"),
+    feePager: hasFeePager ? nextFeePager : Number(existingTenant.feePager || 0.0),
   };
 };
 
@@ -789,10 +855,11 @@ const getSubscriptions = async () => {
     let totalActiveQrCashiers = 0;
     let totalKdsDevices = 0;
     let totalCdsDevices = 0;
+    let totalPagerDevices = 0;
 
     try {
       const tenantPrisma = getTenantClient(tenant.dbUrl);
-      const [dbBranches, kdsCountRes, cdsCountRes] = await Promise.all([
+      const [dbBranches, kdsCountRes, cdsCountRes, pagerCountRes] = await Promise.all([
         tenantPrisma.branch.findMany({
           select: {
             id: true,
@@ -808,6 +875,7 @@ const getSubscriptions = async () => {
             posEnabled: true,
             kdsEnabled: true,
             cdsEnabled: true,
+            pagerEnabled: true,
             appServiEnabled: true,
             tables: {
               select: {
@@ -847,10 +915,12 @@ const getSubscriptions = async () => {
         }),
         tenantPrisma.kdsDevice.count({ where: { isActive: true } }).catch(() => 0),
         tenantPrisma.$queryRawUnsafe('SELECT COUNT(*)::int AS cnt FROM "CdsDevice" WHERE "isActive" = true').then(r => Number(r?.[0]?.cnt || 0)).catch(() => 0),
+        tenantPrisma.$queryRawUnsafe('SELECT COUNT(*)::int AS cnt FROM "PagerDevice" WHERE "isActive" = true').then(r => Number(r?.[0]?.cnt || 0)).catch(() => 0),
       ]);
 
       totalKdsDevices = Number(kdsCountRes || 0);
       totalCdsDevices = Number(cdsCountRes || 0);
+      totalPagerDevices = Number(pagerCountRes || 0);
 
       // Auto-inactivate tables and POS devices that expired more than 7 days ago
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -935,6 +1005,7 @@ const getSubscriptions = async () => {
           posEnabled: b.posEnabled,
           kdsEnabled: b.kdsEnabled,
           cdsEnabled: b.cdsEnabled,
+          pagerEnabled: b.pagerEnabled,
           appServiEnabled: b.appServiEnabled,
           tablesCount: b._count?.tables || 0,
           posDevicesCount: b._count?.posDevices || 0,
@@ -985,6 +1056,11 @@ const getSubscriptions = async () => {
       amount += getMonthlyEquivalent(tenant.priceCds, "cycleCds") * qty;
       activeFeatures.push("CDS");
     }
+    if (tenant.subPager) {
+      const qty = Math.max(Number(tenant.pagerQuantity || 0), totalPagerDevices);
+      amount += getMonthlyEquivalent(tenant.pricePager, "cyclePager") * qty;
+      activeFeatures.push("Pager");
+    }
     if (tenant.subBranch) {
       const openBranches = branchesList.filter(b => b.status === "open").length;
       const qty = Math.max(Number(tenant.branchLimit || 0), openBranches);
@@ -1030,12 +1106,16 @@ const getSubscriptions = async () => {
       subQrCashier: tenant.subQrCashier,
       subKds: tenant.subKds,
       subCds: tenant.subCds,
+      subPager: tenant.subPager,
       subBranch: tenant.subBranch,
       subBrandStory: tenant.subBrandStory,
       subLoyalty: tenant.subLoyalty,
       subStamps: tenant.subStamps,
       kdsQuantity: tenant.kdsQuantity,
       cdsQuantity: tenant.cdsQuantity,
+      pagerQuantity: tenant.pagerQuantity,
+      pricePager: tenant.pricePager,
+      cyclePager: tenant.cyclePager,
       priceLoyalty: tenant.priceLoyalty,
       cycleLoyalty: tenant.cycleLoyalty,
       priceStamps: tenant.priceStamps,
@@ -1290,6 +1370,7 @@ const getInvoices = async (filters = {}) => {
         { flag: "subQrCashier", qtyKey: "qrCashierQuantity", priceKey: "priceQrCashier", cycleKey: "cycleQrCashier", defaultPrice: 0.0, label: "QR Cashier Counter", isSlot: true, typeKey: "qr_cashier" },
         { flag: "subKds", qtyKey: "kdsQuantity", priceKey: "priceKds", cycleKey: "cycleKds", defaultPrice: 0.0, label: "KDS Kitchen Screen", isSlot: true, typeKey: "kds" },
         { flag: "subCds", qtyKey: "cdsQuantity", priceKey: "priceCds", cycleKey: "cycleCds", defaultPrice: 0.0, label: "CDS Customer Display", isSlot: true, typeKey: "cds" },
+        { flag: "subPager", qtyKey: "pagerQuantity", priceKey: "pricePager", cycleKey: "cyclePager", defaultPrice: 19.0, label: "Pager Devices", isSlot: true, typeKey: "pager" },
         { flag: "subBranch", qtyKey: "branchLimit", priceKey: "priceBranch", cycleKey: "cycleBranch", defaultPrice: 0.0, label: "Branch Location", isSlot: true, typeKey: "branch" },
         { flag: "subBrandStory", priceKey: "priceBrandStory", cycleKey: "cycleBrandStory", defaultPrice: 0.0, label: "Brand Story Feature", isSlot: false, typeKey: "brand_story" },
         { flag: "subLoyalty", priceKey: "priceLoyalty", cycleKey: "cycleLoyalty", defaultPrice: 0.0, label: "Loyalty Points Program", isSlot: false, typeKey: "loyalty" },
@@ -1553,6 +1634,7 @@ const getInvoices = async (filters = {}) => {
       if (tenant.subQrCashier) activeFeatures.push("QR Cashier");
       if (tenant.subKds) activeFeatures.push("KDS");
       if (tenant.subCds) activeFeatures.push("CDS");
+      if (tenant.subPager) activeFeatures.push("Pager");
       if (tenant.subBranch) activeFeatures.push("Physical Branches");
       if (tenant.subBrandStory) activeFeatures.push("Brand Story");
       if (tenant.subLoyalty) activeFeatures.push("Loyalty Points");
@@ -3294,6 +3376,7 @@ const toggleSlot = async (tenantId, serviceType, slotIndex, active, deviceId) =>
     qr_cashier: "qrCashierQuantity",
     kds: "kdsQuantity",
     cds: "cdsQuantity",
+    pager: "pagerQuantity",
     branch: "branchLimit",
   };
 
@@ -3315,6 +3398,7 @@ const toggleSlot = async (tenantId, serviceType, slotIndex, active, deviceId) =>
     qr_cashier: "subQrCashier",
     kds: "subKds",
     cds: "subCds",
+    pager: "subPager",
     branch: "subBranch",
   };
 

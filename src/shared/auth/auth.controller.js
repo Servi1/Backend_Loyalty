@@ -49,18 +49,43 @@ const kdsLogin = catchAsync(async (req, res) => {
 /** POST /api/auth/kds/logout */
 const kdsLogout = catchAsync(async (req, res) => {
   const result = await authService.kdsLogout(req.tenantDb, req.body || {});
+  const io = req.app.get("io");
+  if (io) {
+    io.emit("kds:logout", result);
+    io.emit("device:logout", result);
+    if (req.tenantId) {
+      io.to(`tenant:${req.tenantId}`).emit("kds:logout", result);
+      io.to(`tenant:${req.tenantId}`).emit("device:logout", result);
+    }
+  }
   res.status(200).json({ success: true, ...result });
 });
 
 /** POST /api/auth/pos/logout */
 const posLogout = catchAsync(async (req, res) => {
   const result = await authService.posLogout(req.tenantDb, req.body || {});
+  const io = req.app.get("io");
+  if (io) {
+    io.emit("pos:logout", result);
+    io.emit("device:logout", result);
+    if (req.tenantId) {
+      io.to(`tenant:${req.tenantId}`).emit("pos:logout", result);
+      io.to(`tenant:${req.tenantId}`).emit("device:logout", result);
+    }
+  }
   res.status(200).json({ success: true, ...result });
 });
 
 /** POST /api/auth/logout */
 const logout = catchAsync(async (req, res) => {
   const result = await authService.deviceLogout(req.tenantDb, req.body || {});
+  const io = req.app.get("io");
+  if (io) {
+    io.emit("device:logout", result);
+    if (req.tenantId) {
+      io.to(`tenant:${req.tenantId}`).emit("device:logout", result);
+    }
+  }
   res.status(200).json({ success: true, ...result });
 });
 
