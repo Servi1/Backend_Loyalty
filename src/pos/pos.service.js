@@ -412,6 +412,16 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
     console.error("[POS ORDER] Failed to update main database order status:", err.message);
   }
 
+  // Handle coupon lifecycle on order acceptance (PROCESSING -> USED)
+  if (upperStatus === "ACCEPTED") {
+    try {
+      const { handleOrderAcceptedCoupon } = require("../shared/loyalty/orderCouponLifecycle");
+      await handleOrderAcceptedCoupon(updated, tenantId);
+    } catch (couponErr) {
+      console.error("[POS ORDER] Failed to handle accepted coupon:", couponErr.message);
+    }
+  }
+
   // If moving from HALTED to ACCEPTED, handle loyalty points award immediately (as it was skipped during createOrder)
   if (upperStatus === "ACCEPTED" && order.status === "HALTED" && updated.customerId && paymentMethod !== "points" && updated.paymentMethod !== "points") {
     try {
@@ -554,6 +564,16 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
       await loyaltyService.reverseOrderPoints(db, updated.customerId, updated.orderNumber, updated.pointsRedeemed, tenantId, updated.id);
     } catch (err) {
       console.error("[POS ORDER] Failed to reverse points on cancel/refund:", err.message);
+    }
+  }
+
+  // Handle coupon lifecycle on order cancellation (PROCESSING -> ACTIVE)
+  if (upperStatus === "CANCELLED" || upperStatus === "REFUNDED" || upperStatus === "REJECTED") {
+    try {
+      const { handleOrderCancelledCoupon } = require("../shared/loyalty/orderCouponLifecycle");
+      await handleOrderCancelledCoupon(updated, tenantId);
+    } catch (couponErr) {
+      console.error("[POS ORDER] Failed to restore cancelled coupon:", couponErr.message);
     }
   }
 

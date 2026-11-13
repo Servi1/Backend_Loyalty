@@ -93,6 +93,11 @@ const updateOrder = catchAsync(async (req, res) => {
     if (req.tenantId) {
       io.to(`tenant:${req.tenantId}`).emit("order:updated", order);
     }
+    const customerTargetId = order.customerId || order.userId;
+    if (customerTargetId) {
+      io.to(`user:${customerTargetId}`).emit("order:updated", order);
+      io.to(`user:${customerTargetId}`).emit("order:status", order);
+    }
   }
   res.json({ success: true, data: order });
 });

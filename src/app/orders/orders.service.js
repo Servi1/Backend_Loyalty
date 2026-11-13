@@ -213,7 +213,10 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       if (validatedCoupon) {
         // Allow recent duplicate requests within 10 seconds to succeed gracefully
         const isRecentDuplicate = validatedCoupon.isUsed && validatedCoupon.usedAt && (Date.now() - new Date(validatedCoupon.usedAt).getTime() < 10000);
-        if (validatedCoupon.isUsed && !isRecentDuplicate) {
+        if (validatedCoupon.status === "PROCESSING") {
+          throw new ApiError(400, `Reward coupon code ${cleanCode} is currently being processed in an active order.`);
+        }
+        if ((validatedCoupon.isUsed || validatedCoupon.status === "USED") && !isRecentDuplicate) {
           throw new ApiError(400, `Reward coupon code ${cleanCode} has already been redeemed.`);
         }
         if (validatedCoupon.expiresAt && new Date(validatedCoupon.expiresAt) < new Date()) {
@@ -612,6 +615,12 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
   if (customerName) {
     finalNotes = finalNotes ? `Customer: ${customerName} | ${finalNotes}` : `Customer: ${customerName}`;
   }
+  if (validatedCoupon && validatedCoupon.code) {
+    const couponTag = `[COUPON:${validatedCoupon.code}]`;
+    if (!finalNotes.includes(couponTag)) {
+      finalNotes = finalNotes ? `${finalNotes} ${couponTag}` : couponTag;
+    }
+  }
 
   // 2. Extract and format Car Details for Curbside / Deliver to Car
   const carData = body.carDetails || body.car || (body.carBrand || body.plateNumber || body.carNumber ? {
@@ -1003,42 +1012,57 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       }
     } else {
       try {
-        await mainPrisma.earnedCoupon.update({
-          where: { id: validatedCoupon.id },
-          data: {
-            isUsed: true,
-            usedAt: new Date()
-          }
-        });
-
-        // Deduct stamps from customer wallet
-        const appUserId = validatedCoupon.appUserId || finalCustomerId || userId;
-        if (appUserId && tenantId) {
-          const tenantObj = tenant || (await mainPrisma.tenant.findUnique({ where: { id: tenantId } }));
-          const stampList = Array.isArray(tenantObj?.stampPrograms) ? tenantObj.stampPrograms : [];
-          const stampProg = stampList[0] || null;
-          const requiredStamps = Number(stampProg?.requiredStamps || 4);
-
-          const wallet = await mainPrisma.wallet.findFirst({
-            where: { appUserId, tenantId }
+        const isOrderCompletedDirectly = order.status === "COMPLETED";
+        if (isOrderCompletedDirectly) {
+          await mainPrisma.earnedCoupon.update({
+            where: { id: validatedCoupon.id },
+            data: {
+              status: "USED",
+              isUsed: true,
+              usedAt: new Date(),
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+            }
           });
-          if (wallet) {
-            await mainPrisma.wallet.update({
-              where: { id: wallet.id },
-              data: { stamps: 0 }
+
+          // Deduct stamps from customer wallet
+          const appUserId = validatedCoupon.appUserId || finalCustomerId || userId;
+          if (appUserId && tenantId) {
+            const wallet = await mainPrisma.wallet.findFirst({
+              where: { appUserId, tenantId }
             });
-            await mainPrisma.walletTransaction.create({
-              data: {
-                walletId: wallet.id,
-                points: 0,
-                description: `Redeemed Stamp Coupon ${validatedCoupon.code} for Free Order #${orderNumber}`,
-                tenantId
-              }
-            });
+            if (wallet) {
+              await mainPrisma.wallet.update({
+                where: { id: wallet.id },
+                data: { stamps: 0 }
+              });
+              await mainPrisma.walletTransaction.create({
+                data: {
+                  walletId: wallet.id,
+                  points: 0,
+                  description: `Redeemed Stamp Coupon ${validatedCoupon.code} for Free Order #${orderNumber}`,
+                  tenantId
+                }
+              });
+            }
           }
+        } else {
+          // When order is created, don't change coupon status to USED until accepted by the brand/branch.
+          // Set status to PROCESSING and track orderId & orderNumber. Stamps remain intact.
+          await mainPrisma.earnedCoupon.update({
+            where: { id: validatedCoupon.id },
+            data: {
+              status: "PROCESSING",
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+              isUsed: false,
+              usedAt: null,
+            }
+          });
+          console.log(`[APP ORDER] Coupon ${validatedCoupon.code} set to PROCESSING for order #${order.orderNumber}`);
         }
       } catch (err) {
-        console.error("[APP ORDER] Failed to redeem earned coupon:", err.message);
+        console.error("[APP ORDER] Failed to update earned coupon status:", err.message);
       }
     }
   }
@@ -1400,27 +1424,67 @@ const getMyOrders = async (db, userId, { page = 1, limit = 20, tenantId = null }
 
 // ─── getOrder ─────────────────────────────────────────────────────────────────
 
-const getOrder = async (db, orderId, userId) => {
+const getOrder = async (db, orderId, userId, tenantId = null, tenantObj = null) => {
   let detailedOrder = null;
-  let tenant = null;
+  let tenant = tenantObj || null;
+
+  // Fetch user details to get phone number for matching guest/POS orders
+  let userPhone = null;
+  if (userId) {
+    try {
+      const u = await mainPrisma.appUser.findUnique({ where: { id: userId } });
+      if (u && u.phone) {
+        userPhone = u.phone;
+      }
+    } catch (e) {
+      console.error("[getOrder] Failed to fetch user phone:", e.message);
+    }
+  }
 
   if (db) {
+    const userMatchCondition = userPhone
+      ? { id: orderId, OR: [{ customerId: userId }, { customerPhone: userPhone }] }
+      : { id: orderId, customerId: userId };
+
     detailedOrder = await db.order.findFirst({
-      where: { id: orderId, customerId: userId }, // ensure customer can only see their own orders
+      where: userMatchCondition,
       include: {
-        items: { include: { menuItem: true } },
-        branch: true,
+        items: { include: { menuItem: { select: { id: true, name: true, nameAr: true, price: true } } } },
+        branch: { select: { id: true, name: true, nameAr: true, address: true, lat: true, lng: true } },
         table: true,
       },
     });
     if (!detailedOrder) throw new ApiError(404, "Order not found");
   } else {
+    // Look up order IDs matching user phone from AggregatedOrder table if userPhone exists
+    let phoneOrderIds = [];
+    if (userPhone) {
+      try {
+        const matchedAgg = await mainPrisma.aggregatedOrder.findMany({
+          where: { customerPhone: userPhone, orderId },
+          select: { orderId: true },
+        });
+        phoneOrderIds = matchedAgg.map((a) => a.orderId).filter(Boolean);
+      } catch (e) {
+        console.error("[getOrder] Failed to query aggregated orders by phone:", e.message);
+      }
+    }
+
+    const mainWhereCondition = {
+      id: orderId,
+      ...(userPhone && phoneOrderIds.length > 0
+        ? { OR: [{ appUserId: userId }, { id: { in: phoneOrderIds } }] }
+        : { appUserId: userId }),
+    };
+
     const mainOrder = await mainPrisma.order.findFirst({
-      where: { id: orderId, appUserId: userId }
+      where: mainWhereCondition
     });
     if (!mainOrder) throw new ApiError(404, "Order not found");
 
-    tenant = await mainPrisma.tenant.findUnique({ where: { id: mainOrder.tenantId } });
+    if (!tenant) {
+      tenant = await mainPrisma.tenant.findUnique({ where: { id: mainOrder.tenantId } });
+    }
     if (!tenant) throw new ApiError(404, "Brand not found");
 
     const { getTenantClient } = require("../../config/tenantManager");
@@ -1428,13 +1492,43 @@ const getOrder = async (db, orderId, userId) => {
     detailedOrder = await tenantDb.order.findUnique({
       where: { id: orderId },
       include: {
-        items: { include: { menuItem: true } },
-        branch: true,
+        items: { include: { menuItem: { select: { id: true, name: true, nameAr: true, price: true } } } },
+        branch: { select: { id: true, name: true, nameAr: true, address: true, lat: true, lng: true } },
         table: true,
       },
     });
 
     if (!detailedOrder) throw new ApiError(404, "Order not found in tenant database");
+  }
+
+  // Ensure tenant is resolved if db was provided
+  if (!tenant) {
+    try {
+      const targetTId = tenantId || (detailedOrder && detailedOrder.tenantId);
+      if (targetTId) {
+        tenant = await mainPrisma.tenant.findFirst({
+          where: { OR: [{ id: targetTId }, { slug: targetTId }] }
+        });
+      } else {
+        const mo = await mainPrisma.order.findUnique({ where: { id: orderId }, select: { tenantId: true } });
+        if (mo && mo.tenantId) {
+          tenant = await mainPrisma.tenant.findUnique({ where: { id: mo.tenantId } });
+        }
+      }
+    } catch (e) {
+      console.warn("[getOrder] Failed to find tenant:", e.message);
+    }
+  }
+
+  if (detailedOrder) {
+    detailedOrder = {
+      ...detailedOrder,
+      branch: detailedOrder.branch ? { ...detailedOrder.branch, addressAr: detailedOrder.branch.addressAr || null } : null,
+      items: (detailedOrder.items || []).map((it) => ({
+        ...it,
+        menuItem: it.menuItem ? { ...it.menuItem, nameAr: it.menuItem.nameAr || null } : null,
+      })),
+    };
   }
 
   const [enrichedOrder] = await enrichOrdersWithPointsEarned(

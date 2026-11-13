@@ -1512,6 +1512,12 @@ const getCoupons = async (db, userId, tenantId) => {
 
     const isExpired = c.expiresAt ? new Date(c.expiresAt) < new Date() : false;
     const isUsed = Boolean(c.isUsed);
+    let resolvedStatus = c.status || (isUsed ? "USED" : (isExpired ? "EXPIRED" : "ACTIVE"));
+    if (isUsed) {
+      resolvedStatus = "USED";
+    } else if (isExpired && resolvedStatus !== "PROCESSING") {
+      resolvedStatus = "EXPIRED";
+    }
 
     return {
       id: c.id,
@@ -1532,7 +1538,9 @@ const getCoupons = async (db, userId, tenantId) => {
       expiryDate: c.expiresAt,
       expiresAt: c.expiresAt,
       isUsed,
-      status: isUsed ? "USED" : (isExpired ? "EXPIRED" : "ACTIVE"),
+      status: resolvedStatus,
+      orderId: c.orderId || null,
+      orderNumber: c.orderNumber || null,
       type: "STAMP",
       isStampCoupon: true,
       qrPayload: couponQrPayload,

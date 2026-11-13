@@ -886,6 +886,7 @@ const claimRewardCoupon = async ({ customerId, tenantId, menuItemId }) => {
       appUserId: customerId,
       tenantId: tenant.id,
       isUsed: false,
+      status: { not: "USED" },
       expiresAt: { gt: new Date() },
     },
     orderBy: { createdAt: "desc" },
@@ -902,6 +903,7 @@ const claimRewardCoupon = async ({ customerId, tenantId, menuItemId }) => {
       coupon: {
         id: existingActive.id,
         code: existingActive.code,
+        status: existingActive.status || "ACTIVE",
         prizeLabel: existingActive.prizeLabel,
         itemName: existingActive.prizeLabel?.replace("Free ", "")?.replace(" (Stamp Reward)", "") || "Reward Item",
         expiresAt: existingActive.expiresAt,
@@ -934,6 +936,7 @@ const claimRewardCoupon = async ({ customerId, tenantId, menuItemId }) => {
       menuItemId: selectedItem?.id || menuItemId || null,
       tenantId: tenant.id,
       appUserId: customerId,
+      status: "ACTIVE",
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days valid
     },
   });
@@ -993,8 +996,12 @@ const redeemRewardCoupon = async ({ code, customerId, tenantId, branchId = null 
     throw new ApiError(404, "Invalid or unrecognized reward coupon code");
   }
 
-  if (coupon.isUsed) {
+  if (coupon.isUsed || coupon.status === "USED") {
     throw new ApiError(400, `Reward coupon ${cleanCode} has already been redeemed`);
+  }
+
+  if (coupon.status === "PROCESSING") {
+    throw new ApiError(400, `Reward coupon ${cleanCode} is currently being processed in an active order`);
   }
 
   if (coupon.expiresAt && new Date(coupon.expiresAt) < new Date()) {
@@ -1008,6 +1015,7 @@ const redeemRewardCoupon = async ({ code, customerId, tenantId, branchId = null 
       isUsed: false,
     },
     data: {
+      status: "USED",
       isUsed: true,
       usedAt: new Date(),
     },
@@ -1259,11 +1267,17 @@ const getCouponDetails = async ({ code, tenantId }) => {
   }
 
   const isExpired = Boolean(coupon.expiresAt && new Date(coupon.expiresAt) < new Date());
+  let resolvedStatus = coupon.status || (coupon.isUsed ? "USED" : (isExpired ? "EXPIRED" : "ACTIVE"));
+  if (coupon.isUsed) resolvedStatus = "USED";
+  else if (isExpired && resolvedStatus !== "PROCESSING") resolvedStatus = "EXPIRED";
 
   return {
     coupon: {
       id: coupon.id,
       code: coupon.code,
+      status: resolvedStatus,
+      orderId: coupon.orderId || null,
+      orderNumber: coupon.orderNumber || null,
       prizeLabel: coupon.prizeLabel,
       prizeImageUrl: coupon.prizeImageUrl,
       menuItemId: coupon.menuItemId,

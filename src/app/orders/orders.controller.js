@@ -93,7 +93,13 @@ const myOrders = catchAsync(async (req, res) => {
 
 // ─── GET /orders/:orderId ─────────────────────────────────────────────────────
 const getOne = catchAsync(async (req, res) => {
-  const order = await ordersService.getOrder(req.tenantDb, req.params.orderId, req.user.id);
+  const order = await ordersService.getOrder(
+    req.tenantDb,
+    req.params.orderId,
+    req.user.id,
+    req.tenantId,
+    req.tenant
+  );
   res.json({ success: true, data: order });
 });
 

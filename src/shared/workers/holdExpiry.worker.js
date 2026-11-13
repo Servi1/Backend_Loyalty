@@ -61,6 +61,14 @@ async function checkAndExpireHoldOrders() {
               console.warn(`[Hold Expiry Worker] Failed to update AggregatedOrder registry: ${err.message}`);
             }
 
+            // 4. Restore coupon back to ACTIVE if order had a coupon in PROCESSING
+            try {
+              const { handleOrderCancelledCoupon } = require("../loyalty/orderCouponLifecycle");
+              await handleOrderCancelledCoupon(order, tenant.id);
+            } catch (couponErr) {
+              console.warn(`[Hold Expiry Worker] Failed to restore coupon for order ${order.orderNumber}: ${couponErr.message}`);
+            }
+
             console.log(`[Hold Expiry Worker] Cancelled expired hold order ${order.orderNumber}`);
           }
         }

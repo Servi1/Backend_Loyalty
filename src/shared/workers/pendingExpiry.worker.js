@@ -86,6 +86,7 @@ async function checkAndCancelUnacceptedOrders() {
             orderNumber: true,
             customerId: true,
             tableId: true,
+            notes: true,
             pointsRedeemed: true,
             paymentMethod: true,
             type: true,
@@ -173,6 +174,14 @@ async function checkAndCancelUnacceptedOrders() {
               } catch (pointsErr) {
                 console.error(`[Pending Expiry Worker] Failed to refund points for order ${order.orderNumber}:`, pointsErr.message);
               }
+            }
+
+            // 5. Restore coupon back to ACTIVE if order had a coupon in PROCESSING
+            try {
+              const { handleOrderCancelledCoupon } = require("../loyalty/orderCouponLifecycle");
+              await handleOrderCancelledCoupon(order, tenant.id);
+            } catch (couponErr) {
+              console.warn(`[Pending Expiry Worker] Failed to restore coupon for order ${order.orderNumber}: ${couponErr.message}`);
             }
 
             console.log(

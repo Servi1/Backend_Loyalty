@@ -432,6 +432,9 @@ model EarnedCoupon {
   tenant        Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   isUsed        Boolean  @default(false)
   usedAt        DateTime?
+  status        String   @default("ACTIVE") // "ACTIVE" | "PROCESSING" | "USED" | "EXPIRED"
+  orderId       String?
+  orderNumber   String?
   winDate       DateTime @default(now())
   expiresAt     DateTime
 
@@ -444,6 +447,9 @@ model EarnedCoupon {
 
   @@index([appUserId])
   @@index([tenantId])
+  @@index([status])
+  @@index([orderId])
+  @@index([orderNumber])
 }
 
 // ─── Global Order Types ──────────────────────────────

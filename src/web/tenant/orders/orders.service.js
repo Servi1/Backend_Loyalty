@@ -984,6 +984,24 @@ const updateStatus = async (db, id, status, tenantId, notes) => {
 
   await handleOrderStatusLoyalty(db, updated, status, tenantId);
 
+  // Handle coupon lifecycle on order acceptance / cancellation
+  const upperStatus = (status || "").toUpperCase();
+  if (upperStatus === "ACCEPTED") {
+    try {
+      const { handleOrderAcceptedCoupon } = require("../../../shared/loyalty/orderCouponLifecycle");
+      await handleOrderAcceptedCoupon(updated, tenantId);
+    } catch (couponErr) {
+      console.error("[TENANT ORDER] Failed to handle accepted coupon:", couponErr.message);
+    }
+  } else if (upperStatus === "CANCELLED" || upperStatus === "REJECTED" || upperStatus === "REFUNDED") {
+    try {
+      const { handleOrderCancelledCoupon } = require("../../../shared/loyalty/orderCouponLifecycle");
+      await handleOrderCancelledCoupon(updated, tenantId);
+    } catch (couponErr) {
+      console.error("[TENANT ORDER] Failed to restore cancelled coupon:", couponErr.message);
+    }
+  }
+
   // Sync to super admin aggregated orders synchronously
   await syncToAggregatedOrder(db, tenantId, updated).catch(console.error);
 
