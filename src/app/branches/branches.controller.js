@@ -240,6 +240,22 @@ const encodeQrTokenEndpoint = catchAsync(async (req, res) => {
   res.json({ success: true, token });
 });
 
-module.exports = { getAll, getOne, getStaff, getStaffSlots, getScheduleSlots, getBranchDiscounts, resolveQrToken, encodeQrTokenEndpoint };
+const getBranchPager = catchAsync(async (req, res) => {
+  const pagersService = require("../../web/tenant/pagers/pagers.service");
+  await pagersService.ensureTables(req.tenantDb);
+  const rows = await req.tenantDb.$queryRawUnsafe(`
+    SELECT id, name, "nameAr", "deviceKey", "isActive"
+    FROM "PagerDevice"
+    WHERE "branchId" = $1 AND "isActive" = true
+    ORDER BY "createdAt" ASC
+    LIMIT 1
+  `, req.params.branchId).catch(() => []);
+  res.json({
+    success: true,
+    data: rows && rows.length > 0 ? rows[0] : null,
+  });
+});
+
+module.exports = { getAll, getOne, getBranchPager, getStaff, getStaffSlots, getScheduleSlots, getBranchDiscounts, resolveQrToken, encodeQrTokenEndpoint };
 
 
