@@ -17,6 +17,7 @@ router.post("/qr/resolve", ctrl.resolveQrToken);
 router.post("/qr/encode", ctrl.encodeQrTokenEndpoint);
 router.get("/", ctrl.getAll);
 router.get("/:branchId", ctrl.getOne);
+router.get("/:branchId/pager", ctrl.getBranchPager);
 router.get("/:branchId/staff", ctrl.getStaff);
 router.get("/:branchId/schedule-slots", ctrl.getScheduleSlots);
 router.get("/:branchId/discounts", ctrl.getBranchDiscounts);

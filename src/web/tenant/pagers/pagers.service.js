@@ -227,6 +227,15 @@ const create = async (db, tenant, data) => {
     throw new ApiError(400, "Pager feature is deactivated for this branch.");
   }
 
+  // Ensure each branch can have at most one pager device
+  const existingBranchPager = await db.$queryRawUnsafe(
+    'SELECT id FROM "PagerDevice" WHERE "branchId" = $1 LIMIT 1',
+    data.branchId
+  ).catch(() => []);
+  if (existingBranchPager && existingBranchPager.length > 0) {
+    throw new ApiError(400, "This branch already has a pager assigned. Each branch can have only one pager.");
+  }
+
   // Generate unique 8-digit deviceKey
   let deviceKey = "";
   let isUnique = false;
@@ -299,9 +308,17 @@ const update = async (db, id, data) => {
     updates.push(`"isActive" = $${paramIdx++}`);
     params.push(Boolean(data.isActive));
   }
-  if (data.branchId !== undefined) {
+  if (data.branchId !== undefined && data.branchId !== pager.branchId) {
     const branch = await db.branch.findUnique({ where: { id: data.branchId } });
     if (!branch) throw new ApiError(404, "Branch not found");
+    const existingBranchPager = await db.$queryRawUnsafe(
+      'SELECT id FROM "PagerDevice" WHERE "branchId" = $1 AND id != $2 LIMIT 1',
+      data.branchId,
+      id
+    ).catch(() => []);
+    if (existingBranchPager && existingBranchPager.length > 0) {
+      throw new ApiError(400, "This branch already has a pager assigned. Each branch can have only one pager.");
+    }
     updates.push(`"branchId" = $${paramIdx++}`);
     params.push(data.branchId);
   }
@@ -564,6 +581,7 @@ const submitCustomerTicket = async (pagerId, body, mainClient = mainPrisma, io) 
 
   const rawPhone = String(body.phone || "").trim();
   const countryCode = String(body.countryCode || "+966").trim();
+  const orderNum = body.orderNumber ? String(body.orderNumber).trim() : null;
 
   if (!rawPhone) {
     throw new ApiError(400, "Phone number is required.");
@@ -629,6 +647,19 @@ const submitCustomerTicket = async (pagerId, body, mainClient = mainPrisma, io) 
   `, pagerId, normalizedPhone);
 
   if (existingActive && existingActive.length > 0) {
+    if (orderNum) {
+      await tenantDb.$executeRawUnsafe(
+        'UPDATE "PagerTicket" SET "orderNumber" = $1, "updatedAt" = NOW() WHERE "id" = $2',
+        orderNum,
+        existingActive[0].id
+      ).catch(() => null);
+      existingActive[0].orderNumber = orderNum;
+      if (io) {
+        io.to(`pager:${pager.id}`).emit("pager:ticket_updated", existingActive[0]);
+        io.to(`branch:${pager.branchId}`).emit("pager:ticket_updated", existingActive[0]);
+        io.to(`tenant:${tenant.id}`).emit("pager:ticket_updated", existingActive[0]);
+      }
+    }
     return {
       ticket: existingActive[0],
       isExisting: true,
@@ -641,11 +672,11 @@ const submitCustomerTicket = async (pagerId, body, mainClient = mainPrisma, io) 
   await tenantDb.$executeRawUnsafe(`
     INSERT INTO "PagerTicket" (
       "id", "pagerId", "branchId", "phone", "countryCode", "rawPhone",
-      "appUserId", "status", "waitingAt", "createdAt", "updatedAt"
+      "appUserId", "orderNumber", "status", "waitingAt", "createdAt", "updatedAt"
     ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, 'WAITING', NOW(), NOW(), NOW()
+      $1, $2, $3, $4, $5, $6, $7, $8, 'WAITING', NOW(), NOW(), NOW()
     )
-  `, ticketId, pager.id, pager.branchId, normalizedPhone, countryCode, rawPhone, appUser?.id || null);
+  `, ticketId, pager.id, pager.branchId, normalizedPhone, countryCode, rawPhone, appUser?.id || null, orderNum);
 
   const createdRows = await tenantDb.$queryRawUnsafe(`
     SELECT t.*, json_build_object('id', b.id, 'name', b.name, 'nameAr', b."nameAr") as branch

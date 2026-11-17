@@ -43,7 +43,67 @@ const place = catchAsync(async (req, res) => {
   } catch (err) {
     console.error("[APP ORDER] Socket emit failed:", err.message);
   }
-  res.status(201).json({ success: true, data: order });
+  // Handle QR Cashier auto-ticket assignment into branch pager
+  let pagerId = null;
+  let pagerTicket = null;
+  const isQrCashierOrder = Boolean(order.qrCashierId || req.body.qrCashierId || req.body.cashierId);
+  if (isQrCashierOrder) {
+    try {
+      const pagersService = require("../../web/tenant/pagers/pagers.service");
+      const mainPrisma = require("../../../config/prisma");
+      await pagersService.ensureTables(req.tenantDb, mainPrisma);
+
+      // Find active pager device for this branch
+      const branchPagers = await req.tenantDb.$queryRawUnsafe(`
+        SELECT id, name, "deviceKey", "isActive"
+        FROM "PagerDevice"
+        WHERE "branchId" = $1 AND "isActive" = true
+        ORDER BY "createdAt" ASC
+        LIMIT 1
+      `, order.branchId).catch(() => []);
+
+      let activePager = branchPagers && branchPagers.length > 0 ? branchPagers[0] : null;
+
+      // Auto-create a default branch pager device if none exists yet and subscription allows
+      if (!activePager && req.tenant?.subPager !== false) {
+        try {
+          activePager = await pagersService.create(req.tenantDb, req.tenant, {
+            name: `${order.branch?.name || "Counter"} Pager`,
+            branchId: order.branchId,
+          });
+        } catch (e) {
+          // If creation fails (e.g. quota limit reached), activePager remains null
+        }
+      }
+
+      if (activePager) {
+        const io = req.app.get("io");
+        const ticketRes = await pagersService.submitCustomerTicket(
+          activePager.id,
+          {
+            phone: order.customerPhone || req.body.customerPhone,
+            countryCode: req.body.countryCode || "+966",
+            orderNumber: order.orderNumber,
+          },
+          mainPrisma,
+          io
+        );
+        pagerId = activePager.id;
+        pagerTicket = ticketRes?.ticket || null;
+      }
+    } catch (pagerErr) {
+      console.error("[APP ORDER] QR Cashier auto-pager ticket failed:", pagerErr.message);
+    }
+  }
+
+  res.status(201).json({
+    success: true,
+    data: {
+      ...order,
+      pagerId,
+      pagerTicket,
+    },
+  });
 });
 
 const placePublic = catchAsync(async (req, res) => {
@@ -79,7 +139,67 @@ const placePublic = catchAsync(async (req, res) => {
   } catch (err) {
     console.error("[PUBLIC ORDER] Socket emit failed:", err.message);
   }
-  res.status(201).json({ success: true, data: order });
+  // Handle QR Cashier auto-ticket assignment into branch pager
+  let pagerId = null;
+  let pagerTicket = null;
+  const isQrCashierOrder = Boolean(order.qrCashierId || req.body.qrCashierId || req.body.cashierId);
+  if (isQrCashierOrder) {
+    try {
+      const pagersService = require("../../web/tenant/pagers/pagers.service");
+      const mainPrisma = require("../../../config/prisma");
+      await pagersService.ensureTables(req.tenantDb, mainPrisma);
+
+      // Find active pager device for this branch
+      const branchPagers = await req.tenantDb.$queryRawUnsafe(`
+        SELECT id, name, "deviceKey", "isActive"
+        FROM "PagerDevice"
+        WHERE "branchId" = $1 AND "isActive" = true
+        ORDER BY "createdAt" ASC
+        LIMIT 1
+      `, order.branchId).catch(() => []);
+
+      let activePager = branchPagers && branchPagers.length > 0 ? branchPagers[0] : null;
+
+      // Auto-create a default branch pager device if none exists yet and subscription allows
+      if (!activePager && req.tenant?.subPager !== false) {
+        try {
+          activePager = await pagersService.create(req.tenantDb, req.tenant, {
+            name: `${order.branch?.name || "Counter"} Pager`,
+            branchId: order.branchId,
+          });
+        } catch (e) {
+          // If creation fails (e.g. quota limit reached), activePager remains null
+        }
+      }
+
+      if (activePager) {
+        const io = req.app.get("io");
+        const ticketRes = await pagersService.submitCustomerTicket(
+          activePager.id,
+          {
+            phone: order.customerPhone || req.body.customerPhone,
+            countryCode: req.body.countryCode || "+966",
+            orderNumber: order.orderNumber,
+          },
+          mainPrisma,
+          io
+        );
+        pagerId = activePager.id;
+        pagerTicket = ticketRes?.ticket || null;
+      }
+    } catch (pagerErr) {
+      console.error("[APP ORDER] QR Cashier auto-pager ticket failed:", pagerErr.message);
+    }
+  }
+
+  res.status(201).json({
+    success: true,
+    data: {
+      ...order,
+      pagerId,
+      pagerTicket,
+    },
+  });
 });
 
 // ─── GET /orders ──────────────────────────────────────────────────────────────

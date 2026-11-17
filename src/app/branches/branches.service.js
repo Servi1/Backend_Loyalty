@@ -161,6 +161,21 @@ const getBranch = async (db, branchId) => {
     console.error("Failed to fetch branch discounts:", err.message);
   }
 
+  // Fetch active branch pager device if available
+  let pagerDevice = null;
+  try {
+    const pagers = await db.$queryRawUnsafe(`
+      SELECT id, name, "nameAr", "deviceKey", "isActive"
+      FROM "PagerDevice"
+      WHERE "branchId" = $1 AND "isActive" = true
+      ORDER BY "createdAt" ASC
+      LIMIT 1
+    `, branchId).catch(() => []);
+    if (pagers && pagers.length > 0) {
+      pagerDevice = pagers[0];
+    }
+  } catch (e) {}
+
   return {
     ...branch,
     prepExtraTime,
@@ -168,6 +183,8 @@ const getBranch = async (db, branchId) => {
     isOpen: checkIsOpen(branch),
     hours: formatBranchHours(branch),
     discounts: activeDiscounts,
+    pager: pagerDevice,
+    pagerId: pagerDevice?.id || null,
   };
 };
 
