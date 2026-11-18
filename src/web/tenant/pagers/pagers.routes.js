@@ -15,6 +15,7 @@ router.patch("/:id", authenticate, authorize("ADMIN", "BRAND_MANAGER", "BRANCH_M
 // Live tickets queue management
 router.get("/:id/tickets", authenticate, ctrl.getTickets);
 router.patch("/:id/tickets/:ticketId/status", authenticate, ctrl.updateTicketStatus);
+router.post("/:id/tickets/:ticketId/notify", authenticate, ctrl.notifyCustomerTicket);
 router.get("/:id/active-orders", authenticate, ctrl.getActiveOrders);
 
 module.exports = router;

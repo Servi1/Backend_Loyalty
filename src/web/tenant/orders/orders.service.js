@@ -710,26 +710,42 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
   const updateData = {};
   if (status !== undefined) updateData.status = (status === "REJECTED" ? "CANCELLED" : status);
 
+  // If rescheduling date or time, record previous slot info
+  const slotDateChanged = (selectedSlotDate !== undefined && selectedSlotDate && selectedSlotDate !== order.selectedSlotDate);
+  const slotTimeChanged = (selectedSlot !== undefined && selectedSlot && selectedSlot !== order.selectedSlot);
+  if (slotDateChanged || slotTimeChanged) {
+    updateData.previousSlot = order.selectedSlot || null;
+    updateData.previousSlotDate = order.selectedSlotDate || null;
+  }
+
   // Update specific slot inside slotDetails array if it exists
   let updatedSlotDetails = null;
   if (order.slotDetails && Array.isArray(order.slotDetails) && order.slotDetails.length > 0) {
     updatedSlotDetails = order.slotDetails.map(slot => {
       // If menuItemId matches, update that item's specialist and time allocation
       if (menuItemId && slot.menuItemId === menuItemId) {
+        const itemChanged = (selectedSlot !== undefined && selectedSlot && selectedSlot !== slot.selectedSlot) ||
+                            (selectedSlotDate !== undefined && selectedSlotDate && selectedSlotDate !== slot.selectedSlotDate);
         return {
           ...slot,
           staffId: staffId !== undefined ? staffId : slot.staffId,
           staffName: staffName !== undefined ? (staffName || null) : slot.staffName,
+          previousSlot: itemChanged ? (slot.selectedSlot || slot.previousSlot || null) : slot.previousSlot,
+          previousSlotDate: itemChanged ? (slot.selectedSlotDate || slot.previousSlotDate || null) : slot.previousSlotDate,
           selectedSlot: selectedSlot !== undefined ? selectedSlot : slot.selectedSlot,
           selectedSlotDate: selectedSlotDate !== undefined ? selectedSlotDate : slot.selectedSlotDate
         };
       }
       // If no menuItemId specified but there is only 1 slot item in slotDetails, update it
       if (!menuItemId && order.slotDetails.length === 1) {
+        const itemChanged = (selectedSlot !== undefined && selectedSlot && selectedSlot !== slot.selectedSlot) ||
+                            (selectedSlotDate !== undefined && selectedSlotDate && selectedSlotDate !== slot.selectedSlotDate);
         return {
           ...slot,
           staffId: staffId !== undefined ? staffId : slot.staffId,
           staffName: staffName !== undefined ? (staffName || null) : slot.staffName,
+          previousSlot: itemChanged ? (slot.selectedSlot || slot.previousSlot || null) : slot.previousSlot,
+          previousSlotDate: itemChanged ? (slot.selectedSlotDate || slot.previousSlotDate || null) : slot.previousSlotDate,
           selectedSlot: selectedSlot !== undefined ? selectedSlot : slot.selectedSlot,
           selectedSlotDate: selectedSlotDate !== undefined ? selectedSlotDate : slot.selectedSlotDate
         };
@@ -741,22 +757,31 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
 
     // Update the matching OrderItem in the database
     if (menuItemId) {
+      const matchSlot = order.slotDetails?.find(s => s.menuItemId === menuItemId);
+      const itemChanged = (selectedSlot !== undefined && selectedSlot && selectedSlot !== matchSlot?.selectedSlot) ||
+                          (selectedSlotDate !== undefined && selectedSlotDate && selectedSlotDate !== matchSlot?.selectedSlotDate);
       await db.orderItem.updateMany({
         where: { orderId: id, menuItemId },
         data: {
           staffId: staffId !== undefined ? (staffId || null) : undefined,
           staffName: staffName !== undefined ? (staffName || null) : undefined,
+          previousSlot: itemChanged ? (matchSlot?.selectedSlot || undefined) : undefined,
+          previousSlotDate: itemChanged ? (matchSlot?.selectedSlotDate || undefined) : undefined,
           selectedSlot: selectedSlot !== undefined ? (selectedSlot || null) : undefined,
           selectedSlotDate: selectedSlotDate !== undefined ? (selectedSlotDate || null) : undefined
         }
       });
     } else if (order.slotDetails.length === 1) {
       const singleItem = order.slotDetails[0];
+      const itemChanged = (selectedSlot !== undefined && selectedSlot && selectedSlot !== singleItem?.selectedSlot) ||
+                          (selectedSlotDate !== undefined && selectedSlotDate && selectedSlotDate !== singleItem?.selectedSlotDate);
       await db.orderItem.updateMany({
         where: { orderId: id, menuItemId: singleItem.menuItemId },
         data: {
           staffId: staffId !== undefined ? (staffId || null) : undefined,
           staffName: staffName !== undefined ? (staffName || null) : undefined,
+          previousSlot: itemChanged ? (singleItem?.selectedSlot || undefined) : undefined,
+          previousSlotDate: itemChanged ? (singleItem?.selectedSlotDate || undefined) : undefined,
           selectedSlot: selectedSlot !== undefined ? (selectedSlot || null) : undefined,
           selectedSlotDate: selectedSlotDate !== undefined ? (selectedSlotDate || null) : undefined
         }
@@ -791,6 +816,8 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
           staffName: updated.staffName,
           selectedSlot: updated.selectedSlot,
           selectedSlotDate: updated.selectedSlotDate,
+          previousSlot: updated.previousSlot || undefined,
+          previousSlotDate: updated.previousSlotDate || undefined,
           slotDetails: updated.slotDetails || undefined,
         }
       });
