@@ -67,6 +67,22 @@ const updateTicketStatus = catchAsync(async (req, res) => {
   res.json({ success: true, data: ticket });
 });
 
+const notifyCustomerTicket = catchAsync(async (req, res) => {
+  const pager = await pagersService.getById(req.tenantDb, req.params.id);
+  if (req.user?.branchId && pager.branchId !== req.user.branchId) {
+    throw new ApiError(403, "Access denied to notify tickets in this branch");
+  }
+  const io = req.app.get("io");
+  const ticket = await pagersService.notifyCustomerTicket(
+    req.tenantDb,
+    req.params.id,
+    req.params.ticketId,
+    req.tenant,
+    io
+  );
+  res.json({ success: true, data: ticket });
+});
+
 const getActiveOrders = catchAsync(async (req, res) => {
   const pager = await pagersService.getById(req.tenantDb, req.params.id);
   const orders = await pagersService.getBranchActiveOrders(req.tenantDb, pager.branchId);
@@ -81,6 +97,7 @@ module.exports = {
   update,
   getTickets,
   updateTicketStatus,
+  notifyCustomerTicket,
   getActiveOrders,
 };
 

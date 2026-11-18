@@ -11,6 +11,11 @@ const ensureTables = async (db, mainClient = mainPrisma) => {
   // 1. Main database columns
   try {
     await mainClient.$executeRawUnsafe('ALTER TABLE "AppUser" ADD COLUMN IF NOT EXISTS "isVerified" BOOLEAN DEFAULT true');
+    await mainClient.$executeRawUnsafe('ALTER TABLE "AppUser" ADD COLUMN IF NOT EXISTS "source" TEXT DEFAULT \'app\'');
+    await mainClient.$executeRawUnsafe('ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "previousSlot" TEXT');
+    await mainClient.$executeRawUnsafe('ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "previousSlotDate" TEXT');
+    await mainClient.$executeRawUnsafe('ALTER TABLE "AggregatedOrder" ADD COLUMN IF NOT EXISTS "previousSlot" TEXT');
+    await mainClient.$executeRawUnsafe('ALTER TABLE "AggregatedOrder" ADD COLUMN IF NOT EXISTS "previousSlotDate" TEXT');
     await mainClient.$executeRawUnsafe('ALTER TABLE "Tenant" ADD COLUMN IF NOT EXISTS "subPager" BOOLEAN DEFAULT true');
     await mainClient.$executeRawUnsafe('ALTER TABLE "Tenant" ADD COLUMN IF NOT EXISTS "pagerQuantity" INTEGER DEFAULT 5');
     await mainClient.$executeRawUnsafe('ALTER TABLE "Tenant" ADD COLUMN IF NOT EXISTS "pricePager" DOUBLE PRECISION DEFAULT 19.0');
@@ -23,6 +28,10 @@ const ensureTables = async (db, mainClient = mainPrisma) => {
   // 2. Tenant database tables and columns
   if (db) {
     try {
+      await db.$executeRawUnsafe('ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "previousSlot" TEXT');
+      await db.$executeRawUnsafe('ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "previousSlotDate" TEXT');
+      await db.$executeRawUnsafe('ALTER TABLE "OrderItem" ADD COLUMN IF NOT EXISTS "previousSlot" TEXT');
+      await db.$executeRawUnsafe('ALTER TABLE "OrderItem" ADD COLUMN IF NOT EXISTS "previousSlotDate" TEXT');
       await db.$executeRawUnsafe('ALTER TABLE "Branch" ADD COLUMN IF NOT EXISTS "pagerEnabled" BOOLEAN DEFAULT true');
       await db.$executeRawUnsafe('ALTER TABLE "Branch" ADD COLUMN IF NOT EXISTS "pagerSubscribedAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP');
 
@@ -476,6 +485,48 @@ const updateTicketStatus = async (db, mainClient, pagerId, ticketId, body, tenan
 };
 
 /**
+ * Notify customer again for an active, ready, or collected pager ticket.
+ * Sends SMS notification and emits live Socket.IO events to trigger phone vibration and sound.
+ */
+const notifyCustomerTicket = async (db, pagerId, ticketId, tenant, io) => {
+  await ensureTables(db);
+  const rows = await db.$queryRawUnsafe(`
+    SELECT t.*, b.name as "branchName"
+    FROM "PagerTicket" t
+    LEFT JOIN "Branch" b ON t."branchId" = b.id
+    WHERE t."id" = $1 AND t."pagerId" = $2
+    LIMIT 1
+  `, ticketId, pagerId);
+
+  if (!rows || rows.length === 0) {
+    throw new ApiError(404, "Pager ticket not found.");
+  }
+  const ticket = rows[0];
+
+  // Send SMS Notification again
+  try {
+    await sendOrderReadySms(ticket.phone, ticket.orderNumber, tenant?.name, ticket.branchName);
+  } catch (smsErr) {
+    console.warn("[PAGER SMS RE-NOTIFY]", smsErr.message);
+  }
+
+  const updatedTicket = { ...ticket, reNotified: true, reNotifiedAt: new Date().toISOString() };
+
+  // Emit Socket.IO live events to re-trigger customer alert
+  if (io) {
+    io.to(`pager-ticket:${ticketId}`).emit("pager:re_notify", updatedTicket);
+    io.to(`pager-ticket:${ticketId}`).emit("pager:ticket_updated", updatedTicket);
+    io.to(`pager:${pagerId}`).emit("pager:ticket_updated", updatedTicket);
+    io.to(`branch:${ticket.branchId}`).emit("pager:ticket_updated", updatedTicket);
+    if (tenant?.id) {
+      io.to(`tenant:${tenant.id}`).emit("pager:ticket_updated", updatedTicket);
+    }
+  }
+
+  return updatedTicket;
+};
+
+/**
  * Get active branch orders for staff to pick from when assigning order number.
  */
 const getBranchActiveOrders = async (db, branchId) => {
@@ -611,11 +662,12 @@ const submitCustomerTicket = async (pagerId, body, mainClient = mainPrisma, io) 
       appUser = await mainClient.appUser.create({
         data: {
           phone: normalizedPhone,
+          source: 'pager',
         }
       });
-      // Explicitly mark as unverified so it can be claimed/verified later
+      // Explicitly mark as unverified so it can be claimed/verified later and track source
       await mainClient.$executeRawUnsafe(
-        'UPDATE "AppUser" SET "isVerified" = false WHERE "id" = $1',
+        'UPDATE "AppUser" SET "isVerified" = false, "source" = \'pager\' WHERE "id" = $1',
         appUser.id
       ).catch(() => null);
     } catch {
@@ -752,6 +804,7 @@ module.exports = {
   update,
   getTickets,
   updateTicketStatus,
+  notifyCustomerTicket,
   getBranchActiveOrders,
   getPublicPagerInfo,
   submitCustomerTicket,

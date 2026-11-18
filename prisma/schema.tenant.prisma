@@ -302,6 +302,8 @@ model Order {
   staffName        String?
   selectedSlot     String?
   selectedSlotDate String?
+  previousSlot     String?
+  previousSlotDate String?
   slotDetails      Json?
   rating           Int?
   comment          String?
@@ -334,6 +336,8 @@ model OrderItem {
   staffName        String?
   selectedSlot     String?
   selectedSlotDate String?
+  previousSlot     String?
+  previousSlotDate String?
  
   orderId    String
   order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)

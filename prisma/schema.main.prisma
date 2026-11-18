@@ -228,6 +228,8 @@ model AggregatedOrder {
   staffName        String?
   selectedSlot     String?
   selectedSlotDate String?
+  previousSlot     String?
+  previousSlotDate String?
   slotDetails      Json?
   items            Json?
   rating           Int?
@@ -260,6 +262,7 @@ model AppUser {
   fcmToken       String?
   isDelete       Boolean  @default(false)
   isVerified     Boolean? @default(true)
+  source         String?  @default("app")
   // Relations
   orders         Order[]
   wallets        Wallet[]
@@ -319,6 +322,8 @@ model Order {
   staffName        String?
   selectedSlot     String?
   selectedSlotDate String?
+  previousSlot     String?
+  previousSlotDate String?
   slotDetails      Json?
   rating           Int?
   comment          String?
