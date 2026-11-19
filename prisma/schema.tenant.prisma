@@ -59,6 +59,7 @@ model User {
   isActive  Boolean  @default(true)
   rating    Float?   @default(5.0)
   ratingCount Int    @default(0)
+  bufferTime  Int?   @default(0)
  
   // Relations
   branchId  String?
@@ -256,14 +257,17 @@ model MenuItem {
 }
 
 model StaffSchedule {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  dayOfWeek Int      // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-  startTime String   // e.g. "09:00"
-  endTime   String   // e.g. "17:00"
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dayOfWeek      Int      // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  startTime      String   // e.g. "09:00"
+  endTime        String   // e.g. "17:00"
+  breakStartTime String?  // e.g. "13:00"
+  breakEndTime   String?  // e.g. "14:00"
+  bufferTime     Int?     @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@unique([userId, dayOfWeek, startTime, endTime])
 }

@@ -283,6 +283,30 @@ const normalizePhone = (rawPhone) => {
   }
 
   if (staffId && selectedSlot && selectedSlotDate) {
+    // Check if staff is on break
+    try {
+      const parts = String(selectedSlotDate).split("-").map(Number);
+      const dayOfWeek = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2]).getDay() : new Date(selectedSlotDate).getDay();
+      const schedules = await db.staffSchedule.findMany({ where: { userId: staffId, dayOfWeek } });
+      if (schedules && schedules.length > 0) {
+        const [h, m] = selectedSlot.split(":").map(Number);
+        const slotMin = (h || 0) * 60 + (m || 0);
+        const onBreak = schedules.some(s => {
+          if (!s.breakStartTime || !s.breakEndTime) return false;
+          const [bh1, bm1] = s.breakStartTime.split(":").map(Number);
+          const [bh2, bm2] = s.breakEndTime.split(":").map(Number);
+          const bStart = (bh1 || 0) * 60 + (bm1 || 0);
+          const bEnd = (bh2 || 0) * 60 + (bm2 || 0);
+          return slotMin >= bStart && slotMin < bEnd;
+        });
+        if (onBreak) {
+          throw new ApiError(409, `The selected specialist is on break at ${selectedSlot}. Please choose a different time slot.`);
+        }
+      }
+    } catch (e) {
+      if (e instanceof ApiError) throw e;
+    }
+
     const existingStaffBooking = await db.order.findFirst({
       where: {
         staffId,
@@ -676,6 +700,29 @@ const updateOrder = async (db, id, { staffId, staffName, selectedSlot, selectedS
       }
 
       if (targetStaffId) {
+        try {
+          const parts = String(targetSlotDate).split("-").map(Number);
+          const dayOfWeek = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2]).getDay() : new Date(targetSlotDate).getDay();
+          const schedules = await db.staffSchedule.findMany({ where: { userId: targetStaffId, dayOfWeek } });
+          if (schedules && schedules.length > 0) {
+            const [h, m] = targetSlot.split(":").map(Number);
+            const slotMin = (h || 0) * 60 + (m || 0);
+            const onBreak = schedules.some(s => {
+              if (!s.breakStartTime || !s.breakEndTime) return false;
+              const [bh1, bm1] = s.breakStartTime.split(":").map(Number);
+              const [bh2, bm2] = s.breakEndTime.split(":").map(Number);
+              const bStart = (bh1 || 0) * 60 + (bm1 || 0);
+              const bEnd = (bh2 || 0) * 60 + (bm2 || 0);
+              return slotMin >= bStart && slotMin < bEnd;
+            });
+            if (onBreak) {
+              throw new ApiError(409, `The selected specialist is on break at ${targetSlot}. Please choose a different time slot.`);
+            }
+          }
+        } catch (e) {
+          if (e instanceof ApiError) throw e;
+        }
+
         const conflictStaff = await db.order.findFirst({
           where: {
             id: { not: id },

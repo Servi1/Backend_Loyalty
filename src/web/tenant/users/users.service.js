@@ -81,7 +81,10 @@ const createStaff = async (db, data) => {
   const schedulesCreate = data.schedules ? data.schedules.map(s => ({
     dayOfWeek: Number(s.dayOfWeek),
     startTime: s.startTime,
-    endTime: s.endTime
+    endTime: s.endTime,
+    breakStartTime: s.breakStartTime || null,
+    breakEndTime: s.breakEndTime || null,
+    bufferTime: s.bufferTime !== undefined ? (Number(s.bufferTime) || 0) : 0
   })) : [];
 
   const created = await db.user.create({
@@ -97,6 +100,7 @@ const createStaff = async (db, data) => {
       warehouseId: data.warehouseId || null,
       password: hashedPassword,
       pinCode,
+      bufferTime: data.bufferTime !== undefined ? (Number(data.bufferTime) || 0) : 0,
       isActive: data.isActive !== undefined ? data.isActive : true,
       specialties: {
         connect: specialtiesConnect
@@ -216,6 +220,7 @@ const updateStaff = async (db, id, data, currentUser) => {
     branchId: data.branchId !== undefined ? data.branchId : user.branchId,
     warehouseId: data.warehouseId !== undefined ? data.warehouseId : user.warehouseId,
     pinCode: data.pinCode || user.pinCode,
+    bufferTime: data.bufferTime !== undefined ? (Number(data.bufferTime) || 0) : user.bufferTime,
     isActive: data.isActive !== undefined ? data.isActive : user.isActive,
   };
 
@@ -232,7 +237,10 @@ const updateStaff = async (db, id, data, currentUser) => {
       create: data.schedules.map(s => ({
         dayOfWeek: Number(s.dayOfWeek),
         startTime: s.startTime,
-        endTime: s.endTime
+        endTime: s.endTime,
+        breakStartTime: s.breakStartTime || null,
+        breakEndTime: s.breakEndTime || null,
+        bufferTime: s.bufferTime !== undefined ? (Number(s.bufferTime) || 0) : 0
       }))
     };
   }
