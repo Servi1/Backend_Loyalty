@@ -379,15 +379,23 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr, includePast = fa
   }
 
   // Look for all staffSchedule entries for this staff member on this day of week
-  const schedules = await db.staffSchedule.findMany({
-    where: { userId: staffId, dayOfWeek },
-    orderBy: { startTime: 'asc' }
-  });
+  const [schedules, staffUser] = await Promise.all([
+    db.staffSchedule.findMany({
+      where: { userId: staffId, dayOfWeek },
+      orderBy: { startTime: 'asc' }
+    }),
+    db.user.findUnique({
+      where: { id: staffId },
+      select: { bufferTime: true }
+    })
+  ]);
 
   // If no schedule exists for this day of week, return 0 slots
   if (!schedules || schedules.length === 0) {
     return [];
   }
+
+  const staffBuffer = (staffUser && staffUser.bufferTime) ? Number(staffUser.bufferTime) : 0;
 
   const targetDateStr = dateStr || new Date().toISOString().split("T")[0];
 
@@ -454,7 +462,7 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr, includePast = fa
     })
   ]);
 
-  // Build a list of busy intervals [{ start, end }] in minutes
+  // Build a list of busy intervals [{ start, end }] in minutes (extended with staff buffer time)
   const busyIntervals = [];
 
   for (const o of scheduledOrders) {
@@ -465,14 +473,14 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr, includePast = fa
       const maxPrep = Math.max(...o.items.map(it => it.menuItem?.prepTime || 15));
       if (maxPrep > 0) bDur = maxPrep;
     }
-    busyIntervals.push({ start: bStart, end: bStart + bDur });
+    busyIntervals.push({ start: bStart, end: bStart + bDur + staffBuffer });
   }
 
   for (const item of scheduledItems) {
     if (!item.selectedSlot) continue;
     const bStart = parseTime(item.selectedSlot);
     const bDur = Math.max(15, item.menuItem?.prepTime || 15);
-    busyIntervals.push({ start: bStart, end: bStart + bDur });
+    busyIntervals.push({ start: bStart, end: bStart + bDur + staffBuffer });
   }
 
   const now = new Date();
@@ -482,11 +490,14 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr, includePast = fa
 
   const slots = [];
   const seenTimes = new Set();
-  const SLOT_STEP = 15; // standard 15-minute slot intervals
+  const SLOT_STEP = 5; // allow 5-minute granular intervals so buffer-adjusted slots (e.g. 09:35) are available
 
   for (const sch of schedules) {
     const shiftStart = parseTime(sch.startTime);
     const shiftEnd = parseTime(sch.endTime);
+    const hasBreak = Boolean(sch.breakStartTime && sch.breakEndTime);
+    const breakStart = hasBreak ? parseTime(sch.breakStartTime) : 0;
+    const breakEnd = hasBreak ? parseTime(sch.breakEndTime) : 0;
 
     let curr = shiftStart;
     while (curr + duration <= shiftEnd) {
@@ -498,8 +509,11 @@ const getStaffSlots = async (db, staffId, dateStr, durationStr, includePast = fa
 
         const isPast = isToday && slotStartMin <= currentMinutes;
 
-        // Check if candidate slot interval [slotStartMin, slotEndMin] overlaps with any busy booking
-        const hasConflict = busyIntervals.some(
+        // Check if candidate slot interval [slotStartMin, slotEndMin] overlaps with break time
+        const hasBreakConflict = hasBreak && breakEnd > breakStart && (slotStartMin < breakEnd && slotEndMin > breakStart);
+
+        // Check if candidate slot interval [slotStartMin, slotEndMin] overlaps with any busy booking (+buffer)
+        const hasConflict = hasBreakConflict || busyIntervals.some(
           b => slotStartMin < b.end && slotEndMin > b.start
         );
 
