@@ -86,6 +86,23 @@ const updateItem = async (db, id, data, tenantId) => {
   const item = await db.menuItem.findUnique({ where: { id } });
   if (!item) throw new ApiError(404, "Menu item not found");
   
+  if (data.prepTime !== undefined && Number(data.prepTime) !== Number(item.prepTime || 15)) {
+    const activeScheduledOrder = await db.order.findFirst({
+      where: {
+        status: { notIn: ["COMPLETED", "CANCELLED", "REFUNDED"] },
+        selectedSlot: { not: null },
+        items: {
+          some: {
+            menuItemId: id
+          }
+        }
+      }
+    });
+    if (activeScheduledOrder) {
+      throw new ApiError(400, "Cancel the existing order before saving.");
+    }
+  }
+
   const { specialistIds, ...rest } = data;
   if (rest.nameAr === "" || (typeof rest.nameAr === "string" && !rest.nameAr.trim())) {
     rest.nameAr = null;
