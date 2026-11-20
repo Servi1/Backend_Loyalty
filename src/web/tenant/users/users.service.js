@@ -205,6 +205,52 @@ const updateStaff = async (db, id, data, currentUser) => {
     }
   }
 
+  // Validate if schedules, break times, or buffer time are changing while active scheduled orders exist
+  if (data.schedules !== undefined || (data.bufferTime !== undefined && Number(data.bufferTime) !== Number(user.bufferTime || 0))) {
+    const activeScheduledOrder = await db.order.findFirst({
+      where: {
+        staffId: id,
+        status: { notIn: ["COMPLETED", "CANCELLED", "REFUNDED"] },
+        selectedSlot: { not: null }
+      }
+    });
+
+    if (activeScheduledOrder) {
+      const currentSchedules = await db.staffSchedule.findMany({ where: { userId: id } });
+      const currentBuffer = Number(user.bufferTime) || 0;
+      const newBuffer = data.bufferTime !== undefined ? (Number(data.bufferTime) || 0) : currentBuffer;
+
+      let scheduleChanged = newBuffer !== currentBuffer;
+      if (!scheduleChanged && data.schedules !== undefined) {
+        if (data.schedules.length !== currentSchedules.length) {
+          scheduleChanged = true;
+        } else {
+          for (const ns of data.schedules) {
+            const cs = currentSchedules.find(s => Number(s.dayOfWeek) === Number(ns.dayOfWeek));
+            if (!cs) {
+              scheduleChanged = true;
+              break;
+            }
+            if (
+              cs.startTime !== ns.startTime ||
+              cs.endTime !== ns.endTime ||
+              (cs.breakStartTime || null) !== (ns.breakStartTime || null) ||
+              (cs.breakEndTime || null) !== (ns.breakEndTime || null) ||
+              (Number(cs.bufferTime) || 0) !== (Number(ns.bufferTime) || 0)
+            ) {
+              scheduleChanged = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (scheduleChanged) {
+        throw new ApiError(400, "Cancel the existing order before saving.");
+      }
+    }
+  }
+
   // Handle schedules replacement
   if (data.schedules !== undefined) {
     await db.staffSchedule.deleteMany({ where: { userId: id } });
