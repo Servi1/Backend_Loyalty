@@ -709,8 +709,14 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
 
           const currentCars = Array.isArray(appUser.cars) ? [...appUser.cars] : [];
           const exists = currentCars.some(
-            c => (cPlate && (c.plateNumber === cPlate || c.number === cPlate)) ||
-                 (!cPlate && cBrand && c.brand === cBrand)
+            c => (cPlate && (c.plateNumber === cPlate || c.plate === cPlate || c.carPlate === cPlate || c.number === cPlate || c.carNumber === cPlate)) ||
+                 (!cPlate && cBrand && (
+                   c.brand === cBrand ||
+                   c.model === cBrand ||
+                   (c.brand && c.model && `${c.brand} ${c.model}` === cBrand) ||
+                   c.name === cBrand ||
+                   c.carBrand === cBrand
+                 ))
           );
 
           if (!exists && (cPlate || cBrand)) {
