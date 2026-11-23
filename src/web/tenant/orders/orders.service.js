@@ -398,16 +398,31 @@ const normalizePhone = (rawPhone) => {
     };
   });
 
-  // Protect against price tampering: enforce server-calculated subtotal with +/- 0.05 rounding tolerance
-  let finalTotal = subtotal;
+  // Calculate VAT (15%) and total with VAT
+  const vatRate = 15;
+  const vatAmount = Number((subtotal * (vatRate / 100)).toFixed(2));
+  const calculatedTotalWithVat = Number((subtotal + vatAmount).toFixed(2));
+
+  // Protect against price tampering: enforce server-calculated total with +/- 0.05 rounding tolerance
+  let finalTotal = calculatedTotalWithVat;
   if (typeof total === "number" && !isNaN(total)) {
     if (isStaff && (posUnit || source === "pos")) {
-      finalTotal = Math.max(0, total);
-    } else if (Math.abs(total - subtotal) <= 0.05) {
+      // If staff explicitly passed total, check if it matches with VAT, without VAT (subtotal), or custom
+      if (Math.abs(total - calculatedTotalWithVat) <= 0.05) {
+        finalTotal = total;
+      } else if (Math.abs(total - subtotal) <= 0.05) {
+        // Staff passed subtotal without VAT, ensure VAT is added
+        finalTotal = calculatedTotalWithVat;
+      } else {
+        finalTotal = Math.max(0, total);
+      }
+    } else if (Math.abs(total - calculatedTotalWithVat) <= 0.05) {
       finalTotal = total;
+    } else if (Math.abs(total - subtotal) <= 0.05) {
+      finalTotal = calculatedTotalWithVat;
     } else {
-      console.warn(`[WEB ORDER] Client total (${total}) differs from calculated subtotal (${subtotal}). Enforcing verified subtotal.`);
-      finalTotal = subtotal;
+      console.warn(`[WEB ORDER] Client total (${total}) differs from calculated total with VAT (${calculatedTotalWithVat}). Enforcing verified total.`);
+      finalTotal = calculatedTotalWithVat;
     }
   }
 

@@ -1829,8 +1829,19 @@ const getSuperAdminOrders = async ({ tenantId, startDate, endDate, status, page 
     const resolvedFee = (order.feeRate !== undefined && order.feeRate !== null && !isNaN(Number(order.feeRate)))
       ? Number(order.feeRate)
       : resolveTenantFeeRate(order.tenant, order.source);
+
+    let resolvedTotal = Number(order.total || 0);
+    // If order.items is available and order.total is equal to items subtotal without VAT, ensure total includes 15% VAT
+    if (Array.isArray(order.items) && order.items.length > 0) {
+      const itemsSubtotal = order.items.reduce((sum, i) => sum + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
+      if (itemsSubtotal > 0 && Math.abs(resolvedTotal - itemsSubtotal) < 0.15) {
+        resolvedTotal = Number((itemsSubtotal * 1.15).toFixed(2));
+      }
+    }
+
     return {
       ...order,
+      total: resolvedTotal,
       feeRate: resolvedFee
     };
   });
@@ -3158,6 +3169,14 @@ const getSuperAdminOrderDetail = async (tenantId, orderId) => {
   }
 
   if (!order) throw new ApiError(404, "Order not found");
+
+  // If order.items is available and order.total equals items subtotal without VAT, ensure total includes 15% VAT
+  if (Array.isArray(order.items) && order.items.length > 0) {
+    const itemsSubtotal = order.items.reduce((sum, i) => sum + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
+    if (itemsSubtotal > 0 && Math.abs(Number(order.total || 0) - itemsSubtotal) < 0.15) {
+      order.total = Number((itemsSubtotal * 1.15).toFixed(2));
+    }
+  }
 
   // Calculate points earned for this order if COMPLETED and paid via Cash, Card, Apple Pay, etc.
   let pointsEarned = 0;
