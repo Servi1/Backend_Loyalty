@@ -442,9 +442,18 @@ const normalizePhone = (rawPhone) => {
         }
 
         feeRate = resolveTenantFeeRate(tenant, orderSource);
-        const isPointsActive = Boolean(tenant.subLoyalty && tenant.loyaltyEnabled && tenant.loyaltyAddPoints !== false);
-        if (isPointsActive) {
-          loyaltyEarnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+        const { calculatePointsForOrder } = require("../../../shared/loyalty/loyaltyEligibility");
+        const isPointsConfigActive = Boolean(tenant.subLoyalty && tenant.loyaltyEnabled && tenant.loyaltyAddPoints !== false);
+        let isPointsActive = false;
+        if (isPointsConfigActive) {
+          const tenantEarnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+          const ptsCalc = calculatePointsForOrder(orderItems, total, tenantEarnRate, tenant);
+          if (ptsCalc.isEligible && ptsCalc.pointsToEarn > 0) {
+            isPointsActive = true;
+            loyaltyEarnRate = tenantEarnRate;
+          } else {
+            loyaltyEarnRate = 0.0;
+          }
         } else {
           loyaltyEarnRate = 0.0;
         }
@@ -963,16 +972,19 @@ const handleOrderStatusLoyalty = async (db, updated, status, tenantId) => {
             return;
           }
 
-          let earnRate = 0.0;
+          let pointsToEarn = 0;
           if (pointsEligible) {
+            let earnRate = 0.0;
             if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null) {
               earnRate = Number(updated.loyaltyEarnRate);
             } else {
               earnRate = Number(tenant?.loyaltyEarnRate !== undefined && tenant?.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
             }
+            const { calculatePointsForOrder } = require("../../../shared/loyalty/loyaltyEligibility");
+            const ptsCalc = calculatePointsForOrder(updated.items, updated.total, earnRate, tenant);
+            pointsToEarn = ptsCalc.pointsToEarn;
           }
 
-          const pointsToEarn = earnRate > 0 ? Math.floor(updated.total * earnRate) : 0;
           await loyaltyService.earnPoints(db, targetCustomerId, pointsToEarn, description, tenantId, {
             orderId: updated.id,
             orderNumber: updated.orderNumber,

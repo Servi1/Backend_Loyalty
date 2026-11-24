@@ -20,6 +20,8 @@ router.post("/generate-coupon", ctrl.claimReward);
 router.post("/claim-coupon", ctrl.claimReward);
 router.get("/coupon-details", ctrl.getCouponDetails);
 router.post("/coupon-details", ctrl.getCouponDetails);
+router.get("/coupon/:couponId/apple-wallet", ctrl.downloadAppleWalletPass);
+router.get("/coupon/apple-wallet", ctrl.downloadAppleWalletPass);
 router.post("/redeem-coupon", ctrl.redeemCoupon);
 router.post("/redeem", ctrl.redeemCoupon);
 router.post("/update-name", ctrl.updateCustomerName);

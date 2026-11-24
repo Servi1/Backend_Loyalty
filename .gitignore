@@ -8,3 +8,8 @@ prisma/migrations/
 /config/
 *firebase*.json
 *service-account*.json
+certs/
+*.p12
+*.cer
+*.pem
+*.pkpass

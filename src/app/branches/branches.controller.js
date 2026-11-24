@@ -9,7 +9,8 @@ const getAll = catchAsync(async (req, res) => {
   const branches = await branchesService.getBranches(req.tenantDb);
   const isLoyaltySubscribed = Boolean(req.tenant?.subLoyalty);
   const isLoyaltyEnabled = isLoyaltySubscribed && Boolean(req.tenant?.loyaltyEnabled);
-  const isLoyaltyAddPoints = isLoyaltyEnabled && (req.tenant?.loyaltyAddPoints !== false);
+  const hasEligibleItems = Array.isArray(req.tenant?.loyaltyEligibleItemIds) && req.tenant.loyaltyEligibleItemIds.length > 0;
+  const isLoyaltyAddPoints = isLoyaltyEnabled && (req.tenant?.loyaltyAddPoints !== false) && hasEligibleItems;
   const isLoyaltyRedeemPoints = isLoyaltyEnabled && (req.tenant?.loyaltyRedeemPoints !== false);
   const earnRate = isLoyaltyAddPoints ? Number(req.tenant?.loyaltyEarnRate !== undefined && req.tenant?.loyaltyEarnRate !== null ? req.tenant.loyaltyEarnRate : 1.0) : 0.0;
   const redeemRate = Number(req.tenant?.loyaltyRedeemRate || 100.0);
@@ -55,7 +56,8 @@ const getOne = catchAsync(async (req, res) => {
   const branch = await branchesService.getBranch(req.tenantDb, req.params.branchId);
   const isLoyaltySubscribed = Boolean(req.tenant?.subLoyalty);
   const isLoyaltyEnabled = isLoyaltySubscribed && Boolean(req.tenant?.loyaltyEnabled);
-  const isLoyaltyAddPoints = isLoyaltyEnabled && (req.tenant?.loyaltyAddPoints !== false);
+  const hasEligibleItems = Array.isArray(req.tenant?.loyaltyEligibleItemIds) && req.tenant.loyaltyEligibleItemIds.length > 0;
+  const isLoyaltyAddPoints = isLoyaltyEnabled && (req.tenant?.loyaltyAddPoints !== false) && hasEligibleItems;
   const isLoyaltyRedeemPoints = isLoyaltyEnabled && (req.tenant?.loyaltyRedeemPoints !== false);
   const earnRate = isLoyaltyAddPoints ? Number(req.tenant?.loyaltyEarnRate !== undefined && req.tenant?.loyaltyEarnRate !== null ? req.tenant.loyaltyEarnRate : 1.0) : 0.0;
   const redeemRate = Number(req.tenant?.loyaltyRedeemRate || 100.0);

@@ -4,6 +4,7 @@
 
 const catchAsync = require("../../utils/catchAsync");
 const stampService = require("./stamp.service");
+const appleWalletService = require("../../services/appleWallet.service");
 
 const getStampProgramInfo = catchAsync(async (req, res) => {
   const token = req.query.token || req.body?.token;
@@ -74,6 +75,16 @@ const getCouponDetails = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data });
 });
 
+const downloadAppleWalletPass = catchAsync(async (req, res) => {
+  const couponIdOrCode = req.params.couponId || req.query.couponId || req.query.code || req.body?.couponId;
+  const { buffer, filename } = await appleWalletService.generateCouponPass(couponIdOrCode);
+
+  res.setHeader("Content-Type", "application/vnd.apple.pkpass");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Length", buffer.length);
+  res.status(200).send(buffer);
+});
+
 module.exports = {
   getStampProgramInfo,
   checkCustomerPhone,
@@ -84,4 +95,5 @@ module.exports = {
   redeemCoupon,
   getCouponDetails,
   updateCustomerName,
+  downloadAppleWalletPass,
 };
