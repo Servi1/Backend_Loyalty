@@ -8,9 +8,29 @@
 
 const ApiError = require("../../utils/ApiError");
 
+const isItemAvailableAtBranch = (item, bId) => {
+  if (!bId) return true;
+  let bIds = [];
+  if (Array.isArray(item.branchIds)) {
+    bIds = item.branchIds;
+  } else if (typeof item.branchIds === "string") {
+    try {
+      const parsed = JSON.parse(item.branchIds);
+      if (Array.isArray(parsed)) bIds = parsed;
+    } catch (e) {}
+  }
+  if (bIds.length > 0) {
+    return bIds.includes(bId);
+  }
+  if (item.branchId) {
+    return item.branchId === bId;
+  }
+  return true;
+};
+
 // ─── getMenu ──────────────────────────────────────────────────────────────────
 
-const getMenu = async (db) => {
+const getMenu = async (db, branchId = null) => {
   const categories = await db.menuCategory.findMany({
     orderBy: { order: "asc" },
     select: {
@@ -52,11 +72,13 @@ const getMenu = async (db) => {
   });
   return categories.map((cat) => ({
     ...cat,
-    items: (cat.items || []).map((item) => ({
-      ...item,
-      nameAr: item.nameAr || null,
-      descriptionAr: item.descriptionAr || null,
-    })),
+    items: (cat.items || [])
+      .filter((item) => isItemAvailableAtBranch(item, branchId))
+      .map((item) => ({
+        ...item,
+        nameAr: item.nameAr || null,
+        descriptionAr: item.descriptionAr || null,
+      })),
   }));
 };
 

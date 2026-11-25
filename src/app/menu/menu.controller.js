@@ -10,7 +10,8 @@ const menuService = require("./menu.service");
 const { getAppImageURL } = require("../../config");
 
 const getMenu = catchAsync(async (req, res) => {
-  const menu = await menuService.getMenu(req.tenantDb);
+  const branchId = req.query.branchId || req.query.branch || null;
+  const menu = await menuService.getMenu(req.tenantDb, branchId);
   const resolvedMenu = menu.map(category => ({
     ...category,
     items: category.items ? category.items.map(item => ({

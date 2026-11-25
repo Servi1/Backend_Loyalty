@@ -227,7 +227,8 @@ const calculatePointsForOrder = (orderItems, total, earnRate, tenant) => {
   }
 
   let pointsToEarn = 0;
-  if (hasCustomItemPoints) {
+  const isItemMode = tenant?.loyaltyEarnMode === "item" || (!tenant?.loyaltyEarnMode && hasCustomItemPoints);
+  if (isItemMode && hasCustomItemPoints) {
     pointsToEarn = Math.floor(customPointsTotal);
   } else {
     const spendToCount = total !== undefined && total !== null ? Math.min(Number(total), eligibleSpend) : eligibleSpend;

@@ -2,13 +2,15 @@ const catchAsync = require("../../../utils/catchAsync");
 const menusService = require("./menus.service");
 
 const getCategories = catchAsync(async (req, res) => {
-  const categories = await menusService.getCategories(req.tenantDb);
+  const branchId = req.query.branchId || req.query.branch || null;
+  const categories = await menusService.getCategories(req.tenantDb, branchId);
   res.json({ success: true, data: categories });
 });
 
 const getItems = catchAsync(async (req, res) => {
-  const { startDate, endDate } = req.query;
-  const items = await menusService.getItems(req.tenantDb, startDate, endDate);
+  const { startDate, endDate, branchId, branch } = req.query;
+  const targetBranch = branchId || branch || null;
+  const items = await menusService.getItems(req.tenantDb, startDate, endDate, targetBranch);
   res.json({ success: true, data: items });
 });
 

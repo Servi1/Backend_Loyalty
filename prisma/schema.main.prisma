@@ -171,6 +171,7 @@ model Tenant {
   loyaltyAddPoints     Boolean @default(true)
   loyaltyRedeemPoints  Boolean @default(true)
   loyaltyEarnRate      Float   @default(1.0)
+  loyaltyEarnMode      String? @default("spend")
   loyaltyRedeemRate    Float   @default(100.0)
   loyaltyTiers         Json?
   stampPrograms        Json?
