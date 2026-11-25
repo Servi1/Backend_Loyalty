@@ -309,6 +309,7 @@ const update = async (id, data, user = null) => {
       "stampPrograms",
       "loyaltyEligibleItemIds",
       "loyaltyEligibleItemNames",
+      "loyaltyItemPoints",
       "notificationsEnabled",
       "autoPayouts",
       "ordersEnabled",
@@ -486,6 +487,19 @@ const update = async (id, data, user = null) => {
           labelAr: "عناصر القائمة المؤهلة",
           oldValue: `${oldLen} item(s)`,
           newValue: `${newLen} item(s)`
+        });
+      }
+    }
+    if (data.loyaltyItemPoints !== undefined) {
+      const oldKeys = Object.keys(existingTenant.loyaltyItemPoints || {}).length;
+      const newKeys = Object.keys(data.loyaltyItemPoints || {}).length;
+      if (oldKeys !== newKeys || JSON.stringify(existingTenant.loyaltyItemPoints || {}) !== JSON.stringify(data.loyaltyItemPoints || {})) {
+        pointsDiffs.push({
+          field: "loyaltyItemPoints",
+          label: "Item Points Rates",
+          labelAr: "نقاط العناصر المخصصة",
+          oldValue: `${oldKeys} configured`,
+          newValue: `${newKeys} configured`
         });
       }
     }
@@ -1227,6 +1241,7 @@ const getLoyaltyOverview = async (filters = {}) => {
       redeemRate: tenant.loyaltyRedeemRate,
       loyaltyEligibleItemIds: Array.isArray(tenant.loyaltyEligibleItemIds) ? tenant.loyaltyEligibleItemIds : [],
       loyaltyEligibleItemNames: Array.isArray(tenant.loyaltyEligibleItemNames) ? tenant.loyaltyEligibleItemNames : [],
+      loyaltyItemPoints: tenant.loyaltyItemPoints || {},
       stampPrograms: (tenant.stampPrograms || []).map(sp => ({
         ...sp,
         enabled: tenant.subStamps ? sp.enabled : false

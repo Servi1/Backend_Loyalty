@@ -176,6 +176,7 @@ model Tenant {
   stampPrograms        Json?
   loyaltyEligibleItemIds   Json?
   loyaltyEligibleItemNames Json?
+  loyaltyItemPoints        Json?
   isActive             Boolean          @default(true)
   subscriptionPaused   Boolean          @default(false)
   category             String?

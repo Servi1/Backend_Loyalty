@@ -189,6 +189,9 @@ const calculatePointsForOrder = (orderItems, total, earnRate, tenant) => {
   const eligibleNames = Array.isArray(tenant?.loyaltyEligibleItemNames)
     ? tenant.loyaltyEligibleItemNames.map((n) => String(n).toLowerCase().trim()).filter(Boolean)
     : [];
+  const itemPointsMap = tenant?.loyaltyItemPoints && typeof tenant.loyaltyItemPoints === 'object'
+    ? tenant.loyaltyItemPoints
+    : {};
 
   // If no menu item is added, no one can earn any points
   if (eligibleIds.length === 0 && eligibleNames.length === 0) {
@@ -198,6 +201,8 @@ const calculatePointsForOrder = (orderItems, total, earnRate, tenant) => {
   const items = Array.isArray(orderItems) ? orderItems : [];
   let eligibleSpend = 0;
   let hasEligible = false;
+  let customPointsTotal = 0;
+  let hasCustomItemPoints = false;
 
   for (const it of items) {
     if (isItemEligibleForPoints(it, eligibleIds, eligibleNames)) {
@@ -205,6 +210,15 @@ const calculatePointsForOrder = (orderItems, total, earnRate, tenant) => {
       const qty = Number(it.quantity || it.qty || 1);
       const price = Number(it.price || 0);
       eligibleSpend += price * qty;
+
+      const mId = String(it.menuItemId || it.itemId || it.id || '');
+      if (mId && itemPointsMap[mId] !== undefined && itemPointsMap[mId] !== null) {
+        const pts = Number(itemPointsMap[mId]);
+        if (!isNaN(pts) && pts >= 0) {
+          customPointsTotal += pts * qty;
+          hasCustomItemPoints = true;
+        }
+      }
     }
   }
 
@@ -212,9 +226,14 @@ const calculatePointsForOrder = (orderItems, total, earnRate, tenant) => {
     return { isEligible: false, eligibleSpend: 0, pointsToEarn: 0 };
   }
 
-  const spendToCount = total !== undefined && total !== null ? Math.min(Number(total), eligibleSpend) : eligibleSpend;
-  const effectiveRate = Number(earnRate || 0);
-  const pointsToEarn = effectiveRate > 0 ? Math.floor(spendToCount * effectiveRate) : 0;
+  let pointsToEarn = 0;
+  if (hasCustomItemPoints) {
+    pointsToEarn = Math.floor(customPointsTotal);
+  } else {
+    const spendToCount = total !== undefined && total !== null ? Math.min(Number(total), eligibleSpend) : eligibleSpend;
+    const effectiveRate = Number(earnRate || 0);
+    pointsToEarn = effectiveRate > 0 ? Math.floor(spendToCount * effectiveRate) : 0;
+  }
 
   return { isEligible: true, eligibleSpend, pointsToEarn };
 };

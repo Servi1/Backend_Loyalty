@@ -51,17 +51,16 @@ const settingsService = require("../web/admin/settings/settings.service");
 router.get("/global-banners", async (req, res, next) => {
   try {
     const bannersData = await settingsService.getGlobalBanners();
-    const top = Array.isArray(bannersData?.topBanners) ? bannersData.topBanners : [];
-    const bottom = Array.isArray(bannersData?.bottomBanners) ? bannersData.bottomBanners : [];
-    const activeTop = top.filter((b) => b.isActive && b.imageUrl);
-    const activeBottom = bottom.filter((b) => b.isActive && b.imageUrl);
+    const all = Array.isArray(bannersData?.banners) ? bannersData.banners : [];
+    const activeBanners = all.filter((b) => b.isActive && b.imageUrl);
     res.json({
       success: true,
       data: {
-        topBanners: activeTop,
-        bottomBanners: activeBottom,
+        banners: activeBanners,
+        topBanners: activeBanners,
+        bottomBanners: [],
       },
-      banners: activeTop,
+      banners: activeBanners,
     });
   } catch (err) {
     next(err);
