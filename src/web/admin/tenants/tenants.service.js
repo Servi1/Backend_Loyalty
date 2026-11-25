@@ -307,6 +307,9 @@ const update = async (id, data, user = null) => {
       "loyaltyRedeemRate",
       "loyaltyTiers",
       "stampPrograms",
+      "loyaltyEligibleItemIds",
+      "loyaltyEligibleItemNames",
+      "loyaltyItemPoints",
       "notificationsEnabled",
       "autoPayouts",
       "ordersEnabled",
@@ -473,6 +476,32 @@ const update = async (id, data, user = null) => {
         oldValue: `${Number(existingTenant.loyaltyRedeemRate)} pts = 1 SAR`,
         newValue: `${Number(data.loyaltyRedeemRate)} pts = 1 SAR`
       });
+    }
+    if (data.loyaltyEligibleItemIds !== undefined) {
+      const oldLen = Array.isArray(existingTenant.loyaltyEligibleItemIds) ? existingTenant.loyaltyEligibleItemIds.length : 0;
+      const newLen = Array.isArray(data.loyaltyEligibleItemIds) ? data.loyaltyEligibleItemIds.length : 0;
+      if (oldLen !== newLen || JSON.stringify(existingTenant.loyaltyEligibleItemIds || []) !== JSON.stringify(data.loyaltyEligibleItemIds || [])) {
+        pointsDiffs.push({
+          field: "loyaltyEligibleItemIds",
+          label: "Eligible Items",
+          labelAr: "عناصر القائمة المؤهلة",
+          oldValue: `${oldLen} item(s)`,
+          newValue: `${newLen} item(s)`
+        });
+      }
+    }
+    if (data.loyaltyItemPoints !== undefined) {
+      const oldKeys = Object.keys(existingTenant.loyaltyItemPoints || {}).length;
+      const newKeys = Object.keys(data.loyaltyItemPoints || {}).length;
+      if (oldKeys !== newKeys || JSON.stringify(existingTenant.loyaltyItemPoints || {}) !== JSON.stringify(data.loyaltyItemPoints || {})) {
+        pointsDiffs.push({
+          field: "loyaltyItemPoints",
+          label: "Item Points Rates",
+          labelAr: "نقاط العناصر المخصصة",
+          oldValue: `${oldKeys} configured`,
+          newValue: `${newKeys} configured`
+        });
+      }
     }
 
     if (pointsDiffs.length > 0) {
@@ -1210,6 +1239,9 @@ const getLoyaltyOverview = async (filters = {}) => {
       loyaltyRedeemPoints: tenant.subLoyalty ? (tenant.loyaltyRedeemPoints !== false) : false,
       earnRate: tenant.loyaltyEarnRate,
       redeemRate: tenant.loyaltyRedeemRate,
+      loyaltyEligibleItemIds: Array.isArray(tenant.loyaltyEligibleItemIds) ? tenant.loyaltyEligibleItemIds : [],
+      loyaltyEligibleItemNames: Array.isArray(tenant.loyaltyEligibleItemNames) ? tenant.loyaltyEligibleItemNames : [],
+      loyaltyItemPoints: tenant.loyaltyItemPoints || {},
       stampPrograms: (tenant.stampPrograms || []).map(sp => ({
         ...sp,
         enabled: tenant.subStamps ? sp.enabled : false

@@ -246,7 +246,29 @@ const earnPoints = async (db, customerId, points, description, tenantId, opts = 
     finalStamps = Math.min(requiredStamps, (wallet.stamps || 0) + earnedStampsCount);
   }
 
-  const finalPointsToEarn = canAwardPoints ? points : 0;
+  let finalPointsToEarn = canAwardPoints ? points : 0;
+  if (finalPointsToEarn > 0) {
+    // Check eligible items for loyalty points:
+    // If no menu item is added, no one can earn any points
+    const eligibleIds = Array.isArray(tenantObj?.loyaltyEligibleItemIds)
+      ? tenantObj.loyaltyEligibleItemIds.map(String).filter(Boolean)
+      : [];
+    const eligibleNames = Array.isArray(tenantObj?.loyaltyEligibleItemNames)
+      ? tenantObj.loyaltyEligibleItemNames.map((n) => String(n).toLowerCase().trim()).filter(Boolean)
+      : [];
+
+    if (eligibleIds.length === 0 && eligibleNames.length === 0) {
+      console.log(`[LOYALTY] Points blocked: No eligible items configured for tenant ${tenantObj?.name || targetTenantId}`);
+      finalPointsToEarn = 0;
+    } else if (Array.isArray(opts.items || opts.orderItems)) {
+      const { calculatePointsForOrder } = require("../../shared/loyalty/loyaltyEligibility");
+      const ptsCalc = calculatePointsForOrder(opts.items || opts.orderItems, opts.total, tenantObj?.loyaltyEarnRate, tenantObj);
+      if (!ptsCalc.isEligible || ptsCalc.pointsToEarn <= 0) {
+        console.log(`[LOYALTY] Order does not contain any eligible items for points. Zeroing points.`);
+        finalPointsToEarn = 0;
+      }
+    }
+  }
   if (finalPointsToEarn <= 0 && earnedStampsCount <= 0) return wallet;
 
   let txDesc = description || (earnedStampsCount > 0 ? `Points & +${earnedStampsCount} Stamp(s) earned` : "Points earned");

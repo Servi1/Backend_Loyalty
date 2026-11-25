@@ -140,9 +140,18 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
         if (tenant.feePos !== undefined && tenant.feePos !== null) {
           feeRate = Number(tenant.feePos);
         }
-        const isPointsActive = Boolean(tenant.subLoyalty && tenant.loyaltyEnabled && tenant.loyaltyAddPoints !== false);
-        if (isPointsActive) {
-          loyaltyEarnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+        const { calculatePointsForOrder } = require("../shared/loyalty/loyaltyEligibility");
+        const isPointsConfigActive = Boolean(tenant.subLoyalty && tenant.loyaltyEnabled && tenant.loyaltyAddPoints !== false);
+        let isPointsActive = false;
+        if (isPointsConfigActive) {
+          const tenantEarnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
+          const ptsCalc = calculatePointsForOrder(items, total, tenantEarnRate, tenant);
+          if (ptsCalc.isEligible && ptsCalc.pointsToEarn > 0) {
+            isPointsActive = true;
+            loyaltyEarnRate = tenantEarnRate;
+          } else {
+            loyaltyEarnRate = 0.0;
+          }
         } else {
           loyaltyEarnRate = 0.0;
         }
@@ -221,16 +230,19 @@ const createOrder = async (db, branchId, userId, orderData, tenantId) => {
       if (!pointsEligible && !stampsEligible) {
         console.log(`[POS LOYALTY] Points/Stamps was NOT enabled at order creation time (${order.createdAt}). Skipping points for order #${order.orderNumber}`);
       } else {
-        let earnRate = 0.0;
+        let pointsToEarn = 0;
         if (pointsEligible) {
+          let earnRate = 0.0;
           if (order.loyaltyEarnRate !== undefined && order.loyaltyEarnRate !== null) {
             earnRate = Number(order.loyaltyEarnRate);
           } else {
             earnRate = Number(tenant?.loyaltyEarnRate !== undefined && tenant?.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
           }
+          const { calculatePointsForOrder } = require("../shared/loyalty/loyaltyEligibility");
+          const ptsCalc = calculatePointsForOrder(order.items || orderData.items, order.total, earnRate, tenant);
+          pointsToEarn = ptsCalc.pointsToEarn;
         }
 
-        const pointsToEarn = earnRate > 0 ? Math.floor(order.total * earnRate) : 0;
         const loyaltyService = require("../web/tenant/loyalty/loyalty.service");
         await loyaltyService.earnPoints(
           db,
@@ -449,16 +461,19 @@ const updateOrderStatus = async (db, orderId, status, tenantId, paymentMethod) =
           if (!tenant || (!isPointsEnabled && !isStampsSubscribed)) {
             console.log(`[POS LOYALTY] Loyalty/Stamps disabled or not subscribed. Skipping points for order #${updated.orderNumber}`);
           } else {
-            let earnRate = 0.0;
+            let pointsToEarn = 0;
             if (isPointsEnabled) {
+              let earnRate = 0.0;
               if (updated.loyaltyEarnRate !== undefined && updated.loyaltyEarnRate !== null) {
                 earnRate = Number(updated.loyaltyEarnRate);
               } else {
                 earnRate = Number(tenant.loyaltyEarnRate !== undefined && tenant.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
               }
+              const { calculatePointsForOrder } = require("../shared/loyalty/loyaltyEligibility");
+              const ptsCalc = calculatePointsForOrder(updated.items, updated.total, earnRate, tenant);
+              pointsToEarn = ptsCalc.pointsToEarn;
             }
 
-            const pointsToEarn = earnRate > 0 ? Math.floor(updated.total * earnRate) : 0;
             await loyaltyService.earnPoints(
               db,
               updated.customerId,

@@ -482,9 +482,10 @@ const updateAppContent = async ({ privacyPolicy, policyPoints, faqList }, hostUr
   return getAppContent(hostUrl);
 };
 
-const normalizeBannerList = (arr, defaultTitlePrefix = "Global Banner", defaultTitleArPrefix = "إعلان عام") => {
+const normalizeBannerList = (arr, defaultTitlePrefix = "Global Banner", defaultTitleArPrefix = "إعلان عام", count = 6) => {
   const safeArr = Array.isArray(arr) ? arr : [];
-  return [1, 2, 3].map((num) => {
+  const numbers = Array.from({ length: count }, (_, i) => i + 1);
+  return numbers.map((num) => {
     const found = safeArr.find((b) => Number(b.id) === num) || safeArr[num - 1] || {};
     return {
       id: num,
@@ -506,48 +507,64 @@ const getGlobalBanners = async () => {
     where: { key: "global_banners" },
   });
   if (!record || !record.value) {
+    const default6 = normalizeBannerList([], "Banner", "إعلان", 6);
     return {
-      topBanners: normalizeBannerList([], "Top Banner", "إعلان علوي"),
-      bottomBanners: normalizeBannerList([], "Middle Banner", "إعلان أوسط"),
+      banners: default6,
+      topBanners: default6.slice(0, 3),
+      bottomBanners: default6.slice(3, 6),
     };
   }
   try {
     const parsed = JSON.parse(record.value);
+    let allBanners = [];
     if (Array.isArray(parsed)) {
-      return {
-        topBanners: normalizeBannerList(parsed, "Top Banner", "إعلان علوي"),
-        bottomBanners: normalizeBannerList([], "Middle Banner", "إعلان أوسط"),
-      };
+      allBanners = parsed;
+    } else if (parsed && typeof parsed === "object") {
+      if (Array.isArray(parsed.banners) && parsed.banners.length > 0) {
+        allBanners = parsed.banners;
+      } else {
+        const top = Array.isArray(parsed.topBanners) ? parsed.topBanners : [];
+        const bottom = Array.isArray(parsed.bottomBanners) ? parsed.bottomBanners : [];
+        const bottomWithIds = bottom.map((b, i) => ({ ...b, id: i + 4 }));
+        allBanners = [...top, ...bottomWithIds];
+      }
     }
+    const cleanBanners = normalizeBannerList(allBanners, "Banner", "إعلان", 6);
     return {
-      topBanners: normalizeBannerList(parsed?.topBanners, "Top Banner", "إعلان علوي"),
-      bottomBanners: normalizeBannerList(parsed?.bottomBanners, "Middle Banner", "إعلان أوسط"),
+      banners: cleanBanners,
+      topBanners: cleanBanners.slice(0, 3),
+      bottomBanners: cleanBanners.slice(3, 6),
     };
   } catch (err) {
+    const default6 = normalizeBannerList([], "Banner", "إعلان", 6);
     return {
-      topBanners: normalizeBannerList([], "Top Banner", "إعلان علوي"),
-      bottomBanners: normalizeBannerList([], "Middle Banner", "إعلان أوسط"),
+      banners: default6,
+      topBanners: default6.slice(0, 3),
+      bottomBanners: default6.slice(3, 6),
     };
   }
 };
 
 const updateGlobalBanners = async (payload) => {
-  let topRaw = [];
-  let bottomRaw = [];
-
+  let rawBanners = [];
   if (Array.isArray(payload)) {
-    topRaw = payload;
+    rawBanners = payload;
   } else if (payload && typeof payload === "object") {
-    topRaw = payload.topBanners || payload.banners || [];
-    bottomRaw = payload.bottomBanners || [];
+    if (Array.isArray(payload.banners) && payload.banners.length > 0) {
+      rawBanners = payload.banners;
+    } else {
+      const top = Array.isArray(payload.topBanners) ? payload.topBanners : [];
+      const bottom = Array.isArray(payload.bottomBanners) ? payload.bottomBanners : [];
+      const bottomWithIds = bottom.map((b, i) => ({ ...b, id: i + 4 }));
+      rawBanners = [...top, ...bottomWithIds];
+    }
   }
 
-  const cleanTop = normalizeBannerList(topRaw, "Top Banner", "إعلان علوي");
-  const cleanBottom = normalizeBannerList(bottomRaw, "Middle Banner", "إعلان أوسط");
-
+  const cleanBanners = normalizeBannerList(rawBanners, "Banner", "إعلان", 6);
   const dataToStore = {
-    topBanners: cleanTop,
-    bottomBanners: cleanBottom,
+    banners: cleanBanners,
+    topBanners: cleanBanners.slice(0, 3),
+    bottomBanners: cleanBanners.slice(3, 6),
   };
 
   const jsonStr = JSON.stringify(dataToStore);

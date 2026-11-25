@@ -863,9 +863,18 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
       const tenantObj = tenant || (await mainPrisma.tenant.findUnique({ where: { id: tenantId } }));
       if (tenantObj) {
         feeRate = resolveTenantFeeRate(tenantObj, orderSource);
-        const isPointsActive = Boolean(tenantObj.subLoyalty && tenantObj.loyaltyEnabled && tenantObj.loyaltyAddPoints !== false);
-        if (isPointsActive) {
-          orderLoyaltyEarnRate = Number(tenantObj.loyaltyEarnRate !== undefined && tenantObj.loyaltyEarnRate !== null ? tenantObj.loyaltyEarnRate : 1.0);
+        const { calculatePointsForOrder } = require("../../shared/loyalty/loyaltyEligibility");
+        const isPointsConfigActive = Boolean(tenantObj.subLoyalty && tenantObj.loyaltyEnabled && tenantObj.loyaltyAddPoints !== false);
+        let isPointsActive = false;
+        if (isPointsConfigActive) {
+          const tenantEarnRate = Number(tenantObj.loyaltyEarnRate !== undefined && tenantObj.loyaltyEarnRate !== null ? tenantObj.loyaltyEarnRate : 1.0);
+          const ptsCalc = calculatePointsForOrder(orderItems, total, tenantEarnRate, tenantObj);
+          if (ptsCalc.isEligible && ptsCalc.pointsToEarn > 0) {
+            isPointsActive = true;
+            orderLoyaltyEarnRate = tenantEarnRate;
+          } else {
+            orderLoyaltyEarnRate = 0.0;
+          }
         } else {
           orderLoyaltyEarnRate = 0.0;
         }
@@ -1084,15 +1093,18 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
 
       if (pointsEligible || stampsEligible) {
         let effectiveEarnRate = 0.0;
+        let pointsEarned = 0;
         if (pointsEligible) {
           if (order.loyaltyEarnRate !== undefined && order.loyaltyEarnRate !== null) {
             effectiveEarnRate = Number(order.loyaltyEarnRate);
           } else {
             effectiveEarnRate = Number(tenant?.loyaltyEarnRate !== undefined && tenant?.loyaltyEarnRate !== null ? tenant.loyaltyEarnRate : 1.0);
           }
+          const { calculatePointsForOrder } = require("../../shared/loyalty/loyaltyEligibility");
+          const ptsCalc = calculatePointsForOrder(order.items || orderItems, order.total, effectiveEarnRate, tenant);
+          pointsEarned = ptsCalc.pointsToEarn;
         }
 
-        const pointsEarned = effectiveEarnRate > 0 ? Math.floor(order.total * effectiveEarnRate) : 0;
         await loyaltyService.earnPoints(
           db,
           finalCustomerId || userId,

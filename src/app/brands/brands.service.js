@@ -147,11 +147,11 @@ const getBrands = async (userId) => {
       slug: t.slug,
 
       isFavorite: favBrands.includes(t.id) || favBrands.includes(t.slug),
-      loyaltyEarnRate: Boolean(t.subLoyalty && t.loyaltyEnabled && t.loyaltyAddPoints !== false) ? Number(t.loyaltyEarnRate !== undefined && t.loyaltyEarnRate !== null ? t.loyaltyEarnRate : 1.0) : 0.0,
+      loyaltyEarnRate: Boolean(t.subLoyalty && t.loyaltyEnabled && t.loyaltyAddPoints !== false && Array.isArray(t.loyaltyEligibleItemIds) && t.loyaltyEligibleItemIds.length > 0) ? Number(t.loyaltyEarnRate !== undefined && t.loyaltyEarnRate !== null ? t.loyaltyEarnRate : 1.0) : 0.0,
       loyaltyRedeemRate: Number(t.loyaltyRedeemRate || 100.0),
       subBrandStory: Boolean(t.subBrandStory),
       loyaltyRedeemPoints: Boolean(t.subLoyalty && t.loyaltyEnabled && t.loyaltyRedeemPoints !== false),
-      loyaltyAddPoints: Boolean(t.subLoyalty && t.loyaltyEnabled && t.loyaltyAddPoints !== false),
+      loyaltyAddPoints: Boolean(t.subLoyalty && t.loyaltyEnabled && t.loyaltyAddPoints !== false && Array.isArray(t.loyaltyEligibleItemIds) && t.loyaltyEligibleItemIds.length > 0),
       loyaltyPointsEnabled: Boolean(t.subLoyalty && t.loyaltyEnabled),
       loyaltyEnabled: Boolean(t.subLoyalty && t.loyaltyEnabled),
       stampEnabled: isStampEnabled,

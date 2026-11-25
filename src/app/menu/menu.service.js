@@ -39,6 +39,8 @@ const getMenu = async (db) => {
           rating: true,
           modifiers: true,
           prepTime: true,
+          branchId: true,
+          branchIds: true,
           specialists: {
             include: {
               schedules: true
