@@ -304,6 +304,7 @@ const update = async (id, data, user = null) => {
       "loyaltyAddPoints",
       "loyaltyRedeemPoints",
       "loyaltyEarnRate",
+      "loyaltyEarnMode",
       "loyaltyRedeemRate",
       "loyaltyTiers",
       "stampPrograms",
@@ -466,6 +467,15 @@ const update = async (id, data, user = null) => {
         labelAr: "معدل كسب النقاط",
         oldValue: `${Number(existingTenant.loyaltyEarnRate)} SAR = 1 pt`,
         newValue: `${Number(data.loyaltyEarnRate)} SAR = 1 pt`
+      });
+    }
+    if (data.loyaltyEarnMode !== undefined && data.loyaltyEarnMode !== existingTenant.loyaltyEarnMode) {
+      pointsDiffs.push({
+        field: "loyaltyEarnMode",
+        label: "Earn Calculation Mode",
+        labelAr: "طريقة حساب كسب النقاط",
+        oldValue: existingTenant.loyaltyEarnMode === "item" ? "Fixed per Item" : "Based on Spend",
+        newValue: data.loyaltyEarnMode === "item" ? "Fixed per Item" : "Based on Spend"
       });
     }
     if (data.loyaltyRedeemRate !== undefined && Number(data.loyaltyRedeemRate) !== Number(existingTenant.loyaltyRedeemRate)) {
@@ -1238,6 +1248,7 @@ const getLoyaltyOverview = async (filters = {}) => {
       loyaltyAddPoints: tenant.subLoyalty ? (tenant.loyaltyAddPoints !== false) : false,
       loyaltyRedeemPoints: tenant.subLoyalty ? (tenant.loyaltyRedeemPoints !== false) : false,
       earnRate: tenant.loyaltyEarnRate,
+      loyaltyEarnMode: tenant.loyaltyEarnMode || "spend",
       redeemRate: tenant.loyaltyRedeemRate,
       loyaltyEligibleItemIds: Array.isArray(tenant.loyaltyEligibleItemIds) ? tenant.loyaltyEligibleItemIds : [],
       loyaltyEligibleItemNames: Array.isArray(tenant.loyaltyEligibleItemNames) ? tenant.loyaltyEligibleItemNames : [],

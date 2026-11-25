@@ -9,5 +9,6 @@ mainPrisma.$executeRawUnsafe('ALTER TABLE "Tenant" ADD COLUMN IF NOT EXISTS "pag
 mainPrisma.$executeRawUnsafe('ALTER TABLE "Tenant" ADD COLUMN IF NOT EXISTS "pricePager" DOUBLE PRECISION NOT NULL DEFAULT 19.0;').catch(() => null);
 mainPrisma.$executeRawUnsafe('ALTER TABLE "Tenant" ADD COLUMN IF NOT EXISTS "cyclePager" TEXT NOT NULL DEFAULT \'monthly\';').catch(() => null);
 mainPrisma.$executeRawUnsafe('ALTER TABLE "Tenant" ADD COLUMN IF NOT EXISTS "feePager" DOUBLE PRECISION NOT NULL DEFAULT 0.0;').catch(() => null);
+mainPrisma.$executeRawUnsafe('ALTER TABLE "Tenant" ADD COLUMN IF NOT EXISTS "loyaltyEarnMode" TEXT NOT NULL DEFAULT \'spend\';').catch(() => null);
 
 module.exports = mainPrisma;

@@ -19,11 +19,31 @@ const normalisePhone = (raw) => {
   return raw.startsWith("+") ? raw : `+${digits}`;
 };
 
+const isItemAvailableAtBranch = (item, bId) => {
+  if (!bId) return true;
+  let bIds = [];
+  if (Array.isArray(item.branchIds)) {
+    bIds = item.branchIds;
+  } else if (typeof item.branchIds === "string") {
+    try {
+      const parsed = JSON.parse(item.branchIds);
+      if (Array.isArray(parsed)) bIds = parsed;
+    } catch (e) {}
+  }
+  if (bIds.length > 0) {
+    return bIds.includes(bId);
+  }
+  if (item.branchId) {
+    return item.branchId === bId;
+  }
+  return true;
+};
+
 /**
  * Fetch all categories and available menu items.
  */
-const getCatalog = async (db) => {
-  return await db.menuCategory.findMany({
+const getCatalog = async (db, branchId = null) => {
+  const categories = await db.menuCategory.findMany({
     orderBy: { order: "asc" },
     include: {
       items: {
@@ -32,6 +52,12 @@ const getCatalog = async (db) => {
       }
     }
   });
+  if (!branchId) return categories;
+
+  return categories.map((cat) => ({
+    ...cat,
+    items: (cat.items || []).filter((item) => isItemAvailableAtBranch(item, branchId))
+  }));
 };
 
 /**

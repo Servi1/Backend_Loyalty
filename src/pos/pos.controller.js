@@ -24,7 +24,8 @@ const resolveOrderImages = (order) => {
 
 /** GET /api/pos/catalog */
 const getCatalog = catchAsync(async (req, res) => {
-  const catalog = await posService.getCatalog(req.tenantDb);
+  const branchId = req.query.branchId || req.query.branch || req.user?.branchId || null;
+  const catalog = await posService.getCatalog(req.tenantDb, branchId);
   const resolvedCatalog = catalog.map(category => ({
     ...category,
     items: category.items ? category.items.map(item => ({

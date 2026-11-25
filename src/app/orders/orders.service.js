@@ -441,6 +441,25 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     throw new ApiError(400, "One or more menu items are unavailable or not found");
   }
 
+  // Verify menu items are available at the ordering branch
+  for (const item of menuItems) {
+    let bIds = [];
+    if (Array.isArray(item.branchIds)) {
+      bIds = item.branchIds;
+    } else if (typeof item.branchIds === "string") {
+      try {
+        const parsed = JSON.parse(item.branchIds);
+        if (Array.isArray(parsed)) bIds = parsed;
+      } catch (e) {}
+    }
+    if (bIds.length > 0 && !bIds.includes(branchId)) {
+      throw new ApiError(400, `Item "${item.name}" is not available at this branch.`);
+    }
+    if (item.branchId && item.branchId !== branchId) {
+      throw new ApiError(400, `Item "${item.name}" is not available at this branch.`);
+    }
+  }
+
   let subtotal = 0;
   const orderItems = items
     .filter((item) => Boolean(item && (item.menuItemId || item.itemId || item.id)))

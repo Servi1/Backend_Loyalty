@@ -1,17 +1,49 @@
 const ApiError = require("../../../utils/ApiError");
 const mainPrisma = require("../../../config/prisma");
 
-const getCategories = async (db) =>
-  db.menuCategory.findMany({ orderBy: { order: "asc" }, include: { items: true } });
+const isItemAvailableAtBranch = (item, bId) => {
+  if (!bId) return true;
+  let bIds = [];
+  if (Array.isArray(item.branchIds)) {
+    bIds = item.branchIds;
+  } else if (typeof item.branchIds === "string") {
+    try {
+      const parsed = JSON.parse(item.branchIds);
+      if (Array.isArray(parsed)) bIds = parsed;
+    } catch (e) {}
+  }
+  if (bIds.length > 0) {
+    return bIds.includes(bId);
+  }
+  if (item.branchId) {
+    return item.branchId === bId;
+  }
+  return true;
+};
 
-const getItems = async (db, startDate, endDate) => {
+const getCategories = async (db, branchId = null) => {
+  const categories = await db.menuCategory.findMany({
+    orderBy: { order: "asc" },
+    include: { items: true }
+  });
+  if (!branchId) return categories;
+
+  return categories.map((cat) => ({
+    ...cat,
+    items: (cat.items || []).filter((item) => isItemAvailableAtBranch(item, branchId))
+  }));
+};
+
+const getItems = async (db, startDate, endDate, branchId = null) => {
   const where = {};
   if (startDate || endDate) {
     where.createdAt = {};
     if (startDate) where.createdAt.gte = new Date(startDate);
     if (endDate) where.createdAt.lte = new Date(endDate);
   }
-  return db.menuItem.findMany({ where, include: { category: true, specialists: true } });
+  const items = await db.menuItem.findMany({ where, include: { category: true, specialists: true } });
+  if (!branchId) return items;
+  return items.filter((item) => isItemAvailableAtBranch(item, branchId));
 };
 
 const createCategory = async (db, data) => db.menuCategory.create({ data });
@@ -182,6 +214,7 @@ const removeCategory = async (db, id, tenantId) => {
 module.exports = { 
   getCategories, 
   getItems, 
+  isItemAvailableAtBranch,
   createCategory, 
   updateCategory,
   removeCategory,
