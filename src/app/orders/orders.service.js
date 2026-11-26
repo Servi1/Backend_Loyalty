@@ -834,6 +834,31 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
     if (!tenantObj?.subLoyalty || !tenantObj?.loyaltyEnabled || tenantObj?.loyaltyRedeemPoints === false) {
       throw new ApiError(400, "Loyalty points redemption is currently disabled for this brand.");
     }
+
+    // Check item eligibility for points redemption
+    let redeemEligibleIds = tenantObj?.loyaltyRedeemEligibleItemIds;
+    if (redeemEligibleIds === undefined || redeemEligibleIds === null) {
+      try {
+        const rows = await mainPrisma.$queryRawUnsafe(
+          'SELECT "loyaltyRedeemEligibleItemIds" FROM "Tenant" WHERE id = $1',
+          tenantId
+        );
+        redeemEligibleIds = rows?.[0]?.loyaltyRedeemEligibleItemIds || null;
+      } catch (_) {}
+    }
+
+    if (Array.isArray(redeemEligibleIds)) {
+      const eligibleSet = new Set(redeemEligibleIds);
+      for (const item of orderItems) {
+        const itemId = item.menuItemId || item.id;
+        if (!eligibleSet.has(itemId)) {
+          const menuItem = menuItems.find((m) => m.id === itemId);
+          const itemName = menuItem?.name || 'Selected item';
+          throw new ApiError(400, `Item "${itemName}" cannot be purchased with loyalty points.`);
+        }
+      }
+    }
+
     const redeemRate = Number(tenantObj?.loyaltyRedeemRate || 100.0);
     const pointsCost = Math.round(subtotal * redeemRate);
     const wallet = await loyaltyService.getWallet(db, targetUserId, tenantId);
@@ -1000,7 +1025,19 @@ const placeOrder = async (db, userId, body, tenantId, tenant) => {
         paymentMethod: paymentMethod || "cash",
         pointsRedeemed: pointsRedeemed,
         customOrderTypeId: customOrderTypeId || null,
-        items: { create: orderItems },
+        items: {
+          create: orderItems.map((oi) => ({
+            menuItemId: oi.menuItemId,
+            quantity: oi.quantity || 1,
+            price: oi.price,
+            notes: oi.notes || null,
+            selectedModifiers: oi.selectedModifiers || [],
+            staffId: oi.staffId || null,
+            staffName: oi.staffName || null,
+            selectedSlot: oi.selectedSlot || null,
+            selectedSlotDate: oi.selectedSlotDate || null,
+          })),
+        },
       },
       include: {
         items: { include: { menuItem: true } },

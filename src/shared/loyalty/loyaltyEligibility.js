@@ -226,15 +226,9 @@ const calculatePointsForOrder = (orderItems, total, earnRate, tenant) => {
     return { isEligible: false, eligibleSpend: 0, pointsToEarn: 0 };
   }
 
-  let pointsToEarn = 0;
-  const isItemMode = tenant?.loyaltyEarnMode === "item" || (!tenant?.loyaltyEarnMode && hasCustomItemPoints);
-  if (isItemMode && hasCustomItemPoints) {
-    pointsToEarn = Math.floor(customPointsTotal);
-  } else {
-    const spendToCount = total !== undefined && total !== null ? Math.min(Number(total), eligibleSpend) : eligibleSpend;
-    const effectiveRate = Number(earnRate || 0);
-    pointsToEarn = effectiveRate > 0 ? Math.floor(spendToCount * effectiveRate) : 0;
-  }
+  const spendToCount = total !== undefined && total !== null ? Math.min(Number(total), eligibleSpend) : eligibleSpend;
+  const effectiveRate = Number(earnRate || 0);
+  const pointsToEarn = effectiveRate > 0 ? Math.floor(spendToCount * effectiveRate) : 0;
 
   return { isEligible: true, eligibleSpend, pointsToEarn };
 };

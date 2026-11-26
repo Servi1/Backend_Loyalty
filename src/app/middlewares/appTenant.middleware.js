@@ -36,6 +36,17 @@ const optionalAppTenant = async (req, _res, next) => {
 
     // Attach the tenant ID and the specific database client to the request
     req.tenantId = tenant.id;
+    try {
+      const extraRows = await mainPrisma.$queryRawUnsafe(
+        'SELECT "subscriptionPaused", "loyaltyRedeemEligibleItemIds", "loyaltyRedeemEligibleItemNames" FROM "Tenant" WHERE "id" = $1 LIMIT 1',
+        tenant.id
+      ).catch(() => []);
+      if (extraRows && extraRows.length > 0) {
+        tenant.subscriptionPaused = Boolean(extraRows[0].subscriptionPaused);
+        tenant.loyaltyRedeemEligibleItemIds = extraRows[0].loyaltyRedeemEligibleItemIds || null;
+        tenant.loyaltyRedeemEligibleItemNames = extraRows[0].loyaltyRedeemEligibleItemNames || null;
+      }
+    } catch (_) {}
     req.tenant = tenant;
     req.tenantDb = getTenantClient(tenant.dbUrl);
     next();
