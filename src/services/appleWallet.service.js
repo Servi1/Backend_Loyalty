@@ -36,8 +36,13 @@ const loadCertificates = () => {
 const loadDefaultAssets = () => {
   if (cachedAssets) return cachedAssets;
 
-  const iconPath = path.resolve(__dirname, "../../../servi_management/assets/icon.png");
-  const logoPath = path.resolve(__dirname, "../../../servi_website/public/SERVI-LOGO-TRANSPARENT-WHITE.png");
+  const localIcon = path.resolve(__dirname, "../assets/icon.png");
+  const fallbackIcon = path.resolve(__dirname, "../../../servi_management/assets/icon.png");
+  const iconPath = fs.existsSync(localIcon) ? localIcon : fallbackIcon;
+
+  const localLogo = path.resolve(__dirname, "../assets/SERVI-LOGO-TRANSPARENT-WHITE.png");
+  const fallbackLogo = path.resolve(__dirname, "../../../servi_website/public/SERVI-LOGO-TRANSPARENT-WHITE.png");
+  const logoPath = fs.existsSync(localLogo) ? localLogo : fallbackLogo;
 
   let iconBuffer = Buffer.alloc(0);
   let logoBuffer = Buffer.alloc(0);
