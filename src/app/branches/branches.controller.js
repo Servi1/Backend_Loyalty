@@ -7,6 +7,21 @@ const { getTenantClient } = require("../../config/tenantManager");
 
 const getAll = catchAsync(async (req, res) => {
   const branches = await branchesService.getBranches(req.tenantDb);
+  let redeemEligibleIds = req.tenant?.loyaltyRedeemEligibleItemIds;
+  let redeemEligibleNames = req.tenant?.loyaltyRedeemEligibleItemNames;
+  if ((redeemEligibleIds === undefined || redeemEligibleIds === null) && req.tenant?.id) {
+    try {
+      const rows = await mainPrisma.$queryRawUnsafe(
+        'SELECT "loyaltyRedeemEligibleItemIds", "loyaltyRedeemEligibleItemNames" FROM "Tenant" WHERE id = $1',
+        req.tenant.id
+      );
+      if (rows && rows[0]) {
+        redeemEligibleIds = rows[0].loyaltyRedeemEligibleItemIds || null;
+        redeemEligibleNames = rows[0].loyaltyRedeemEligibleItemNames || null;
+      }
+    } catch (_) {}
+  }
+
   const isLoyaltySubscribed = Boolean(req.tenant?.subLoyalty);
   const isLoyaltyEnabled = isLoyaltySubscribed && Boolean(req.tenant?.loyaltyEnabled);
   const hasEligibleItems = Array.isArray(req.tenant?.loyaltyEligibleItemIds) && req.tenant.loyaltyEligibleItemIds.length > 0;
@@ -22,6 +37,8 @@ const getAll = catchAsync(async (req, res) => {
     loyaltyRedeemPoints: isLoyaltyRedeemPoints,
     loyaltyEarnRate: earnRate,
     loyaltyRedeemRate: redeemRate,
+    loyaltyRedeemEligibleItemIds: redeemEligibleIds || null,
+    loyaltyRedeemEligibleItemNames: redeemEligibleNames || null,
     imageUrl: getAppImageURL(branch.imageUrl),
     menuBannerUrl: getAppImageURL(branch.menuBannerUrl),
     receiptLogoUrl: getAppImageURL(branch.receiptLogoUrl),
@@ -31,7 +48,8 @@ const getAll = catchAsync(async (req, res) => {
       subPos: req.tenant.subPos,
       subKds: req.tenant.subKds,
       subCds: req.tenant.subCds,
-      subAppServi: req.tenant.subAppServi
+      subAppServi: req.tenant.subAppServi,
+      ordersEnabled: req.tenant.ordersEnabled
     },
     tenantSettings: {
       logoUrl: getAppImageURL(req.tenant.logoUrl),
@@ -47,6 +65,8 @@ const getAll = catchAsync(async (req, res) => {
       heroTitle: req.tenant.heroTitle,
       heroSubtitle: req.tenant.heroSubtitle,
       vatPercentage: req.tenant.vatPercentage,
+      loyaltyRedeemEligibleItemIds: redeemEligibleIds || null,
+      loyaltyRedeemEligibleItemNames: redeemEligibleNames || null,
     }
   }));
   res.json({ success: true, data });
@@ -54,6 +74,21 @@ const getAll = catchAsync(async (req, res) => {
 
 const getOne = catchAsync(async (req, res) => {
   const branch = await branchesService.getBranch(req.tenantDb, req.params.branchId);
+  let redeemEligibleIds = req.tenant?.loyaltyRedeemEligibleItemIds;
+  let redeemEligibleNames = req.tenant?.loyaltyRedeemEligibleItemNames;
+  if ((redeemEligibleIds === undefined || redeemEligibleIds === null) && req.tenant?.id) {
+    try {
+      const rows = await mainPrisma.$queryRawUnsafe(
+        'SELECT "loyaltyRedeemEligibleItemIds", "loyaltyRedeemEligibleItemNames" FROM "Tenant" WHERE id = $1',
+        req.tenant.id
+      );
+      if (rows && rows[0]) {
+        redeemEligibleIds = rows[0].loyaltyRedeemEligibleItemIds || null;
+        redeemEligibleNames = rows[0].loyaltyRedeemEligibleItemNames || null;
+      }
+    } catch (_) {}
+  }
+
   const isLoyaltySubscribed = Boolean(req.tenant?.subLoyalty);
   const isLoyaltyEnabled = isLoyaltySubscribed && Boolean(req.tenant?.loyaltyEnabled);
   const hasEligibleItems = Array.isArray(req.tenant?.loyaltyEligibleItemIds) && req.tenant.loyaltyEligibleItemIds.length > 0;
@@ -71,6 +106,8 @@ const getOne = catchAsync(async (req, res) => {
       loyaltyRedeemPoints: isLoyaltyRedeemPoints,
       loyaltyEarnRate: earnRate,
       loyaltyRedeemRate: redeemRate,
+      loyaltyRedeemEligibleItemIds: redeemEligibleIds || null,
+      loyaltyRedeemEligibleItemNames: redeemEligibleNames || null,
       imageUrl: getAppImageURL(branch.imageUrl),
       menuBannerUrl: getAppImageURL(branch.menuBannerUrl),
       receiptLogoUrl: getAppImageURL(branch.receiptLogoUrl),
@@ -97,6 +134,8 @@ const getOne = catchAsync(async (req, res) => {
         heroTitle: req.tenant.heroTitle,
         heroSubtitle: req.tenant.heroSubtitle,
         vatPercentage: req.tenant.vatPercentage,
+        loyaltyRedeemEligibleItemIds: redeemEligibleIds || null,
+        loyaltyRedeemEligibleItemNames: redeemEligibleNames || null,
       }
     } 
   });

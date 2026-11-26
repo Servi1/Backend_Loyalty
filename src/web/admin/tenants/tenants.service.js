@@ -61,9 +61,25 @@ const getById = async (id) => {
   const tenant = await mainPrisma.tenant.findUnique({ where: { id } });
   if (!tenant) throw new ApiError(404, "Tenant not found");
   const pausedMap = await getSubscriptionPausedMap();
+  let redeemItemIds = Array.isArray(tenant.loyaltyRedeemEligibleItemIds) ? tenant.loyaltyRedeemEligibleItemIds : null;
+  let redeemItemNames = Array.isArray(tenant.loyaltyRedeemEligibleItemNames) ? tenant.loyaltyRedeemEligibleItemNames : null;
+  if (!redeemItemIds) {
+    try {
+      const rawRedeem = await mainPrisma.$queryRawUnsafe(
+        'SELECT "loyaltyRedeemEligibleItemIds", "loyaltyRedeemEligibleItemNames" FROM "Tenant" WHERE id = $1',
+        id
+      );
+      if (Array.isArray(rawRedeem) && rawRedeem[0]) {
+        redeemItemIds = rawRedeem[0].loyaltyRedeemEligibleItemIds || [];
+        redeemItemNames = rawRedeem[0].loyaltyRedeemEligibleItemNames || [];
+      }
+    } catch (_) {}
+  }
   return {
     ...tenant,
     subscriptionPaused: pausedMap.has(tenant.id) ? pausedMap.get(tenant.id) : Boolean(tenant.subscriptionPaused),
+    loyaltyRedeemEligibleItemIds: redeemItemIds || [],
+    loyaltyRedeemEligibleItemNames: redeemItemNames || [],
   };
 };
 
@@ -311,6 +327,8 @@ const update = async (id, data, user = null) => {
       "loyaltyEligibleItemIds",
       "loyaltyEligibleItemNames",
       "loyaltyItemPoints",
+      "loyaltyRedeemEligibleItemIds",
+      "loyaltyRedeemEligibleItemNames",
       "notificationsEnabled",
       "autoPayouts",
       "ordersEnabled",
@@ -706,9 +724,41 @@ const update = async (id, data, user = null) => {
   const nextFeePager = Number(data.feePager || 0);
   if (hasFeePager) delete data.feePager;
 
+  const hasRedeemItemIds = data.loyaltyRedeemEligibleItemIds !== undefined;
+  const nextRedeemItemIds = data.loyaltyRedeemEligibleItemIds;
+  if (hasRedeemItemIds) delete data.loyaltyRedeemEligibleItemIds;
+
+  const hasRedeemItemNames = data.loyaltyRedeemEligibleItemNames !== undefined;
+  const nextRedeemItemNames = data.loyaltyRedeemEligibleItemNames;
+  if (hasRedeemItemNames) delete data.loyaltyRedeemEligibleItemNames;
+
+  if (data.loyaltyEarnMode !== undefined) {
+    delete data.loyaltyEarnMode;
+  }
+  if (data.loyaltyItemPoints !== undefined) {
+    delete data.loyaltyItemPoints;
+  }
+
   const updated = Object.keys(data).length > 0
     ? await mainPrisma.tenant.update({ where: { id }, data })
     : existingTenant;
+
+  if (hasRedeemItemIds || hasRedeemItemNames) {
+    if (hasRedeemItemIds) {
+      await mainPrisma.$executeRawUnsafe(
+        'UPDATE "Tenant" SET "loyaltyRedeemEligibleItemIds" = $1::jsonb WHERE id = $2',
+        JSON.stringify(nextRedeemItemIds || []),
+        id
+      ).catch((err) => console.error("Failed updating loyaltyRedeemEligibleItemIds:", err.message));
+    }
+    if (hasRedeemItemNames) {
+      await mainPrisma.$executeRawUnsafe(
+        'UPDATE "Tenant" SET "loyaltyRedeemEligibleItemNames" = $1::jsonb WHERE id = $2',
+        JSON.stringify(nextRedeemItemNames || []),
+        id
+      ).catch((err) => console.error("Failed updating loyaltyRedeemEligibleItemNames:", err.message));
+    }
+  }
 
   if (hasSubscriptionPaused) {
     await mainPrisma.$executeRawUnsafe(
@@ -1201,10 +1251,24 @@ const getLoyaltyOverview = async (filters = {}) => {
   }
   const totalMembers = await mainPrisma.appUser.count({ where: appUserWhere });
 
+  const rawRedeemRows = await mainPrisma.$queryRawUnsafe(
+    'SELECT id, "loyaltyRedeemEligibleItemIds", "loyaltyRedeemEligibleItemNames" FROM "Tenant"'
+  ).catch(() => []);
+  const redeemMap = new Map();
+  if (Array.isArray(rawRedeemRows)) {
+    for (const r of rawRedeemRows) {
+      redeemMap.set(r.id, {
+        ids: Array.isArray(r.loyaltyRedeemEligibleItemIds) ? r.loyaltyRedeemEligibleItemIds : [],
+        names: Array.isArray(r.loyaltyRedeemEligibleItemNames) ? r.loyaltyRedeemEligibleItemNames : [],
+      });
+    }
+  }
+
   const programs = [];
   let totalRedemptions = 0;
 
   for (const tenant of tenants) {
+    const redeemInfo = redeemMap.get(tenant.id) || { ids: [], names: [] };
     let membersCount = 0;
     let redemptionsCount = 0;
 
@@ -1252,6 +1316,8 @@ const getLoyaltyOverview = async (filters = {}) => {
       redeemRate: tenant.loyaltyRedeemRate,
       loyaltyEligibleItemIds: Array.isArray(tenant.loyaltyEligibleItemIds) ? tenant.loyaltyEligibleItemIds : [],
       loyaltyEligibleItemNames: Array.isArray(tenant.loyaltyEligibleItemNames) ? tenant.loyaltyEligibleItemNames : [],
+      loyaltyRedeemEligibleItemIds: redeemInfo.ids,
+      loyaltyRedeemEligibleItemNames: redeemInfo.names,
       loyaltyItemPoints: tenant.loyaltyItemPoints || {},
       stampPrograms: (tenant.stampPrograms || []).map(sp => ({
         ...sp,

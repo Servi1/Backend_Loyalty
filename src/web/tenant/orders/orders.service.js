@@ -439,6 +439,25 @@ const normalizePhone = (rawPhone) => {
           if (!tenant.subLoyalty || !tenant.loyaltyEnabled || tenant.loyaltyRedeemPoints === false) {
             throw new ApiError(400, "Loyalty points program is currently disabled or not subscribed for this brand.");
           }
+          let redeemEligibleIds = tenant.loyaltyRedeemEligibleItemIds;
+          if (redeemEligibleIds === undefined || redeemEligibleIds === null) {
+            try {
+              const rows = await mainPrisma.$queryRawUnsafe(
+                'SELECT "loyaltyRedeemEligibleItemIds" FROM "Tenant" WHERE id = $1',
+                tenantId
+              );
+              redeemEligibleIds = rows?.[0]?.loyaltyRedeemEligibleItemIds || null;
+            } catch (_) {}
+          }
+          if (Array.isArray(redeemEligibleIds)) {
+            const eligibleSet = new Set(redeemEligibleIds);
+            for (const item of orderItems) {
+              const itemId = item.menuItemId || item.itemId || item.id;
+              if (itemId && !eligibleSet.has(itemId)) {
+                throw new ApiError(400, `Item "${item.name || 'Selected item'}" cannot be purchased with loyalty points.`);
+              }
+            }
+          }
         }
 
         feeRate = resolveTenantFeeRate(tenant, orderSource);

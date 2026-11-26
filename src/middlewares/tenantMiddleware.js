@@ -31,15 +31,19 @@ const extractTenant = async (req, _res, next) => {
       return next(new ApiError(404, "Tenant not found"));
     }
 
-    // Safely hydrate subscriptionPaused via raw SQL in case Prisma client predates schema patch
+    // Safely hydrate subscriptionPaused and loyalty redeem settings via raw SQL in case Prisma client predates schema patch
     let subscriptionPaused = Boolean(tenant.subscriptionPaused);
     try {
-      const pauseRows = await mainPrisma.$queryRawUnsafe(
-        'SELECT "subscriptionPaused" FROM "Tenant" WHERE "id" = $1 LIMIT 1',
+      const extraRows = await mainPrisma.$queryRawUnsafe(
+        'SELECT "subscriptionPaused", "loyaltyRedeemEligibleItemIds", "loyaltyRedeemEligibleItemNames" FROM "Tenant" WHERE "id" = $1 LIMIT 1',
         tenant.id
       );
-      if (Array.isArray(pauseRows) && pauseRows[0] && pauseRows[0].subscriptionPaused !== undefined) {
-        subscriptionPaused = Boolean(pauseRows[0].subscriptionPaused);
+      if (Array.isArray(extraRows) && extraRows[0]) {
+        if (extraRows[0].subscriptionPaused !== undefined) {
+          subscriptionPaused = Boolean(extraRows[0].subscriptionPaused);
+        }
+        tenant.loyaltyRedeemEligibleItemIds = extraRows[0].loyaltyRedeemEligibleItemIds || null;
+        tenant.loyaltyRedeemEligibleItemNames = extraRows[0].loyaltyRedeemEligibleItemNames || null;
       }
     } catch {
       // Ignore if column doesn't exist yet
