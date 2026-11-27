@@ -56,6 +56,29 @@ try {
 }
 
 /**
+ * Ensure FCM data payload only contains string key-value pairs.
+ * Any non-string values (boolean, number, object, array) are stringified,
+ * and null/undefined values are stripped to prevent 'data must only contain string values'.
+ */
+function sanitizeDataPayload(data = {}) {
+  if (!data || typeof data !== "object") return {};
+  const sanitized = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === null || value === undefined) {
+      continue;
+    }
+    if (typeof value === "string") {
+      sanitized[key] = value;
+    } else if (typeof value === "object") {
+      sanitized[key] = JSON.stringify(value);
+    } else {
+      sanitized[key] = String(value);
+    }
+  }
+  return sanitized;
+}
+
+/**
  * Send FCM Push Notification to topic (e.g. "all_users")
  */
 const sendTopicNotification = async ({ topic = "all_users", title, body, imageUrl, data = {} }) => {
@@ -64,6 +87,12 @@ const sendTopicNotification = async ({ topic = "all_users", title, body, imageUr
     return { messageId: `mock_msg_${Date.now()}` };
   }
 
+  const cleanData = sanitizeDataPayload({
+    click_action: "FLUTTER_NOTIFICATION_CLICK",
+    type: "BROADCAST",
+    ...data
+  });
+
   const message = {
     topic,
     notification: {
@@ -71,11 +100,7 @@ const sendTopicNotification = async ({ topic = "all_users", title, body, imageUr
       body,
       ...(imageUrl ? { imageUrl } : {})
     },
-    data: {
-      click_action: "FLUTTER_NOTIFICATION_CLICK",
-      type: "BROADCAST",
-      ...data
-    },
+    data: cleanData,
     android: {
       notification: {
         sound: "default",
@@ -91,7 +116,7 @@ const sendTopicNotification = async ({ topic = "all_users", title, body, imageUr
           badge: 1
         }
       },
-      fcmOptions: imageUrl ? { imageUrl } : undefined
+      ...(imageUrl ? { fcmOptions: { imageUrl } } : {})
     }
   };
 
@@ -111,6 +136,12 @@ const sendMulticastNotification = async ({ tokens = [], title, body, imageUrl, d
     return { successCount: 0, failureCount: 0, responses: [] };
   }
 
+  const cleanData = sanitizeDataPayload({
+    click_action: "FLUTTER_NOTIFICATION_CLICK",
+    type: "BROADCAST",
+    ...data
+  });
+
   const message = {
     tokens,
     notification: {
@@ -118,11 +149,7 @@ const sendMulticastNotification = async ({ tokens = [], title, body, imageUrl, d
       body,
       ...(imageUrl ? { imageUrl } : {})
     },
-    data: {
-      click_action: "FLUTTER_NOTIFICATION_CLICK",
-      type: "BROADCAST",
-      ...data
-    },
+    data: cleanData,
     android: {
       notification: {
         sound: "default",
@@ -138,7 +165,7 @@ const sendMulticastNotification = async ({ tokens = [], title, body, imageUrl, d
           badge: 1
         }
       },
-      fcmOptions: imageUrl ? { imageUrl } : undefined
+      ...(imageUrl ? { fcmOptions: { imageUrl } } : {})
     }
   };
 

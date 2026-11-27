@@ -123,9 +123,9 @@ const sendBroadcastNotification = async ({
   const payloadData = {
     action: action || "OPEN_APP",
     targetAudience: targetAudience || "ALL",
-    repeatWeekly: Boolean(repeatWeekly),
-    repeatDays: Array.isArray(repeatDays) ? repeatDays : [],
-    repeatTime: repeatTime || null,
+    repeatWeekly: String(Boolean(repeatWeekly)),
+    repeatDays: JSON.stringify(Array.isArray(repeatDays) ? repeatDays : []),
+    repeatTime: repeatTime || "",
   };
 
   // Case A: Schedule for a later time
@@ -331,22 +331,37 @@ const sendTestNotification = async ({
     isTest: "true",
   };
 
+  let delivered = false;
+  let errorReason = null;
+
   if (user && user.fcmToken) {
     try {
-      await firebaseConfig.sendMulticastNotification({
+      const batchResult = await firebaseConfig.sendMulticastNotification({
         tokens: [user.fcmToken],
         title,
         body,
         data: payloadData,
       });
+      delivered = (batchResult.successCount || 0) > 0;
+      if (batchResult.failureCount > 0 && batchResult.responses?.[0]?.error) {
+        errorReason = batchResult.responses[0].error.message || batchResult.responses[0].error.code;
+        console.error("[FCM TEST NOTIFICATION FAILED]:", errorReason);
+      }
     } catch (err) {
       console.error("[FCM TEST NOTIFICATION ERROR]:", err.message);
+      errorReason = err.message;
     }
   } else {
     console.log(`[TEST NOTIFICATION] Target phone ${cleanPhone} received test payload simulation.`);
   }
 
-  return { phone: cleanPhone, delivered: !!(user && user.fcmToken) };
+  return {
+    phone: cleanPhone,
+    delivered,
+    hasToken: !!(user && user.fcmToken),
+    userName: user ? user.name : null,
+    errorReason
+  };
 };
 
 /**
