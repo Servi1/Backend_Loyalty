@@ -123,9 +123,9 @@ const sendBroadcastNotification = async ({
   const payloadData = {
     action: action || "OPEN_APP",
     targetAudience: targetAudience || "ALL",
-    repeatWeekly: String(Boolean(repeatWeekly)),
-    repeatDays: JSON.stringify(Array.isArray(repeatDays) ? repeatDays : []),
-    repeatTime: repeatTime || "",
+    repeatWeekly: Boolean(repeatWeekly),
+    repeatDays: Array.isArray(repeatDays) ? repeatDays : [],
+    repeatTime: repeatTime || null,
   };
 
   // Case A: Schedule for a later time
