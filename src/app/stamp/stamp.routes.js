@@ -13,6 +13,8 @@ const router = Router({ mergeParams: true });
 
 router.get("/info", ctrl.getStampProgramInfo);
 router.get("/card", ctrl.getCustomerCard);
+router.get("/card/apple-wallet", ctrl.downloadCustomerStampCardPass);
+router.get("/customer/:customerId/apple-wallet", ctrl.downloadCustomerStampCardPass);
 router.post("/check-phone", ctrl.checkCustomerPhone);
 router.post("/verify-otp", ctrl.verifyOtpAndGetCard);
 router.get("/eligible-items", ctrl.getEligibleItems);
