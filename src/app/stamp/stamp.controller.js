@@ -85,6 +85,25 @@ const downloadAppleWalletPass = catchAsync(async (req, res) => {
   res.status(200).send(buffer);
 });
 
+const downloadCustomerStampCardPass = catchAsync(async (req, res) => {
+  const customerId = req.params.customerId || req.query.customerId || req.user?.id;
+  const tenantId = req.params.tenantId || req.query.tenantId;
+  const phone = req.query.phone;
+  const token = req.query.token;
+
+  const { buffer, filename } = await appleWalletService.generateCustomerStampPass({
+    customerId,
+    tenantId,
+    phone,
+    token,
+  });
+
+  res.setHeader("Content-Type", "application/vnd.apple.pkpass");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Length", buffer.length);
+  res.status(200).send(buffer);
+});
+
 module.exports = {
   getStampProgramInfo,
   checkCustomerPhone,
@@ -96,4 +115,5 @@ module.exports = {
   getCouponDetails,
   updateCustomerName,
   downloadAppleWalletPass,
+  downloadCustomerStampCardPass,
 };
